@@ -5,13 +5,23 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, addDoc, updateDoc, collection } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { DndContext, DragOverlay, closestCenter, MouseSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { DndContext, DragOverlay, closestCenter, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
+import toast from "react-hot-toast";
 
 function ChemicalToolbar({ onInsert }: { onInsert: (symbol: string) => void }) {
+  const [open, setOpen] = useState(false);
   const buttons = [["₂","₃","₄","₅","₆","₇","₈","₉","₀"],["²","³","⁺","⁻"],["→","⇄","↑","↓","Δ","°"],["()","[]","+","=","·"]];
-  return <div className="flex flex-wrap gap-1">{buttons.map((group,gi)=><span key={gi} className="flex flex-wrap gap-1">{gi>0&&<span className="border-r border-gray-300 mx-1"/>}{group.map(s=><button key={s} type="button" onClick={()=>onInsert(s)} className="px-2.5 py-1.5 bg-gray-100 rounded-lg text-sm font-medium hover:bg-indigo-100 hover:text-indigo-700 transition">{s}</button>)}</span>)}</div>;
+  return (
+    <div className="relative inline-block">
+      <button type="button" onClick={() => setOpen(!open)} className="px-2 py-1 bg-gray-100 rounded-lg text-xs font-medium hover:bg-indigo-100 transition">🧪</button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 p-2 bg-white rounded-xl shadow-xl border border-gray-200 w-72">
+          <div className="flex flex-wrap gap-1">{buttons.map((group, gi) => (<span key={gi} className="flex flex-wrap gap-1">{gi > 0 && <span className="border-r border-gray-300 mx-1" />}{group.map((s) => (<button key={s} type="button" onClick={() => { onInsert(s); setOpen(false); }} className="px-2 py-1 bg-gray-50 rounded text-xs hover:bg-indigo-100 hover:text-indigo-700 transition">{s}</button>))}</span>))}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 function insertSymbol(textareaId: string, symbol: string, currentValue: string, setValue: (v: string) => void) {
   const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -27,91 +37,257 @@ const firebaseConfig = {
   projectId: "tutor-platform-a5e37", storageBucket: "tutor-platform-a5e37.firebasestorage.app",
   messagingSenderId: "115123071384", appId: "1:115123071384:web:9517a29ed1fc2c46e163ed",
 };
-const app = initializeApp(firebaseConfig); const db = getFirestore(app); const storage = getStorage(app);
+const app = initializeApp(firebaseConfig); const db = getFirestore(app);
 
-function DraggableItem({ id, content }: { id: string; content: string }) { const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id }); return (<div ref={setNodeRef} {...listeners} {...attributes} style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 } : {}} className={`px-4 py-3 bg-white rounded-xl shadow-md border-2 cursor-grab active:cursor-grabbing font-medium text-center select-none ${isDragging ? "opacity-50 border-indigo-400 shadow-xl" : "border-gray-200 hover:border-indigo-300 hover:shadow-lg"} transition`}>{content}</div>); }
-function DroppableZone({ id, name, items, color, onReturn }: { id: string; name: string; items: string[]; color: string; onReturn: (content: string) => void }) { const { isOver, setNodeRef } = useDroppable({ id }); return (<div ref={setNodeRef} className={`flex-1 min-h-[120px] rounded-2xl p-4 border-2 border-dashed transition ${isOver ? `${color} scale-[1.02]` : "border-gray-200 bg-gray-50/80"}`}><h4 className="text-sm font-semibold mb-3 text-center text-gray-600">{name}</h4><div className="flex flex-wrap gap-2 justify-center">{items.length === 0 && <p className="text-xs text-gray-400 py-4">Перетащите сюда</p>}{items.map((content, i) => (<span key={i} onClick={() => onReturn(content)} className="px-3 py-1.5 bg-white rounded-lg text-sm shadow-sm border border-gray-100 cursor-pointer hover:bg-red-50 hover:border-red-200 transition" title="Нажмите, чтобы вернуть обратно">{content}</span>))}</div></div>); }
-function TestDisplay({ data, answers, setAnswers }: { data: any; answers: Record<string, number | number[]>; setAnswers: (a: Record<string, number | number[]>) => void }) { const questions = data?.questions || []; function toggleMulti(qId: string, oi: number) { const current = (answers[qId] as number[]) || []; const newArr = current.includes(oi) ? current.filter((x) => x !== oi) : [...current, oi]; setAnswers({ ...answers, [qId]: newArr }); } return (<div className="space-y-6">{questions.map((q: any, qi: number) => (<div key={q.id} className="bg-gray-50 rounded-2xl p-5"><p className="font-semibold mb-3">{qi + 1}. {q.question} <span className="text-xs text-gray-400 ml-2">({q.type === "single" ? "один ответ" : "несколько ответов"})</span></p><div className="space-y-2">{q.options.map((opt: string, oi: number) => { const isSelected = q.type === "single" ? answers[q.id] === oi : ((answers[q.id] as number[]) || []).includes(oi); return (<label key={oi} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition border-2 ${isSelected ? "border-indigo-400 bg-indigo-50" : "border-gray-200 hover:border-gray-300"}`}><input type={q.type === "single" ? "radio" : "checkbox"} checked={isSelected} onChange={() => q.type === "single" ? setAnswers({ ...answers, [q.id]: oi }) : toggleMulti(q.id, oi)} className="text-indigo-600 w-5 h-5" /><span className="text-sm">{opt}</span></label>); })}</div></div>))}</div>); }
-function AssemblyDisplay({ data, answer, setAnswer }: { data: any; answer: string[]; setAnswer: (a: string[]) => void }) { const fragments = data?.fragments || []; const [shuffled] = useState([...fragments].sort(() => Math.random() - 0.5)); return (<div className="space-y-4"><p className="text-sm text-gray-500">🧩 Соберите ответ, кликая по фрагментам:</p><div className="flex flex-wrap gap-2 p-4 bg-gray-100 rounded-2xl min-h-[50px]">{shuffled.map((f: any) => (<button key={f.id} onClick={() => setAnswer([...answer, f.content])} className={`px-4 py-2 rounded-xl shadow-sm border-2 font-medium transition ${answer.includes(f.content) ? "opacity-30 border-gray-200 cursor-not-allowed" : "bg-white border-gray-200 hover:border-indigo-300"}`} disabled={answer.includes(f.content)}>{f.content}</button>))}</div><div className="p-4 bg-white rounded-2xl border-2 border-dashed border-indigo-300 min-h-[50px] flex flex-wrap gap-2">{answer.length === 0 && <span className="text-gray-400 text-sm">Ваш порядок...</span>}{answer.map((content, i) => (<span key={i} onClick={() => setAnswer(answer.filter((_, idx) => idx !== i))} className="px-4 py-2 bg-indigo-100 rounded-xl text-sm font-medium cursor-pointer hover:bg-red-100 transition">{content}</span>))}</div></div>); }
-function MatchingDisplay({ data, answer, setAnswer }: { data: any; answer: Record<string, string>; setAnswer: (a: Record<string, string>) => void }) { const pairs = data?.pairs || []; const shuffledRight = [...pairs].sort(() => Math.random() - 0.5); return (<div className="space-y-4"><p className="text-sm text-gray-500">🔗 Соедините пары (выберите правую часть для каждой левой):</p>{pairs.map((p: any) => (<div key={p.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl"><span className="font-medium flex-1">{p.left}</span><span className="text-gray-400">→</span><select value={answer[p.id] || ""} onChange={(e) => setAnswer({ ...answer, [p.id]: e.target.value })} className="flex-1 border rounded-lg p-2 text-sm"><option value="">Выбрать</option>{shuffledRight.map((r: any) => (<option key={r.id} value={r.id}>{r.right}</option>))}</select></div>))}</div>); }
-function OrderingDisplay({ data, answer, setAnswer }: { data: any; answer: string[]; setAnswer: (a: string[]) => void }) { const [shuffled] = useState([...(data?.steps || [])].sort(() => Math.random() - 0.5)); const selectedIds = new Set(answer); return (<div className="space-y-4"><p className="text-sm text-gray-500">🔬 Расставьте шаги в правильном порядке (кликайте по ним):</p><div className="space-y-2">{shuffled.map((s: any) => (<button key={s.id} onClick={() => setAnswer([...answer, s.id])} className={`w-full text-left p-3 rounded-xl border-2 font-medium transition ${selectedIds.has(s.id) ? "opacity-30 border-gray-200 cursor-not-allowed" : "bg-white border-gray-200 hover:border-indigo-300"}`} disabled={selectedIds.has(s.id)}>{s.content}</button>))}</div><div className="p-4 bg-white rounded-2xl border-2 border-dashed border-indigo-300 min-h-[50px]">{answer.length === 0 && <span className="text-gray-400 text-sm">Ваш порядок...</span>}{answer.map((id, i) => { const step = (data?.steps || []).find((s: any) => s.id === id); return (<div key={id} onClick={() => setAnswer(answer.filter((x) => x !== id))} className="flex items-center gap-2 p-2 bg-indigo-50 rounded-lg mb-1 cursor-pointer hover:bg-red-50 transition"><span className="text-xs text-gray-400">{i + 1}.</span><span className="text-sm">{step?.content}</span></div>); })}</div></div>); }
-function TableFillDisplay({ data, answer, setAnswer }: { data: any; answer: Record<string, string>; setAnswer: (a: Record<string, string>) => void }) { const rows = data?.rows || 3; const cols = data?.cols || 3; const headers = data?.headers || []; const cells = data?.cells || []; return (<div className="space-y-4"><p className="text-sm text-gray-500">📊 Заполните пустые ячейки таблицы:</p><div className="overflow-x-auto"><table className="w-full border-collapse"><thead><tr><th className="border p-2 bg-gray-100 text-xs w-16">#</th>{headers.map((h: string, ci: number) => (<th key={ci} className="border p-2 bg-gray-100 text-xs font-medium">{h || `К.${ci + 1}`}</th>))}</tr></thead><tbody>{Array.from({ length: rows }).map((_, ri) => (<tr key={ri}><td className="border p-2 text-xs text-gray-500 text-center">{ri + 1}</td>{Array.from({ length: cols }).map((_, ci) => { const cell = cells.find((c: any) => c.row === ri && c.col === ci); if (cell && cell.answer) { return (<td key={ci} className="border p-1"><input value={answer[`${ri}_${ci}`] || ""} onChange={(e) => setAnswer({ ...answer, [`${ri}_${ci}`]: e.target.value })} placeholder="Ваш ответ" className="w-full border rounded p-1.5 text-sm focus:ring-2 focus:ring-indigo-400 outline-none" /></td>); } return (<td key={ci} className="border p-2 text-sm text-gray-400 text-center">—</td>); })}</tr>))}</tbody></table></div></div>); }
-function FindErrorDisplay({ data, answer, setAnswer, hint, setHint }: { data: any; answer: string; setAnswer: (a: string) => void; hint: boolean; setHint: (h: boolean) => void }) { return (<div className="space-y-4"><p className="text-sm text-gray-500">❌ Найдите ошибку в тексте и напишите правильный вариант:</p><div className="p-4 bg-red-50 border-2 border-red-200 rounded-2xl"><p className="text-lg font-mono text-red-800 whitespace-pre-wrap">{data?.wrongText}</p></div>{data?.errorHint && (<div><button onClick={() => setHint(!hint)} className="text-sm text-amber-600 hover:text-amber-800 underline">{hint ? "Скрыть подсказку" : "💡 Показать подсказку"}</button>{hint && <p className="mt-2 p-3 bg-amber-50 rounded-xl text-sm text-amber-700">{data.errorHint}</p>}</div>)}<div><label className="block text-sm font-medium mb-2">Правильный вариант:</label><ChemicalToolbar onInsert={(s) => insertSymbol("fe-answer", s, answer, setAnswer)} /><textarea id="fe-answer" value={answer} onChange={(e) => setAnswer(e.target.value)} rows={3} placeholder="Напишите исправленный текст..." className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-400 outline-none mt-1" /></div></div>); }
-function EquationDisplay({ data, answer, setAnswer }: { data: any; answer: string; setAnswer: (a: string) => void }) { return (<div className="space-y-4"><p className="text-sm text-gray-500">⚛️ Введите химическое уравнение:</p><ChemicalToolbar onInsert={(s) => insertSymbol("eq-answer", s, answer, setAnswer)} /><textarea id="eq-answer" value={answer} onChange={(e) => setAnswer(e.target.value)} rows={4} placeholder="Например: 2H₂ + O₂ → 2H₂O" className="w-full border rounded-lg p-3 text-sm font-mono focus:ring-2 focus:ring-indigo-400 outline-none mt-1" /></div>); }
-function TextDisplay({ answer, setAnswer }: { answer: string; setAnswer: (a: string) => void }) { return (<div className="space-y-4"><p className="text-sm text-gray-500">📝 Введите ваш ответ:</p><ChemicalToolbar onInsert={(s) => insertSymbol("text-answer", s, answer, setAnswer)} /><textarea id="text-answer" value={answer} onChange={(e) => setAnswer(e.target.value)} rows={5} placeholder="Ваш ответ..." className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-400 outline-none mt-1" /></div>); }
-function FileUploadDisplay({ data, answer, setAnswer }: { data: any; answer: string[]; setAnswer: (a: string[]) => void }) {
-  const [files, setFiles] = useState<File[]>([]); const [uploading, setUploading] = useState(false);
-  const maxFiles = data?.maxFiles || 3;
-  async function uploadFiles() { setUploading(true); const urls: string[] = []; for (const file of files) { const storageRef = ref(storage, `homeworks/${Date.now()}_${file.name}`); await uploadBytes(storageRef, file); const url = await getDownloadURL(storageRef); urls.push(url); } setAnswer(urls); setUploading(false); }
-  return (<div className="space-y-4"><p className="text-sm text-gray-500">📎 Загрузите файлы (макс. {maxFiles}):</p><input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []).slice(0, maxFiles))} className="w-full border rounded-lg p-3 text-sm" />{files.length > 0 && (<div className="space-y-2">{files.map((f, i) => <div key={i} className="text-sm text-gray-600">📄 {f.name}</div>)}<button onClick={uploadFiles} disabled={uploading} className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm font-medium hover:bg-indigo-600 disabled:opacity-50">{uploading ? "Загрузка..." : "📤 Загрузить"}</button></div>)}{answer.length > 0 && <div className="bg-emerald-50 p-3 rounded-xl text-sm text-emerald-700">✅ Файлы загружены!</div>}</div>);
+function DraggableItem({ id, content }: { id: string; content: string }) { 
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id }); 
+  return (
+    <div ref={setNodeRef} {...listeners} {...attributes} 
+      style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50, touchAction: 'none' } : { touchAction: 'none' }} 
+      className={`px-4 py-3 bg-white rounded-xl shadow-md border-2 cursor-grab active:cursor-grabbing font-medium text-center select-none ${isDragging ? "opacity-50 border-indigo-400 shadow-xl" : "border-gray-200 hover:border-indigo-300 hover:shadow-lg"} transition`}>
+      {content}
+    </div>
+  ); 
+}
+
+function DroppableZone({ id, name, items, color, onReturn }: { id: string; name: string; items: string[]; color: string; onReturn: (content: string) => void }) { 
+  const { isOver, setNodeRef } = useDroppable({ id }); 
+  return (
+    <div ref={setNodeRef} className={`flex-1 min-h-[100px] rounded-2xl p-3 border-2 border-dashed transition ${isOver ? `${color} scale-[1.02]` : "border-gray-200 bg-gray-50/80"}`}>
+      <h4 className="text-xs font-semibold mb-2 text-center text-gray-600">{name}</h4>
+      <div className="flex flex-wrap gap-1 justify-center">
+        {items.length === 0 && <p className="text-xs text-gray-400 py-2">Перетащите сюда</p>}
+        {items.map((content, i) => (
+          <span key={i} onClick={() => onReturn(content)} className="px-2 py-1 bg-white rounded-lg text-xs shadow-sm border border-gray-100 cursor-pointer hover:bg-red-50 transition">
+            {content}
+          </span>
+        ))}
+      </div>
+    </div>
+  ); 
+}
+
+function DragDropSection({ section, answer, setAnswer }: { section: any; answer: any; setAnswer: (a: any) => void }) {
+  const data = section.data;
+  const [assignments, setAssignments] = useState<Record<string, string[]>>(() => {
+    const init: Record<string, string[]> = {};
+    data.categories.forEach((c: any) => { init[c.id] = answer?.assignments?.[c.id] || []; });
+    const allAssigned = Object.values(init).flat();
+    init["unassigned"] = data.items.map((i: any) => i.content).filter((c: string) => !allAssigned.includes(c));
+    return init;
+  });
+  const [activeId, setActiveId] = useState<string | null>(null); 
+  const [activeContent, setActiveContent] = useState("");
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor)
+  );
+  
+  function handleDragStart(event: any) { setActiveId(event.active.id as string); setActiveContent((event.active.id as string).replace(/_\d+$/, "")); }
+  function handleDragEnd(event: any) { 
+    setActiveId(null); const { active, over } = event; if (!over) return; 
+    const draggedContent = (active.id as string).replace(/_\d+$/, ""); const targetZone = over.id as string; 
+    let sourceZone = "unassigned"; 
+    for (const [zone, items] of Object.entries(assignments)) { if (items.includes(draggedContent)) { sourceZone = zone; break; } } 
+    if (sourceZone === targetZone) return; 
+    const newAssignments = { ...assignments }; 
+    newAssignments[sourceZone] = newAssignments[sourceZone].filter((i) => i !== draggedContent); 
+    if (targetZone in newAssignments) newAssignments[targetZone] = [...newAssignments[targetZone], draggedContent]; 
+    setAssignments(newAssignments); setAnswer({ assignments: newAssignments }); 
+  }
+  
+  const unassignedItems = assignments["unassigned"] || [];
+  const COLORS = ["border-indigo-300 bg-indigo-50/50", "border-emerald-300 bg-emerald-50/50", "border-amber-300 bg-amber-50/50", "border-rose-300 bg-rose-50/50"];
+  
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="space-y-4">
+        <div><p className="text-sm text-gray-500 mb-2">🖱️ Перетащите элементы:</p><div className="flex flex-wrap gap-2 p-3 bg-gray-100 rounded-xl min-h-[40px]">{unassignedItems.length === 0 && <p className="text-xs text-gray-400">Все распределены ✅</p>}{unassignedItems.map((content: string, idx: number) => (<DraggableItem key={idx} id={content + "_" + idx} content={content} />))}</div></div>
+        <div className="flex flex-wrap gap-3">{data.categories.map((cat: any, idx: number) => (<DroppableZone key={cat.id} id={cat.id} name={cat.name} items={assignments[cat.id] || []} color={COLORS[idx % COLORS.length]} onReturn={(content) => { const newAssignments = { ...assignments }; newAssignments[cat.id] = (newAssignments[cat.id] || []).filter((i) => i !== content); newAssignments["unassigned"] = [...(newAssignments["unassigned"] || []), content]; setAssignments(newAssignments); setAnswer({ assignments: newAssignments }); }} />))}</div>
+      </div>
+      <DragOverlay>{activeId ? <div className="px-4 py-3 bg-white rounded-xl shadow-2xl border-2 border-indigo-400 font-medium">{activeContent}</div> : null}</DragOverlay>
+    </DndContext>
+  );
+}
+
+function SectionTabs({ sections, currentSection, setCurrentSection, sectionAnswers, submitted, sectionScores }: { 
+  sections: any[]; currentSection: number; setCurrentSection: (i: number) => void; 
+  sectionAnswers: Record<string, any>; submitted: boolean; sectionScores: Record<string, number>; 
+}) {
+  return (
+    <div className="mb-6">
+      <div className="w-full bg-gray-200 rounded-full h-2 mb-3"><div className="bg-indigo-500 h-2 rounded-full transition-all duration-300" style={{ width: `${((currentSection + 1) / sections.length) * 100}%` }} /></div>
+      <div className="flex items-center justify-center gap-2 mb-2">
+        <button onClick={() => setCurrentSection(Math.max(0, currentSection - 1))} disabled={currentSection === 0} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-sm transition">◀</button>
+        <div className="flex gap-1.5">
+          {sections.map((sec, idx) => {
+            const answered = sectionAnswers[sec.id] !== undefined && (typeof sectionAnswers[sec.id] === "string" ? sectionAnswers[sec.id].length > 0 : Object.keys(sectionAnswers[sec.id] || {}).length > 0);
+            let color = "bg-gray-100 text-gray-500 border-2 border-gray-200";
+            if (submitted) { const score = sectionScores[sec.id] || 0; if (score >= sec.max_score) color = "bg-emerald-500 text-white border-emerald-500"; else if (score > 0) color = "bg-amber-500 text-white border-amber-500"; else color = "bg-red-500 text-white border-red-500"; }
+            else if (idx === currentSection) color = "bg-indigo-500 text-white border-indigo-500 shadow-lg shadow-indigo-200";
+            else if (answered) color = "bg-indigo-100 text-indigo-700 border-indigo-300";
+            return (<button key={sec.id} onClick={() => setCurrentSection(idx)} className={`w-9 h-9 rounded-lg text-sm font-bold transition-all hover:scale-105 ${color} flex items-center justify-center`}>{idx + 1}</button>);
+          })}
+        </div>
+        <button onClick={() => setCurrentSection(Math.min(sections.length - 1, currentSection + 1))} disabled={currentSection >= sections.length - 1} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-sm transition">▶</button>
+      </div>
+      <p className="text-xs text-gray-400 text-center mt-2">{submitted ? "📊 Результаты проверки" : `📝 Задание ${currentSection + 1} из ${sections.length}`}</p>
+    </div>
+  );
 }
 
 export default function HomeworkPage() {
   const params = useParams(); const id = params.id as string;
   const uid = typeof window !== "undefined" ? localStorage.getItem("uid") : "";
-  const [homework, setHomework] = useState<any>(null); const [loading, setLoading] = useState(true);
-  const [assignments, setAssignments] = useState<Record<string, string[]>>({});
-  const [testAnswers, setTestAnswers] = useState<Record<string, number | number[]>>({});
-  const [assemblyAnswer, setAssemblyAnswer] = useState<string[]>([]);
-  const [matchingAnswer, setMatchingAnswer] = useState<Record<string, string>>({});
-  const [orderingAnswer, setOrderingAnswer] = useState<string[]>([]);
-  const [tableAnswer, setTableAnswer] = useState<Record<string, string>>({});
-  const [findErrorAnswer, setFindErrorAnswer] = useState("");
-  const [equationAnswer, setEquationAnswer] = useState("");
-  const [textAnswer, setTextAnswer] = useState("");
-  const [fileAnswer, setFileAnswer] = useState<string[]>([]);
-  const [showHint, setShowHint] = useState(false);
-  const [activeId, setActiveId] = useState<string | null>(null); const [activeContent, setActiveContent] = useState("");
-  const [submitted, setSubmitted] = useState(false); const [score, setScore] = useState<number | null>(null);
-  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 5 } }));
+  const role = typeof window !== "undefined" ? localStorage.getItem("role") : "";
+  const [homework, setHomework] = useState<any>(null); 
+  const [loading, setLoading] = useState(true);
+  const [currentSection, setCurrentSection] = useState(0);
+  const [sectionAnswers, setSectionAnswers] = useState<Record<string, any>>({});
+  const [submitted, setSubmitted] = useState(false); 
+  const [score, setScore] = useState<number | null>(null);
+  const [sectionScores, setSectionScores] = useState<Record<string, number>>({});
+  const [tutorComment, setTutorComment] = useState("");
+  const [manualScores, setManualScores] = useState<Record<string, number>>({});
+  const [sectionComments, setSectionComments] = useState<Record<string, string>>({});
 
-  useEffect(() => { if (!id) return; getDoc(doc(db, "homeworks", id)).then((snap) => { if (snap.exists()) { const data = snap.data(); setHomework({ id: snap.id, ...data }); if (data.task_type === "drag_drop" && data.task_data) { const init: Record<string, string[]> = {}; data.task_data.categories.forEach((c: any) => (init[c.id] = [])); init["unassigned"] = (data.task_data.items || []).map((i: any) => i.content); setAssignments(init); } if (data.submission) { setSubmitted(true); getDoc(doc(db, "submissions", data.submission)).then((subSnap) => { if (subSnap.exists()) { const sub = subSnap.data(); if (sub.answer) setAssignments(sub.answer); if (sub.test_answers) setTestAnswers(sub.test_answers); if (sub.assembly_answer) setAssemblyAnswer(sub.assembly_answer); if (sub.matching_answer) setMatchingAnswer(sub.matching_answer); if (sub.ordering_answer) setOrderingAnswer(sub.ordering_answer); if (sub.table_answer) setTableAnswer(sub.table_answer); if (sub.find_error_answer) setFindErrorAnswer(sub.find_error_answer); if (sub.equation_answer) setEquationAnswer(sub.equation_answer); if (sub.text_answer) setTextAnswer(sub.text_answer); if (sub.file_answer) setFileAnswer(sub.file_answer); if (sub.score !== undefined) setScore(sub.score); } }); } } setLoading(false); }); }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    getDoc(doc(db, "homeworks", id)).then((snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setHomework({ id: snap.id, ...data });
+        if (data.status === "done" && data.submission) {
+          setSubmitted(true);
+          getDoc(doc(db, "submissions", data.submission)).then((subSnap) => {
+            if (subSnap.exists()) { 
+              const sub = subSnap.data(); 
+              if (sub.section_answers) setSectionAnswers(sub.section_answers); 
+              if (sub.section_scores) setSectionScores(sub.section_scores); 
+              if (sub.manual_scores) setManualScores(sub.manual_scores || {}); 
+              if (sub.section_comments) setSectionComments(sub.section_comments || {}); 
+              if (sub.tutor_comment) setTutorComment(sub.tutor_comment || ""); 
+              if (sub.score !== undefined) setScore(sub.score); 
+            }
+          });
+        } else { setSubmitted(false); setScore(null); setSectionAnswers({}); setSectionScores({}); setManualScores({}); setSectionComments({}); setTutorComment(""); }
+        if (data.sections) { 
+          const init: Record<string, any> = {}; 
+          data.sections.forEach((sec: any) => { if (sec.type === "drag_drop" && sec.data?.categories) { const a: Record<string, string[]> = {}; sec.data.categories.forEach((c: any) => (a[c.id] = [])); a["unassigned"] = sec.data.items.map((i: any) => i.content); init[sec.id] = { assignments: a }; } }); 
+          if (Object.keys(init).length > 0) setSectionAnswers((prev) => ({ ...init, ...prev })); 
+        }
+      }
+      setLoading(false);
+    });
+  }, [id]);
 
-  function resetAll() { const cats = homework?.task_data?.categories || []; const items = homework?.task_data?.items || []; const init: Record<string, string[]> = {}; cats.forEach((c: any) => (init[c.id] = [])); init["unassigned"] = items.map((i: any) => i.content); setAssignments(init); }
-  function returnToUnassigned(content: string) { const newAssignments = { ...assignments }; for (const [zone, items] of Object.entries(newAssignments)) { if (zone !== "unassigned" && items.includes(content)) { newAssignments[zone] = items.filter((i) => i !== content); newAssignments["unassigned"] = [...newAssignments["unassigned"], content]; break; } } setAssignments(newAssignments); }
-  function handleDragStart(event: any) { setActiveId(event.active.id as string); setActiveContent((event.active.id as string).replace(/_\d+$/, "")); }
-  function handleDragEnd(event: any) { setActiveId(null); const { active, over } = event; if (!over) return; const draggedId = active.id as string; const draggedContent = draggedId.replace(/_\d+$/, ""); const targetZone = over.id as string; let sourceZone = "unassigned"; for (const [zone, items] of Object.entries(assignments)) { if (items.includes(draggedContent)) { sourceZone = zone; break; } } if (sourceZone === targetZone) return; const newAssignments = { ...assignments }; newAssignments[sourceZone] = newAssignments[sourceZone].filter((i) => i !== draggedContent); if (targetZone in newAssignments) newAssignments[targetZone] = [...newAssignments[targetZone], draggedContent]; setAssignments(newAssignments); }
+  function updateAnswer(sectionId: string, answer: any) { setSectionAnswers({ ...sectionAnswers, [sectionId]: answer }); }
 
-  function checkTest(): number { const questions = homework?.task_data?.questions || []; let correct = 0; questions.forEach((q: any) => { if (q.type === "single") { if (testAnswers[q.id] === q.correct) correct++; } else { const userAnswer = (testAnswers[q.id] as number[]) || []; const correctAnswer = q.correct; if (Array.isArray(correctAnswer) && userAnswer.length === correctAnswer.length && userAnswer.every((v: number) => correctAnswer.includes(v))) correct++; } }); return questions.length > 0 ? Math.round((correct / questions.length) * (homework?.max_score || 10)) : 0; }
-  function checkDragDrop(): number { const items = homework?.task_data?.items || []; if (items.length === 0) return homework?.max_score || 10; let correct = 0; items.forEach((item: any) => { if (assignments[item.correctCategory]?.includes(item.content)) correct++; }); return Math.round((correct / items.length) * (homework?.max_score || 10)); }
-  function checkAssembly(): number { const correctOrder = homework?.task_data?.correctOrder || []; if (correctOrder.length === 0) return homework?.max_score || 10; const correct = correctOrder.filter((id: string, idx: number) => assemblyAnswer[idx] === id).length; return Math.round((correct / correctOrder.length) * (homework?.max_score || 10)); }
-  function checkMatching(): number { const pairs = homework?.task_data?.pairs || []; if (pairs.length === 0) return homework?.max_score || 10; let correct = 0; pairs.forEach((p: any) => { if (matchingAnswer[p.id] === p.id) correct++; }); return Math.round((correct / pairs.length) * (homework?.max_score || 10)); }
-  function checkOrdering(): number { const steps = homework?.task_data?.steps || []; if (steps.length === 0) return homework?.max_score || 10; let correct = 0; orderingAnswer.forEach((id, idx) => { if (steps[idx]?.id === id) correct++; }); return Math.round((correct / steps.length) * (homework?.max_score || 10)); }
-  function checkTable(): number { const cells = homework?.task_data?.cells || []; if (cells.length === 0) return homework?.max_score || 10; let correct = 0; cells.forEach((c: any) => { if ((tableAnswer[`${c.row}_${c.col}`] || "").trim().toLowerCase() === c.answer.trim().toLowerCase()) correct++; }); return Math.round((correct / cells.length) * (homework?.max_score || 10)); }
-  function checkFindError(): number { const correctText = homework?.task_data?.correctText || ""; if (!correctText) return homework?.max_score || 10; return findErrorAnswer.trim().toLowerCase() === correctText.trim().toLowerCase() ? (homework?.max_score || 10) : 0; }
-  function getScore(): number | null { switch (homework?.task_type) { case "drag_drop": return checkDragDrop(); case "assembly": return checkAssembly(); case "matching": return checkMatching(); case "ordering": return checkOrdering(); case "table_fill": return checkTable(); case "find_error": return checkFindError(); case "single_choice": case "multi_choice": return checkTest(); default: return null; } }
+  function calcSectionScore(sec: any, answer: any): number {
+    if (!answer || !sec.data) return 0;
+    const unitScore = sec.unit_score || 1;
+    if (sec.type === "text" || sec.type === "pdf_image" || sec.type === "photo") {
+      const userAnswer = (typeof answer === "string" ? answer : "").trim();
+      const wordScore = sec.data?.word_score || sec.max_score || 1;
+      const checkType = sec.data?.check_type || "exact";
+      if (checkType === "exact") return userAnswer.toLowerCase() === (sec.data?.correct_answer || "").toLowerCase() ? wordScore : 0;
+      if (checkType === "keywords" && sec.data?.keywords?.length > 0) { const threshold = sec.data?.threshold || 0; let found = 0; sec.data.keywords.forEach((kw: string) => { if (userAnswer.toLowerCase().includes(kw.toLowerCase())) found++; }); if (found < threshold) return 0; return Math.min(found * wordScore, sec.max_score || Infinity); }
+      if (checkType === "range") { const num = parseFloat(userAnswer.replace(",", ".")); if (isNaN(num)) return 0; return (num >= (sec.data?.range_min || 0) && num <= (sec.data?.range_max || 100)) ? wordScore : 0; }
+      if (checkType === "variants" && sec.data?.variants?.length > 0) { const normalized = userAnswer.toLowerCase().replace(/\s+/g, ""); return sec.data.variants.some((v: string) => v.replace(/\s+/g, "").toLowerCase() === normalized) ? wordScore : 0; }
+      return 0;
+    }
+    if (sec.type === "single_choice" && sec.data.questions) { let total = 0; sec.data.questions.forEach((q: any) => { if (answer[q.id] === q.correct) total += (q.full_score ?? 1); }); return total; }
+    if (sec.type === "multi_choice" && sec.data.questions) { let total = 0; sec.data.questions.forEach((q: any) => { const full = q.full_score ?? 1; const partial = q.partial_score ?? 0; const penalty = q.penalty ?? 0; const userAns = answer[q.id] || []; const correctAns = q.correct as number[]; let correct = 0, wrong = 0; userAns.forEach((ui: number) => { if (correctAns.includes(ui)) correct++; else wrong++; }); if (correct === correctAns.length && wrong === 0) total += full; else if (correct > 0) total += Math.max(0, partial * correct - wrong * penalty); }); return total; }
+    if (sec.type === "drag_drop" && sec.data.items) { let correct = 0; sec.data.items.forEach((item: any) => { if (answer.assignments?.[item.correctCategory]?.includes(item.content)) correct++; }); return correct * unitScore; }
+    if (sec.type === "assembly" && sec.data.correctOrder) { let correct = 0; const ans = answer || []; sec.data.correctOrder.forEach((id: string, idx: number) => { if (ans[idx] === id) correct++; }); return correct * unitScore; }
+    if (sec.type === "matching" && sec.data.pairs) { let correct = 0; sec.data.pairs.forEach((p: any) => { if (answer[p.id] === p.id) correct++; }); return correct * unitScore; }
+    if (sec.type === "ordering" && sec.data.steps) { let correct = 0; const ans = answer || []; sec.data.steps.forEach((s: any, idx: number) => { if (ans[idx] === s.id) correct++; }); return correct * unitScore; }
+    if (sec.type === "table_fill" && sec.data.cells) { let correct = 0; sec.data.cells.forEach((c: any) => { if ((answer?.[`${c.row}_${c.col}`] || "").trim().toLowerCase() === c.answer.trim().toLowerCase()) correct++; }); return correct * unitScore; }
+    return 0;
+  }
 
-  async function submitAnswer() { if (!uid || !homework) return; const finalScore = getScore(); const result = await addDoc(collection(db, "submissions"), { homework_id: id, student_id: uid, answer: homework.task_type === "drag_drop" ? assignments : null, test_answers: (homework.task_type === "single_choice" || homework.task_type === "multi_choice") ? testAnswers : null, assembly_answer: homework.task_type === "assembly" ? assemblyAnswer : null, matching_answer: homework.task_type === "matching" ? matchingAnswer : null, ordering_answer: homework.task_type === "ordering" ? orderingAnswer : null, table_answer: homework.task_type === "table_fill" ? tableAnswer : null, find_error_answer: homework.task_type === "find_error" ? findErrorAnswer : null, equation_answer: homework.task_type === "equation" ? equationAnswer : null, text_answer: homework.task_type === "text" ? textAnswer : null, file_answer: homework.task_type === "file_upload" ? fileAnswer : null, score: finalScore, submitted_at: new Date().toISOString(), status: "submitted" }); await updateDoc(doc(db, "homeworks", id), { submission: result.id, status: "done" }); setSubmitted(true); setScore(finalScore); }
+  async function submitAnswer() {
+    if (!uid || !homework) return;
+    const sections = homework.sections || []; const scores: Record<string, number> = {}; let totalScore = 0;
+    sections.forEach((sec: any) => { const s = calcSectionScore(sec, sectionAnswers[sec.id]); scores[sec.id] = Math.round(s); totalScore += s; });
+    const finalScore = Math.round(totalScore);
+    const result = await addDoc(collection(db, "submissions"), { homework_id: id, student_id: uid, section_answers: sectionAnswers, section_scores: scores, score: finalScore, submitted_at: new Date().toISOString(), status: "submitted" });
+    await updateDoc(doc(db, "homeworks", id), { submission: result.id, status: "done" });
+    if (homework.trial_type) {
+      await addDoc(collection(db, "exam_trials"), { tutor_id: homework.tutor_id, student_id: uid, student_name: homework.student_name || "", subject: homework.trial_subject || "chemistry", primary_score: finalScore, test_score: Math.round((finalScore / (homework.max_score || 1)) * 100), max_primary: homework.max_score || 1, date: new Date().toISOString().slice(0, 10), homework_id: id, created_at: new Date().toISOString() });
+    }
+    setSubmitted(true); setScore(finalScore); setSectionScores(scores);
+    if (finalScore > 0) { const xpEarned = Math.round(finalScore * 10); const profileRef = doc(db, "profiles", uid); const profileSnap = await getDoc(profileRef); if (profileSnap.exists()) { const cur = profileSnap.data().xp || 0; await updateDoc(profileRef, { xp: cur + xpEarned, level: Math.floor((cur + xpEarned) / 100) + 1 }); toast.success(`+${xpEarned} XP!`, { icon: "⭐" }); } }
+    toast.success(homework.trial_type ? "Пробник сдан!" : `Ответ отправлен! Результат: ${finalScore} из ${homework.max_score} баллов`);
+  }
+
+  async function submitReview() { if (!homework?.submission) return; const submissionRef = doc(db, "submissions", homework.submission); const sections = homework.sections || []; let totalScore = 0; sections.forEach((sec: any) => { totalScore += manualScores[sec.id] !== undefined ? manualScores[sec.id] : (sectionScores[sec.id] || 0); }); await updateDoc(submissionRef, { tutor_comment: tutorComment, manual_scores: manualScores, section_comments: sectionComments, score: Math.round(totalScore), status: "reviewed" }); toast.success("Проверка сохранена!"); }
+  async function returnForRework() { await updateDoc(doc(db, "homeworks", id), { status: "active", submission: null }); setSubmitted(false); setScore(null); setSectionAnswers({}); setSectionScores({}); setManualScores({}); setSectionComments({}); setTutorComment(""); toast.success("Отправлено на доработку!"); }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Загрузка...</div>;
   if (!homework) return <div className="min-h-screen flex items-center justify-center">Задание не найдено</div>;
-  const categories = homework.task_data?.categories || []; const unassignedItems = assignments["unassigned"] || [];
-  const COLORS = ["border-indigo-300 bg-indigo-50/50", "border-emerald-300 bg-emerald-50/50", "border-amber-300 bg-amber-50/50", "border-rose-300 bg-rose-50/50"];
+  if (homework.task_type !== "multi") return <div className="min-h-screen flex items-center justify-center text-gray-400">Это задание старого типа</div>;
 
-  return (<div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50"><div className="max-w-4xl mx-auto p-4 sm:p-6"><div className="flex items-center justify-between mb-6"><Link href={`/homeworks?uid=${uid}`} className="text-indigo-600 hover:text-indigo-800 transition font-medium">← Назад</Link><h1 className="text-xl sm:text-2xl font-bold text-gray-800">📝 {homework.title}</h1><div></div></div><div className="bg-white/90 backdrop-blur rounded-3xl shadow-xl p-6 border border-white mb-6">{homework.description && <p className="text-gray-600 mb-4">{homework.description}</p>}<div className="flex gap-4 text-sm text-gray-400 mb-4"><span>⭐ {homework.max_score} баллов</span></div>
+  const sections = homework.sections || [];
+  const section = sections[currentSection];
 
-{submitted && <div className="bg-emerald-50 text-emerald-700 p-4 rounded-2xl mb-4 text-center font-medium">✅ Ответ отправлен на проверку {score !== null && <span className="block mt-1">Результат: {score} из {homework.max_score} баллов</span>}</div>}
-{submitted && homework.explanation && (<div className="bg-amber-50 text-amber-800 p-4 rounded-2xl mb-4 text-sm">💡 <span className="font-medium">Пояснение:</span> {homework.explanation}</div>)}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
+        <div className="flex items-center justify-between mb-6">
+          <Link href={`/homeworks?uid=${uid}`} className="text-indigo-600 hover:text-indigo-800 transition font-medium">← Назад</Link>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">📝 {homework.title} {homework.trial_type && <span className="text-rose-500 text-sm">(Пробник)</span>}</h1>
+          <div></div>
+        </div>
 
-{submitted && homework.task_type === "drag_drop" && categories.map((cat: any) => (<div key={cat.id} className="mb-3 p-3 bg-gray-50 rounded-xl"><p className="font-medium text-sm">{cat.name}</p><div className="flex flex-wrap gap-1 mt-1">{(assignments[cat.id] || []).map((item: string, i: number) => (<span key={i} className={`px-2 py-0.5 rounded-lg text-xs ${homework.task_data?.items?.find((it: any) => it.content === item)?.correctCategory === cat.id ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{item}</span>))}</div></div>))}
-{submitted && (homework.task_type === "single_choice" || homework.task_type === "multi_choice") && homework.task_data?.questions?.map((q: any, qi: number) => (<div key={q.id} className="mb-3 p-3 bg-gray-50 rounded-xl"><p className="font-medium text-sm">{qi + 1}. {q.question}</p><p className="text-xs mt-1">Ваш ответ: <span className={JSON.stringify(testAnswers[q.id]) === JSON.stringify(q.correct) ? "text-emerald-600" : "text-red-600"}>{q.type === "single" ? q.options[testAnswers[q.id] as number] : (testAnswers[q.id] as number[])?.map((i: number) => q.options[i]).join(", ")}</span></p><p className="text-xs text-emerald-600">Правильно: {q.type === "single" ? q.options[q.correct as number] : (q.correct as number[])?.map((i: number) => q.options[i]).join(", ")}</p></div>))}
-{submitted && homework.task_type === "assembly" && (<div className="mb-3 p-3 bg-gray-50 rounded-xl"><p className="font-medium text-sm">Ваш порядок:</p><div className="flex flex-wrap gap-1 mt-1">{assemblyAnswer.map((content: string, i: number) => (<span key={i} className={`px-2 py-0.5 rounded-lg text-xs ${homework.task_data?.correctOrder?.[i] === homework.task_data?.fragments?.find((f: any) => f.content === content)?.id ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{content}</span>))}</div><p className="text-xs text-emerald-600 mt-1">Правильно: {homework.task_data?.correctOrder?.map((id: string) => homework.task_data?.fragments?.find((f: any) => f.id === id)?.content).join(" → ")}</p></div>)}
-{submitted && homework.task_type === "matching" && homework.task_data?.pairs?.map((p: any) => (<div key={p.id} className="mb-2 p-2 bg-gray-50 rounded-lg flex items-center gap-2 text-sm"><span className="flex-1">{p.left}</span><span>→</span><span className={matchingAnswer[p.id] === p.id ? "text-emerald-600" : "text-red-600"}>{homework.task_data?.pairs?.find((x: any) => x.id === matchingAnswer[p.id])?.right || "—"}</span>{matchingAnswer[p.id] !== p.id && <span className="text-emerald-600 text-xs">(правильно: {p.right})</span>}</div>))}
-{submitted && homework.task_type === "ordering" && (<div className="mb-3 p-3 bg-gray-50 rounded-xl"><p className="font-medium text-sm">Ваш порядок:</p>{orderingAnswer.map((id: string, i: number) => { const step = homework.task_data?.steps?.find((s: any) => s.id === id); const isCorrect = homework.task_data?.steps?.[i]?.id === id; return (<div key={id} className={`text-xs mt-1 ${isCorrect ? "text-emerald-600" : "text-red-600"}`}>{i + 1}. {step?.content}</div>); })}<p className="text-xs text-emerald-600 mt-1">Правильно: {homework.task_data?.steps?.map((s: any) => s.content).join(" → ")}</p></div>)}
-{submitted && homework.task_type === "table_fill" && homework.task_data?.cells?.map((c: any) => { const userAns = tableAnswer[`${c.row}_${c.col}`] || ""; const isCorrect = userAns.trim().toLowerCase() === c.answer.trim().toLowerCase(); return (<div key={`${c.row}_${c.col}`} className="mb-2 p-2 bg-gray-50 rounded-lg text-sm flex items-center gap-2"><span>Ячейка [{c.row + 1}, {c.col + 1}]:</span><span className={isCorrect ? "text-emerald-600" : "text-red-600"}>{userAns || "—"}</span>{!isCorrect && <span className="text-emerald-600 text-xs">(правильно: {c.answer})</span>}</div>); })}
-{submitted && homework.task_type === "find_error" && (<div className="mb-3 p-3 bg-gray-50 rounded-xl text-sm"><p>Ваш ответ: <span className={findErrorAnswer.trim().toLowerCase() === homework.task_data?.correctText?.trim().toLowerCase() ? "text-emerald-600" : "text-red-600"}>{findErrorAnswer || "—"}</span></p><p className="text-emerald-600">Правильно: {homework.task_data?.correctText}</p></div>)}
-{submitted && homework.task_type === "file_upload" && fileAnswer.length > 0 && (<div className="mb-3 p-3 bg-gray-50 rounded-xl text-sm">📎 Загруженные файлы: {fileAnswer.map((url, i) => (<a key={i} href={url} target="_blank" className="block text-indigo-600 hover:underline">Файл {i + 1}</a>))}</div>)}
+        <div className="bg-white/90 backdrop-blur rounded-3xl shadow-xl p-6 border border-white mb-6">
+          {homework.description && <p className="text-gray-600 mb-4">{homework.description}</p>}
+          {submitted && <div className="bg-emerald-50 text-emerald-700 p-4 rounded-2xl mb-4 text-center font-medium">✅ {homework.trial_type ? "Пробник сдан!" : "Ответ отправлен!"} {score !== null && <span className="block mt-1">Результат: {score} из {homework.max_score} баллов</span>}</div>}
+          {submitted && homework.explanation && <div className="bg-amber-50 text-amber-800 p-4 rounded-2xl mb-4 text-sm">💡 {homework.explanation}</div>}
+          {submitted && tutorComment && <div className="bg-blue-50 text-blue-800 p-4 rounded-2xl mb-4 text-sm">💬 {tutorComment}</div>}
 
-{!submitted && homework.task_type === "drag_drop" && (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}><div className="space-y-6"><div><p className="text-sm text-gray-500 mb-3">🖱️ Перетащите элементы в нужные категории:</p><div className="flex flex-wrap gap-3 p-4 bg-gray-100 rounded-2xl min-h-[60px]">{unassignedItems.length === 0 && <p className="text-sm text-gray-400 w-full text-center">Все элементы распределены ✅</p>}{unassignedItems.map((content: string, idx: number) => (<DraggableItem key={idx} id={content + "_" + idx} content={content} />))}</div></div><div className="flex flex-wrap gap-4">{categories.map((cat: any, idx: number) => (<DroppableZone key={cat.id} id={cat.id} name={cat.name} items={assignments[cat.id] || []} color={COLORS[idx % COLORS.length]} onReturn={returnToUnassigned} />))}</div></div><DragOverlay>{activeId ? <div className="px-4 py-3 bg-white rounded-xl shadow-2xl border-2 border-indigo-400 font-medium cursor-grabbing">{activeContent}</div> : null}</DragOverlay></DndContext>)}
-{!submitted && (homework.task_type === "single_choice" || homework.task_type === "multi_choice") && homework.task_data && (<TestDisplay data={homework.task_data} answers={testAnswers} setAnswers={setTestAnswers} />)}
-{!submitted && homework.task_type === "assembly" && homework.task_data && (<AssemblyDisplay data={homework.task_data} answer={assemblyAnswer} setAnswer={setAssemblyAnswer} />)}
-{!submitted && homework.task_type === "matching" && homework.task_data && (<MatchingDisplay data={homework.task_data} answer={matchingAnswer} setAnswer={setMatchingAnswer} />)}
-{!submitted && homework.task_type === "ordering" && homework.task_data && (<OrderingDisplay data={homework.task_data} answer={orderingAnswer} setAnswer={setOrderingAnswer} />)}
-{!submitted && homework.task_type === "table_fill" && homework.task_data && (<TableFillDisplay data={homework.task_data} answer={tableAnswer} setAnswer={setTableAnswer} />)}
-{!submitted && homework.task_type === "find_error" && homework.task_data && (<FindErrorDisplay data={homework.task_data} answer={findErrorAnswer} setAnswer={setFindErrorAnswer} hint={showHint} setHint={setShowHint} />)}
-{!submitted && homework.task_type === "equation" && (<EquationDisplay data={homework.task_data} answer={equationAnswer} setAnswer={setEquationAnswer} />)}
-{!submitted && homework.task_type === "text" && (<TextDisplay answer={textAnswer} setAnswer={setTextAnswer} />)}
-{!submitted && homework.task_type === "file_upload" && homework.task_data && (<FileUploadDisplay data={homework.task_data} answer={fileAnswer} setAnswer={setFileAnswer} />)}
-{!submitted && (<div className="flex gap-3 mt-6">{homework.task_type === "drag_drop" && <button onClick={resetAll} className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-300 transition">🔄 Сбросить всё</button>}<button onClick={submitAnswer} className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-medium hover:bg-emerald-600 transition">📤 Отправить ответ</button></div>)}
-</div></div></div>);
+          <SectionTabs sections={sections} currentSection={currentSection} setCurrentSection={setCurrentSection} sectionAnswers={sectionAnswers} submitted={submitted} sectionScores={sectionScores} />
+
+          {submitted && (
+            <div className="space-y-3 mt-4">
+              {sections.map((sec: any, idx: number) => { if (idx !== currentSection) return null; const ans = sectionAnswers[sec.id]; const sc = manualScores[sec.id] !== undefined ? manualScores[sec.id] : (sectionScores[sec.id] || 0); const comment = sectionComments[sec.id] || ""; return (
+                <div key={sec.id} className="p-4 bg-gray-50 rounded-xl border">
+                  <div className="flex items-center justify-between mb-3"><h4 className="font-medium text-sm">{sec.title || `Задание ${idx + 1}`}</h4><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sc >= sec.max_score ? "bg-emerald-100 text-emerald-700" : sc > 0 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{sc}/{sec.max_score} баллов</span></div>
+                  {sec.explanation && <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg"><p className="text-xs font-medium text-amber-800 mb-1">💡 Пояснение:</p><p className="text-sm text-amber-700">{sec.explanation}</p></div>}
+                  {(sec.type === 'pdf_image' || sec.type === 'photo') && (<div>{sec.data?.image && <img src={sec.data.image} alt="Задание" className="w-full rounded-lg border mb-3" />}<div className="mb-3"><p className="text-xs font-medium text-gray-500 mb-1">📝 Ваш ответ:</p><div className="p-3 bg-white rounded-lg text-sm whitespace-pre-wrap border">{ans || "Нет ответа"}</div></div>{sec.data?.correct_answer && <div className="mb-2 p-2 bg-emerald-50 rounded-lg"><p className="text-xs font-medium text-emerald-700">✅ Правильный ответ:</p><p className="text-sm text-emerald-600">{sec.data.correct_answer}</p></div>}</div>)}
+                  {sec.type === "text" && (<div><div className="mb-3"><p className="text-xs font-medium text-gray-500 mb-1">📝 Ваш ответ:</p><div className="p-3 bg-white rounded-lg text-sm whitespace-pre-wrap border">{ans || "Нет ответа"}</div></div>{sec.data?.check_type === "exact" && sec.data?.correct_answer && <div className="mb-2 p-2 bg-emerald-50 rounded-lg"><p className="text-xs font-medium text-emerald-700">✅ Ответ:</p><p className="text-sm text-emerald-600">{sec.data.correct_answer}</p></div>}{sec.data?.check_type === "keywords" && sec.data?.keywords && <div className="mb-2 p-2 bg-emerald-50 rounded-lg"><p className="text-xs font-medium text-emerald-700">✅ Ключевые слова:</p><p className="text-sm text-emerald-600">{sec.data.keywords.join(", ")}</p></div>}</div>)}
+                  {(sec.type === "single_choice" || sec.type === "multi_choice") && sec.data?.questions?.map((q: any, qi: number) => { const userAns = sec.type === "single_choice" ? ans?.[q.id] : (ans?.[q.id] || []); const correctAns = q.correct; const isCorrect = sec.type === "single_choice" ? userAns === correctAns : Array.isArray(correctAns) && Array.isArray(userAns) && userAns.length === correctAns.length && userAns.every((v: number) => correctAns.includes(v)); return (<div key={q.id} className="mb-2 p-2 bg-white rounded-lg border"><p className="text-sm font-medium">{qi + 1}. {q.question}</p><p className={`text-xs mt-1 ${isCorrect ? "text-emerald-600" : "text-red-600"}`}>Ваш ответ: {sec.type === "single_choice" ? (q.options[userAns] || "—") : (userAns as number[])?.map((i: number) => q.options[i]).join(", ") || "—"}</p>{!isCorrect && <p className="text-xs text-emerald-600">Правильно: {sec.type === "single_choice" ? q.options[correctAns as number] : (correctAns as number[])?.map((i: number) => q.options[i]).join(", ")}</p>}</div>); })}
+                  {(role === "tutor" || (role === "student" && (manualScores[sec.id] !== undefined || sectionComments[sec.id]))) && (<div className="mt-3 pt-3 border-t space-y-2">{role === "tutor" && <div className="flex items-center gap-2"><label className="text-xs font-medium">Баллы:</label><input type="number" value={manualScores[sec.id] !== undefined ? manualScores[sec.id] : sc} onChange={(e) => setManualScores({ ...manualScores, [sec.id]: parseInt(e.target.value) || 0 })} min={0} max={sec.max_score} className="w-16 border rounded-lg p-1 text-xs" /><span className="text-xs text-gray-400">/ {sec.max_score}</span></div>}{role === "student" && manualScores[sec.id] !== undefined && <div className="flex items-center gap-2"><span className="text-xs font-medium">✅ Баллы преподавателя:</span><span className="text-sm font-bold text-indigo-600">{manualScores[sec.id]} / {sec.max_score}</span></div>}{sectionComments[sec.id] && <div><label className="text-xs font-medium">💬 Комментарий:</label>{role === "tutor" ? <textarea value={comment} onChange={(e) => setSectionComments({ ...sectionComments, [sec.id]: e.target.value })} rows={2} className="w-full border rounded-lg p-1.5 text-xs mt-1" /> : <p className="text-sm text-gray-700 mt-1 bg-blue-50 p-2 rounded-lg border">{sectionComments[sec.id]}</p>}</div>}</div>)}
+                </div>
+              ); })}
+              {role === "tutor" && (<div className="space-y-2 mt-2"><div><label className="text-xs font-medium">Общий комментарий:</label><textarea value={tutorComment} onChange={(e) => setTutorComment(e.target.value)} rows={2} className="w-full border rounded-lg p-1.5 text-xs mt-1" /></div><button onClick={submitReview} className="w-full bg-indigo-500 text-white py-2 rounded-xl text-sm font-medium hover:bg-indigo-600">💾 Сохранить проверку</button><button onClick={returnForRework} className="w-full bg-amber-500 text-white py-2 rounded-xl text-sm font-medium hover:bg-amber-600">🔄 На доработку</button></div>)}
+            </div>
+          )}
+
+          {!submitted && section && (
+            <div className="bg-gray-50 rounded-2xl p-5">
+              <h3 className="font-semibold mb-2">{section.title || `Задание ${currentSection + 1}`} <span className="text-xs text-gray-400">({section.max_score} баллов)</span></h3>
+              {section.task_text && <div className="mb-3 p-3 bg-white rounded-lg text-sm whitespace-pre-wrap">{section.task_text}</div>}
+              {(section.type === 'pdf_image' || section.type === 'photo') && section.data?.image && (<div className="space-y-3"><img src={section.data.image} alt="Задание" className="w-full rounded-lg border" /><div className="flex items-start gap-2"><textarea value={sectionAnswers[section.id] || ""} onChange={(e) => updateAnswer(section.id, e.target.value)} rows={3} placeholder="Ваш ответ..." className="flex-1 border rounded-lg p-3 text-sm" /><ChemicalToolbar onInsert={(s) => insertSymbol(`sec-pdf-${section.id}`, s, sectionAnswers[section.id] || "", (v) => updateAnswer(section.id, v))} /></div></div>)}
+              {section.type === "text" && (<div className="flex items-start gap-2"><textarea value={sectionAnswers[section.id] || ""} onChange={(e) => updateAnswer(section.id, e.target.value)} rows={5} placeholder="Ваш ответ..." className="flex-1 border rounded-lg p-3 text-sm" /><ChemicalToolbar onInsert={(s) => insertSymbol(`sec-text-${section.id}`, s, sectionAnswers[section.id] || "", (v) => updateAnswer(section.id, v))} /></div>)}
+              {(section.type === "single_choice" || section.type === "multi_choice") && section.data?.questions?.map((q: any, qi: number) => (<div key={q.id} className="mb-3"><p className="font-medium text-sm mb-2">{qi + 1}. {q.question}</p>{q.options.map((opt: string, oi: number) => { const ans = sectionAnswers[section.id] || {}; const isSelected = section.type === "single_choice" ? ans[q.id] === oi : (ans[q.id] || []).includes(oi); return (<label key={oi} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer ${isSelected ? "bg-indigo-50 border border-indigo-300" : ""}`}><input type={section.type === "single_choice" ? "radio" : "checkbox"} checked={isSelected} onChange={() => { if (section.type === "single_choice") updateAnswer(section.id, { ...ans, [q.id]: oi }); else { const arr = ans[q.id] || []; updateAnswer(section.id, { ...ans, [q.id]: arr.includes(oi) ? arr.filter((x: number) => x !== oi) : [...arr, oi] }); } }} className="text-indigo-600" /><span className="text-sm">{opt}</span></label>); })}</div>))}
+              {section.type === "drag_drop" && section.data?.categories && <DragDropSection section={section} answer={sectionAnswers[section.id] || {}} setAnswer={(a) => updateAnswer(section.id, a)} />}
+              {section.type === "assembly" && section.data?.fragments && (<div className="space-y-2"><p className="text-sm text-gray-500">🧩 Соберите ответ:</p><div className="flex flex-wrap gap-2">{(section.data.fragments || []).map((f: any) => (<button key={f.id} onClick={() => { const cur = sectionAnswers[section.id] || []; updateAnswer(section.id, [...cur, f.content]); }} className={`px-3 py-1.5 rounded-lg text-sm border ${(sectionAnswers[section.id] || []).includes(f.content) ? "opacity-30" : "bg-white hover:border-indigo-300"}`} disabled={(sectionAnswers[section.id] || []).includes(f.content)}>{f.content}</button>))}</div><div className="p-3 bg-white rounded-xl border border-dashed border-indigo-300 min-h-[40px]">{(sectionAnswers[section.id] || []).map((c: string, i: number) => (<span key={i} onClick={() => { const cur = sectionAnswers[section.id] || []; updateAnswer(section.id, cur.filter((x: string) => x !== c)); }} className="inline-block px-2 py-1 bg-indigo-100 rounded text-sm mr-1 mb-1 cursor-pointer hover:bg-red-100">{c}</span>))}</div></div>)}
+              {section.type === "matching" && section.data?.pairs?.map((p: any) => (<div key={p.id} className="flex items-center gap-2 mb-2 text-sm"><span className="flex-1">{p.left}</span><span>→</span><select value={(sectionAnswers[section.id] || {})[p.id] || ""} onChange={(e) => updateAnswer(section.id, { ...(sectionAnswers[section.id] || {}), [p.id]: e.target.value })} className="border rounded p-1.5 text-sm flex-1"><option value="">Выбрать</option>{section.data.pairs.map((r: any) => (<option key={r.id} value={r.id}>{r.right}</option>))}</select></div>))}
+              {section.type === "ordering" && section.data?.steps && (<div className="space-y-2">{section.data.steps.map((s: any) => (<button key={s.id} onClick={() => { const cur = sectionAnswers[section.id] || []; updateAnswer(section.id, [...cur, s.id]); }} className={`w-full text-left p-2 rounded-lg text-sm border ${(sectionAnswers[section.id] || []).includes(s.id) ? "opacity-30" : "bg-white hover:border-indigo-300"}`} disabled={(sectionAnswers[section.id] || []).includes(s.id)}>{s.content}</button>))}<div className="p-3 bg-white rounded-xl border border-dashed border-indigo-300">{(sectionAnswers[section.id] || []).map((id: string, i: number) => { const step = section.data.steps.find((s: any) => s.id === id); return (<div key={id} onClick={() => { const cur = sectionAnswers[section.id] || []; updateAnswer(section.id, cur.filter((x: string) => x !== id)); }} className="p-1 text-sm cursor-pointer hover:bg-red-50">{i + 1}. {step?.content}</div>); })}</div></div>)}
+              {section.type === "table_fill" && section.data?.cells && (<div className="overflow-x-auto"><table className="w-full border-collapse"><thead><tr><th className="border p-1 text-xs">#</th>{section.data.headers?.map((h: string, ci: number) => (<th key={ci} className="border p-1 text-xs">{h}</th>))}</tr></thead><tbody>{Array.from({ length: section.data.rows || 3 }).map((_, ri) => (<tr key={ri}><td className="border p-1 text-xs text-center">{ri + 1}</td>{Array.from({ length: section.data.cols || 3 }).map((_, ci) => { const cell = section.data.cells?.find((c: any) => c.row === ri && c.col === ci); return cell?.answer ? (<td key={ci} className="border p-1"><input value={(sectionAnswers[section.id] || {})[`${ri}_${ci}`] || ""} onChange={(e) => updateAnswer(section.id, { ...(sectionAnswers[section.id] || {}), [`${ri}_${ci}`]: e.target.value })} className="w-full border rounded p-1 text-xs" /></td>) : (<td key={ci} className="border p-1 text-xs text-center text-gray-400">—</td>); })}</tr>))}</tbody></table></div>)}
+            </div>
+          )}
+
+          {!submitted && (
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setCurrentSection(Math.max(0, currentSection - 1))} disabled={currentSection === 0} className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 disabled:opacity-50">← Назад</button>
+              {currentSection < sections.length - 1 ? (<button onClick={() => setCurrentSection(currentSection + 1)} className="flex-1 py-3 bg-indigo-500 text-white rounded-xl font-medium hover:bg-indigo-600">Далее →</button>) : (<button onClick={submitAnswer} className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600">📤 Отправить</button>)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
