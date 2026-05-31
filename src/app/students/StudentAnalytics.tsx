@@ -12,6 +12,16 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig); const db = getFirestore(app);
 
+const CHEMISTRY_TOPICS: Record<string, string> = {
+  "1": "Строение атома", "2": "Периодический закон", "3": "Хим. связь",
+  "23": "ОВР", "24": "Электролиз", "26": "Расчёты по формулам",
+  "27": "Расчёты по уравнениям", "28": "Массовая доля", "29": "Термохимия", "34": "Комбинированные задачи"
+};
+const BIOLOGY_TOPICS: Record<string, string> = {
+  "3": "Хим. состав клетки", "4": "Обмен веществ", "6": "Биосинтез белка",
+  "9": "Генетика", "25": "Нервная система", "27": "Кровь, иммунитет", "28": "Пищеварение"
+};
+
 export default function StudentAnalytics({ studentId }: { studentId: string }) {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [homeworks, setHomeworks] = useState<any[]>([]);
@@ -57,6 +67,32 @@ export default function StudentAnalytics({ studentId }: { studentId: string }) {
   const latestBio = bioTrials.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
   const barData = [{ name: '🧪 Химия', балл: latestChem?.test_score || 0 }, { name: '🧬 Биология', балл: latestBio?.test_score || 0 }];
 
+  // Слабые темы
+  const topicStats: Record<string, { correct: number; total: number }> = {};
+  submissions.forEach(sub => {
+    const hw = homeworks.find(h => h.id === sub.homework_id);
+    hw?.sections?.forEach((sec: any) => {
+      const score = sub.section_scores?.[sec.id];
+      if (score !== undefined && sec.taskNumber) {
+        const num = String(sec.taskNumber);
+        if (!topicStats[num]) topicStats[num] = { correct: 0, total: 0 };
+        topicStats[num].total++;
+        if (score >= sec.max_score) topicStats[num].correct++;
+      }
+    });
+  });
+
+  const weakTopics = Object.entries(topicStats)
+    .filter(([_, stats]) => stats.total >= 2)
+    .map(([num, stats]) => ({
+      number: num,
+      name: CHEMISTRY_TOPICS[num] || BIOLOGY_TOPICS[num] || `Тема №${num}`,
+      percent: Math.round((stats.correct / stats.total) * 100),
+      total: stats.total,
+    }))
+    .sort((a, b) => a.percent - b.percent)
+    .slice(0, 5);
+
   return (
     <div className="space-y-6">
       {trials.length > 0 && (
@@ -88,6 +124,24 @@ export default function StudentAnalytics({ studentId }: { studentId: string }) {
         <div className="bg-white/80 rounded-2xl p-5 shadow-sm border"><h3 className="font-semibold mb-4">📈 Успеваемость + пробники</h3>{allScoreData.length > 0 ? <ResponsiveContainer width="100%" height={220}><LineChart data={allScoreData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} domain={[0, 100]} /><Tooltip /><Line type="monotone" dataKey="балл" stroke="#6366f1" strokeWidth={2} dot={{ r: 4 }} /></LineChart></ResponsiveContainer> : <p className="text-gray-400 text-sm text-center py-8">Нет данных</p>}</div>
         <div className="bg-white/80 rounded-2xl p-5 shadow-sm border"><h3 className="font-semibold mb-4">🧪 Последние пробники</h3><ResponsiveContainer width="100%" height={220}><BarChart data={barData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 11 }} domain={[0, 100]} /><Tooltip /><Bar dataKey="балл" fill="#f43f5e" radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer></div>
       </div>
+      {weakTopics.length > 0 && (
+        <div className="bg-white/80 rounded-2xl p-5 shadow-sm border">
+          <h3 className="font-semibold text-gray-700 mb-4">⚠️ Слабые темы</h3>
+          <div className="space-y-3">
+            {weakTopics.map((topic) => (
+              <div key={topic.number}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-600 truncate flex-1 mr-2">№{topic.number} {topic.name}</span>
+                  <span className={`font-medium ${topic.percent >= 70 ? 'text-emerald-600' : topic.percent >= 40 ? 'text-amber-600' : 'text-red-600'}`}>{topic.percent}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div className={`h-2 rounded-full ${topic.percent >= 70 ? 'bg-emerald-500' : topic.percent >= 40 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${topic.percent}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

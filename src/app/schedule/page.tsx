@@ -29,6 +29,8 @@ function ScheduleContent() {
   const [libraryItems, setLibraryItems] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false); const [editLesson, setEditLesson] = useState<any>(null);
   const [currentWeek, setCurrentWeek] = useState(0);
+  const [showReport, setShowReport] = useState(false);
+  const [reportText, setReportText] = useState("");
   const isTutor = role === "tutor";
 
   useEffect(() => { if (!uid) return; const q = query(collection(db, "lessons"), where(isTutor ? "tutor_id" : "student_id", "==", uid)); const unsub = onSnapshot(q, (snap) => setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() })))); return () => unsub(); }, [uid, isTutor]);
@@ -70,6 +72,11 @@ function ScheduleContent() {
       }
     }
     await updateDoc(doc(db, "lessons", lesson.id), { status: "completed" });
+    
+    const report = `📋 Отчёт о занятии\n\n📅 ${new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}\n⏰ ${new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – ${new Date(lesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}\n🧑‍🎓 Ученик: ${lesson.student_name || 'Не указан'}\n📚 Предмет: ${lesson.subject === 'chemistry' ? 'Химия' : 'Биология'}\n✅ Статус: Проведено${lesson.hw_template_id ? '\n📝 ДЗ: Отправлено' : ''}`;
+    
+    setReportText(report);
+    setShowReport(true);
     toast.success("Занятие проведено!");
   }
 
@@ -99,6 +106,7 @@ function ScheduleContent() {
           {dayNames.map((day) => (<div key={day} className="text-center font-semibold text-xs sm:text-sm text-gray-500 py-2">{day}</div>))}
           {weekDates.map((date, idx) => { const dateLessons = getLessonsForDate(date); const isToday = date.toDateString() === today.toDateString(); return (<div key={idx} className={`min-h-[120px] rounded-2xl p-2 border-2 transition ${isToday ? "border-indigo-400 bg-indigo-50/50" : "border-transparent bg-white/60 hover:border-gray-200"}`}><div className={`text-center text-sm font-bold mb-2 ${isToday ? "text-indigo-600" : "text-gray-600"}`}>{date.getDate()}</div><div className="space-y-1">{dateLessons.map((l: any) => (<div key={l.id} className={`p-1.5 rounded-lg text-xs cursor-pointer transition group relative ${l.subject === "chemistry" ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`} title={`${l.subject === "chemistry" ? "🧪" : "🧬"} ${l.student_name || ""} — ${new Date(l.start_time).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`}><div className="font-medium truncate">{l.subject === "chemistry" ? "🧪" : "🧬"} {l.student_name}</div><div className="text-[10px] opacity-70">{new Date(l.start_time).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div>{l.hw_template_id && <div className="text-[10px]">📋 ДЗ привязано</div>}<div className="absolute top-0 right-0 hidden group-hover:flex gap-0.5 bg-white rounded-lg p-0.5 shadow z-10">{l.status === "scheduled" && <><button onClick={() => setStatus(l)} className="p-0.5 text-xs" title="Проведено">✅</button><button onClick={() => cancelLesson(l.id)} className="p-0.5 text-xs" title="Отменить">❌</button></>}<button onClick={() => { setEditLesson(l); setShowForm(true); }} className="p-0.5 text-xs">✏️</button><button onClick={() => deleteLesson(l.id)} className="p-0.5 text-xs">🗑️</button></div></div>))}</div></div>); })}
         </div>
+
         {showForm && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => { setShowForm(false); setEditLesson(null); }}>
             <div className="bg-white rounded-3xl shadow-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
@@ -111,6 +119,19 @@ function ScheduleContent() {
                 <div><label className="block text-sm font-medium mb-1">📋 Шаблон ДЗ (из библиотеки)</label><select name="hw_template" defaultValue={editLesson?.hw_template_id || ""} className="w-full border rounded-xl p-3"><option value="">Не привязано</option>{libraryItems.map((item) => (<option key={item.id} value={item.id}>{item.title || "Без названия"} ({item.sections?.length || 0} зад.)</option>))}</select></div>
                 <div className="flex gap-3"><button type="submit" className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-medium hover:bg-emerald-600">{editLesson ? "💾 Сохранить" : "✅ Создать"}</button><button type="button" onClick={() => { setShowForm(false); setEditLesson(null); }} className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-300">Отмена</button></div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {showReport && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowReport(false)}>
+            <div className="bg-white rounded-3xl shadow-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4"><h2 className="font-bold text-lg">📋 Отчёт о занятии</h2><button onClick={() => setShowReport(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button></div>
+              <pre className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-xl p-4 mb-4">{reportText}</pre>
+              <div className="flex gap-2">
+                <button onClick={() => { navigator.clipboard.writeText(reportText); toast.success("Скопировано!"); }} className="flex-1 bg-indigo-500 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-600">📋 Копировать</button>
+                <button onClick={() => { window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(reportText)}`, '_blank'); }} className="flex-1 bg-blue-500 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-blue-600">📧 Отправить</button>
+              </div>
             </div>
           </div>
         )}

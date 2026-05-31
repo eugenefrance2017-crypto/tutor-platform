@@ -29,14 +29,6 @@ function ChemicalToolbar({ onInsert }: { onInsert: (symbol: string) => void }) {
     </div>
   );
 }
-function insertSymbol(textareaId: string, symbol: string, currentValue: string, setValue: (v: string) => void) {
-  const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
-  if (!textarea) { setValue(currentValue + symbol); return; }
-  const start = textarea.selectionStart, end = textarea.selectionEnd;
-  const newText = currentValue.substring(0, start) + symbol + currentValue.substring(end);
-  setValue(newText);
-  setTimeout(() => { textarea.focus(); textarea.setSelectionRange(start + symbol.length, start + symbol.length); }, 0);
-}
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4", authDomain: "tutor-platform-a5e37.firebaseapp.com",
@@ -60,7 +52,18 @@ function TestEditor({ onSave, initialData }: { onSave: (data: any) => void; init
   function addOption(qId: string) { if (!newOpt.trim()) return; setQuestions(questions.map((q) => q.id === qId ? { ...q, options: [...q.options, newOpt] } : q)); setNewOpt(""); }
   function removeOption(qId: string, idx: number) { setQuestions(questions.map((q) => q.id === qId ? { ...q, options: q.options.filter((_, i) => i !== idx) } : q)); }
   function removeQuestion(qId: string) { setQuestions(questions.filter((q) => q.id !== qId)); }
-  return (<div className="space-y-4"><h3 className="font-semibold">📝 Редактор теста</h3>{questions.map((q, qi) => (<div key={q.id} className="bg-gray-50 rounded-2xl p-4 space-y-3"><div className="flex items-center justify-between"><span className="font-medium text-sm">Вопрос {qi + 1}</span><button type="button" onClick={() => removeQuestion(q.id)} className="text-red-400 text-sm">Удалить</button></div><div className="flex items-start gap-2"><ChemicalToolbar onInsert={(s) => insertSymbol(`q-${q.id}`, s, q.question, (v) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, question: v } : x)))} /><textarea id={`q-${q.id}`} value={q.question} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, question: e.target.value } : x))} placeholder="Текст вопроса" className="flex-1 border rounded-lg p-2 text-sm" /></div><div className="flex gap-2 items-center"><select value={q.type} onChange={(e) => { const newType = e.target.value as "single" | "multi"; setQuestions(questions.map((x) => x.id === q.id ? { ...x, type: newType, correct: newType === "single" ? 0 : [] } : x)); }} className="border rounded-lg p-1 text-xs"><option value="single">🔘 Один ответ</option><option value="multi">☑️ Несколько ответов</option></select></div><div className="grid grid-cols-3 gap-1"><div><label className="text-[10px] text-gray-400">Полный балл</label><input type="number" value={q.full_score ?? 1} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, full_score: parseInt(e.target.value) || 1 } : x))} min={0} className="w-full border rounded p-0.5 text-xs" /></div><div><label className="text-[10px] text-gray-400">Частичный</label><input type="number" value={q.partial_score ?? 0} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, partial_score: parseInt(e.target.value) || 0 } : x))} min={0} className="w-full border rounded p-0.5 text-xs" /></div><div><label className="text-[10px] text-gray-400">Штраф</label><input type="number" value={q.penalty ?? 0} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, penalty: parseInt(e.target.value) || 0 } : x))} min={0} className="w-full border rounded p-0.5 text-xs" /></div></div><div className="space-y-1">{q.options.map((opt, oi) => { const isCorrect = q.type === "single" ? q.correct === oi : Array.isArray(q.correct) && (q.correct as number[]).includes(oi); return (<div key={oi} className="flex items-center gap-2"><input type={q.type === "single" ? "radio" : "checkbox"} checked={isCorrect} onChange={() => { if (q.type === "single") setQuestions(questions.map((x) => x.id === q.id ? { ...x, correct: oi } : x)); else { const cur = (Array.isArray(q.correct) ? q.correct as number[] : []); const newCorrect = cur.includes(oi) ? cur.filter((c) => c !== oi) : [...cur, oi]; setQuestions(questions.map((x) => x.id === q.id ? { ...x, correct: newCorrect } : x)); } }} className="text-indigo-600" /><textarea value={opt} onChange={(e) => { const newOptions = [...q.options]; newOptions[oi] = e.target.value; setQuestions(questions.map((x) => x.id === q.id ? { ...x, options: newOptions } : x)); }} className="flex-1 border rounded p-1 text-sm" /><ChemicalToolbar onInsert={(s) => insertSymbol(`opt-${q.id}-${oi}`, s, opt, (v) => { const newOptions = [...q.options]; newOptions[oi] = v; setQuestions(questions.map((x) => x.id === q.id ? { ...x, options: newOptions } : x)); })} /><button type="button" onClick={() => removeOption(q.id, oi)} className="text-red-400 text-xs">×</button></div>); })}<div className="flex gap-2"><input value={newOpt} onChange={(e) => setNewOpt(e.target.value)} placeholder="Вариант ответа" className="flex-1 border rounded-lg p-1 text-xs" /><button type="button" onClick={() => addOption(q.id)} className="px-2 py-1 bg-indigo-500 text-white rounded text-xs">+</button></div></div></div>))}<div className="flex gap-2"><input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="Новый вопрос" className="flex-1 border rounded-lg p-2 text-sm" /><button type="button" onClick={addQuestion} className="px-3 py-2 bg-indigo-500 text-white rounded-lg text-sm">+ Вопрос</button></div><button type="button" onClick={() => onSave({ questions })} className="w-full bg-emerald-500 text-white py-2 rounded-xl text-sm font-medium hover:bg-emerald-600">✅ Готово</button></div>);
+  
+  function insertAtCursor(id: string, symbol: string, current: string, setter: (v: string) => void) {
+    const ta = document.getElementById(id) as HTMLTextAreaElement;
+    if (ta) {
+      const st = ta.selectionStart, en = ta.selectionEnd;
+      const nv = current.substring(0, st) + symbol + current.substring(en);
+      setter(nv);
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(st + symbol.length, st + symbol.length); }, 0);
+    } else { setter(current + symbol); }
+  }
+
+  return (<div className="space-y-4"><h3 className="font-semibold">📝 Редактор теста</h3>{questions.map((q, qi) => (<div key={q.id} className="bg-gray-50 rounded-2xl p-4 space-y-3"><div className="flex items-center justify-between"><span className="font-medium text-sm">Вопрос {qi + 1}</span><button type="button" onClick={() => removeQuestion(q.id)} className="text-red-400 text-sm">Удалить</button></div><div className="flex items-start gap-2"><ChemicalToolbar onInsert={(s) => insertAtCursor(`q-${q.id}`, s, q.question, (v) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, question: v } : x)))} /><textarea id={`q-${q.id}`} value={q.question} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, question: e.target.value } : x))} placeholder="Текст вопроса" className="flex-1 border rounded-lg p-2 text-sm" /></div><div className="flex gap-2 items-center"><select value={q.type} onChange={(e) => { const newType = e.target.value as "single" | "multi"; setQuestions(questions.map((x) => x.id === q.id ? { ...x, type: newType, correct: newType === "single" ? 0 : [] } : x)); }} className="border rounded-lg p-1 text-xs"><option value="single">🔘 Один ответ</option><option value="multi">☑️ Несколько ответов</option></select></div><div className="grid grid-cols-3 gap-1"><div><label className="text-[10px] text-gray-400">Полный балл</label><input type="number" value={q.full_score ?? 1} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, full_score: parseInt(e.target.value) || 1 } : x))} min={0} className="w-full border rounded p-0.5 text-xs" /></div><div><label className="text-[10px] text-gray-400">Частичный</label><input type="number" value={q.partial_score ?? 0} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, partial_score: parseInt(e.target.value) || 0 } : x))} min={0} className="w-full border rounded p-0.5 text-xs" /></div><div><label className="text-[10px] text-gray-400">Штраф</label><input type="number" value={q.penalty ?? 0} onChange={(e) => setQuestions(questions.map((x) => x.id === q.id ? { ...x, penalty: parseInt(e.target.value) || 0 } : x))} min={0} className="w-full border rounded p-0.5 text-xs" /></div></div><div className="space-y-1">{q.options.map((opt, oi) => { const isCorrect = q.type === "single" ? q.correct === oi : Array.isArray(q.correct) && (q.correct as number[]).includes(oi); return (<div key={oi} className="flex items-center gap-2"><input type={q.type === "single" ? "radio" : "checkbox"} checked={isCorrect} onChange={() => { if (q.type === "single") setQuestions(questions.map((x) => x.id === q.id ? { ...x, correct: oi } : x)); else { const cur = (Array.isArray(q.correct) ? q.correct as number[] : []); const newCorrect = cur.includes(oi) ? cur.filter((c) => c !== oi) : [...cur, oi]; setQuestions(questions.map((x) => x.id === q.id ? { ...x, correct: newCorrect } : x)); } }} className="text-indigo-600" /><textarea id={`opt-${q.id}-${oi}`} value={opt} onChange={(e) => { const newOptions = [...q.options]; newOptions[oi] = e.target.value; setQuestions(questions.map((x) => x.id === q.id ? { ...x, options: newOptions } : x)); }} className="flex-1 border rounded p-1 text-sm" /><ChemicalToolbar onInsert={(s) => insertAtCursor(`opt-${q.id}-${oi}`, s, opt, (v) => { const newOptions = [...q.options]; newOptions[oi] = v; setQuestions(questions.map((x) => x.id === q.id ? { ...x, options: newOptions } : x)); })} /><button type="button" onClick={() => removeOption(q.id, oi)} className="text-red-400 text-xs">×</button></div>); })}<div className="flex gap-2"><input value={newOpt} onChange={(e) => setNewOpt(e.target.value)} placeholder="Вариант ответа" className="flex-1 border rounded-lg p-1 text-xs" /><button type="button" onClick={() => addOption(q.id)} className="px-2 py-1 bg-indigo-500 text-white rounded text-xs">+</button></div></div></div>))}<div className="flex gap-2"><input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="Новый вопрос" className="flex-1 border rounded-lg p-2 text-sm" /><button type="button" onClick={addQuestion} className="px-3 py-2 bg-indigo-500 text-white rounded-lg text-sm">+ Вопрос</button></div><button type="button" onClick={() => onSave({ questions })} className="w-full bg-emerald-500 text-white py-2 rounded-xl text-sm font-medium hover:bg-emerald-600">✅ Готово</button></div>);
 }
 
 function DragDropEditor({ onSave, initialData }: { onSave: (data: any) => void; initialData?: any }) {
@@ -98,6 +101,16 @@ function HomeworksContent() {
   function editSectionData(sec: any) { setEditingSection(sec); setSectionData(sec.data); setShowSectionEditor(true); }
   function saveSectionData() { if (editingSection) { updateSection(editingSection.id, "data", sectionData); setShowSectionEditor(false); setEditingSection(null); setSectionData(null); } }
 
+  function insertAtTextarea(id: string, symbol: string, currentValue: string, setter: (v: string) => void) {
+    const ta = document.getElementById(id) as HTMLTextAreaElement;
+    if (ta) {
+      const st = ta.selectionStart, en = ta.selectionEnd;
+      const nv = currentValue.substring(0, st) + symbol + currentValue.substring(en);
+      setter(nv);
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(st + symbol.length, st + symbol.length); }, 0);
+    } else { setter(currentValue + symbol); }
+  }
+
   function handlePDFSave(images: { dataUrl: string; answer: string; maxScore: number }[]) {
     const newSections = images.map((img, idx) => ({
       id: "pdf-" + Date.now() + "-" + idx, type: "pdf_image",
@@ -129,8 +142,7 @@ function HomeworksContent() {
       description: desc, explanation: expl, task_type: "multi", sections: sections, 
       max_score: totalMaxScore, deadline: (form.elements.namedItem("deadline") as HTMLInputElement).value || null, 
       status: "active", created_at: new Date().toISOString(),
-      trial_type: isTrial ? "ege" : null,
-      trial_subject: isTrial ? trialSubject : null,
+      trial_type: isTrial ? "ege" : null, trial_subject: isTrial ? trialSubject : null,
     }; 
     if (editHw) { await updateDoc(doc(db, "homeworks", editHw.id), data); toast.success("Задание обновлено!"); } 
     else { await addDoc(collection(db, "homeworks"), data); toast.success(isTrial ? "Пробник создан!" : "Задание создано!"); } 
@@ -187,16 +199,8 @@ function HomeworksContent() {
           </div>
 
           <div className="flex items-center gap-4 p-3 bg-rose-50 rounded-xl">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={isTrial} onChange={(e) => setIsTrial(e.target.checked)} className="text-rose-500 w-4 h-4" />
-              <span className="text-sm font-medium text-gray-700">📝 Это пробник ЕГЭ/ОГЭ</span>
-            </label>
-            {isTrial && (
-              <select value={trialSubject} onChange={(e) => setTrialSubject(e.target.value)} className="border rounded-lg px-3 py-1.5 text-xs">
-                <option value="chemistry">🧪 Химия</option>
-                <option value="biology">🧬 Биология</option>
-              </select>
-            )}
+            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isTrial} onChange={(e) => setIsTrial(e.target.checked)} className="text-rose-500 w-4 h-4" /><span className="text-sm font-medium text-gray-700">📝 Это пробник ЕГЭ/ОГЭ</span></label>
+            {isTrial && <select value={trialSubject} onChange={(e) => setTrialSubject(e.target.value)} className="border rounded-lg px-3 py-1.5 text-xs"><option value="chemistry">🧪 Химия</option><option value="biology">🧬 Биология</option></select>}
           </div>
 
           <div><label className="text-sm font-medium text-gray-700">Описание</label><textarea value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full border rounded-xl p-2.5 text-sm mt-1" rows={2} /></div>
@@ -226,17 +230,24 @@ function HomeworksContent() {
                   <div>
                     <label className="text-xs text-gray-500">{sec.type === 'photo' ? '🖼️ Фото' : '📷 Из PDF'}</label>
                     {sec.data?.image ? <img src={sec.data.image} alt="Задание" className="w-full rounded-lg border mt-1 max-h-64 object-contain" /> : (
-                      <label className="cursor-pointer mt-1 block border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-pink-300 transition">
-                        <span className="text-2xl">🖼️</span><p className="text-xs text-gray-400 mt-1">Загрузить фото</p>
-                        <input type="file" accept="image/*" onChange={(e) => handlePhotoUpload(e, sec.id)} className="hidden" />
-                      </label>
+                      <label className="cursor-pointer mt-1 block border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-pink-300 transition"><span className="text-2xl">🖼️</span><p className="text-xs text-gray-400 mt-1">Загрузить фото</p><input type="file" accept="image/*" onChange={(e) => handlePhotoUpload(e, sec.id)} className="hidden" /></label>
                     )}
                     <div className="grid grid-cols-2 gap-2 mt-2">
                       <div><select value={sec.data?.check_type || 'exact'} onChange={(e) => updateSection(sec.id, 'data', { ...sec.data, check_type: e.target.value })} className="w-full border rounded-lg p-1.5 text-xs mt-1"><option value="exact">Точное</option><option value="keywords">Ключ. слова</option><option value="range">Диапазон</option><option value="variants">Варианты</option></select></div>
                       <div><input type="number" value={sec.max_score || 10} onChange={(e) => updateSection(sec.id, 'max_score', parseInt(e.target.value) || 0)} className="w-full border rounded-lg p-1.5 text-xs mt-1" /></div>
                     </div>
-                    {sec.data?.check_type === 'exact' && <input value={sec.data?.correct_answer || ''} onChange={(e) => updateSection(sec.id, 'data', { ...sec.data, correct_answer: e.target.value })} placeholder="Правильный ответ" className="w-full border rounded-lg p-1.5 text-xs mt-1" />}
-                    {sec.data?.check_type === 'keywords' && <input value={sec.data?.keywords?.join(', ') || ''} onChange={(e) => { const kw = e.target.value.split(/[,\s]+/).map((k: string) => k.trim()).filter((k: string) => k); updateSection(sec.id, 'data', { ...sec.data, keywords: kw }); }} placeholder="Ключевые слова" className="w-full border rounded-lg p-1.5 text-xs mt-1" />}
+                    {sec.data?.check_type === 'exact' && (
+                      <div className="flex items-start gap-1 mt-2">
+                        <ChemicalToolbar onInsert={(s) => { const inp = document.getElementById(`ans-${sec.id}`) as HTMLInputElement; if (inp) { const st = inp.selectionStart || 0; const cv = sec.data?.correct_answer || ''; updateSection(sec.id, 'data', { ...sec.data, correct_answer: cv.substring(0, st) + s + cv.substring(st) }); setTimeout(() => { inp.focus(); inp.setSelectionRange(st + s.length, st + s.length); }, 0); } else { updateSection(sec.id, 'data', { ...sec.data, correct_answer: (sec.data?.correct_answer || '') + s }); } }} />
+                        <input id={`ans-${sec.id}`} value={sec.data?.correct_answer || ''} onChange={(e) => updateSection(sec.id, 'data', { ...sec.data, correct_answer: e.target.value })} placeholder="Правильный ответ" className="flex-1 border rounded-lg p-1.5 text-xs mt-1" />
+                      </div>
+                    )}
+                    {sec.data?.check_type === 'keywords' && (
+                      <div className="flex items-start gap-1 mt-2">
+                        <ChemicalToolbar onInsert={(s) => { const inp = document.getElementById(`kw-${sec.id}`) as HTMLInputElement; if (inp) { const st = inp.selectionStart || 0; const cv = sec.data?.keywords?.join(', ') || ''; const nv = cv.substring(0, st) + s + cv.substring(st); updateSection(sec.id, 'data', { ...sec.data, keywords: nv.split(/[,\s]+/).map((k: string) => k.trim()).filter((k: string) => k) }); setTimeout(() => { inp.focus(); inp.setSelectionRange(st + s.length, st + s.length); }, 0); } else { updateSection(sec.id, 'data', { ...sec.data, keywords: [...(sec.data?.keywords || []), s] }); } }} />
+                        <input id={`kw-${sec.id}`} value={sec.data?.keywords?.join(', ') || ''} onChange={(e) => { const kw = e.target.value.split(/[,\s]+/).map((k: string) => k.trim()).filter((k: string) => k); updateSection(sec.id, 'data', { ...sec.data, keywords: kw }); }} placeholder="Ключевые слова" className="flex-1 border rounded-lg p-1.5 text-xs mt-1" />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -244,15 +255,30 @@ function HomeworksContent() {
                       <div><select value={sec.type} onChange={(e) => updateSection(sec.id, 'type', e.target.value)} className="w-full border rounded-lg p-1.5 text-xs mt-1">{Object.entries(TASK_TYPES).map(([key, label]) => (<option key={key} value={key}>{label}</option>))}</select></div>
                       <div><input type="number" value={sec.max_score || 10} onChange={(e) => updateSection(sec.id, 'max_score', parseInt(e.target.value) || 0)} className="w-full border rounded-lg p-1.5 text-xs mt-1" /></div>
                     </div>
-                    <div><textarea value={sec.task_text || ''} onChange={(e) => updateSection(sec.id, 'task_text', e.target.value)} placeholder="Текст задания..." className="w-full border rounded-lg p-1.5 text-xs" rows={3} /></div>
+                    <div>
+                      <div className="flex items-start gap-1">
+                        <ChemicalToolbar onInsert={(s) => insertAtTextarea(`task-${sec.id}`, s, sec.task_text || '', (v) => updateSection(sec.id, 'task_text', v))} />
+                        <textarea id={`task-${sec.id}`} value={sec.task_text || ''} onChange={(e) => updateSection(sec.id, 'task_text', e.target.value)} placeholder="Текст задания..." className="flex-1 border rounded-lg p-1.5 text-xs" rows={3} />
+                      </div>
+                    </div>
                     {sec.type === 'text' && (
                       <div className="space-y-2">
                         <div className="grid grid-cols-2 gap-2">
                           <div><select value={sec.data?.check_type || 'exact'} onChange={(e) => updateSection(sec.id, 'data', { ...(sec.data || {}), check_type: e.target.value })} className="w-full border rounded-lg p-1.5 text-xs"><option value="exact">Точное</option><option value="keywords">Ключ. слова</option><option value="range">Диапазон</option><option value="variants">Варианты</option></select></div>
                           <div><input type="number" value={sec.data?.word_score || sec.max_score} onChange={(e) => updateSection(sec.id, 'data', { ...(sec.data || {}), word_score: parseInt(e.target.value) || 1 })} className="w-full border rounded-lg p-1.5 text-xs" /></div>
                         </div>
-                        {sec.data?.check_type === 'exact' && <input value={sec.data?.correct_answer || ''} onChange={(e) => updateSection(sec.id, 'data', { ...sec.data, correct_answer: e.target.value })} placeholder="Правильный ответ" className="w-full border rounded-lg p-1.5 text-xs" />}
-                        {sec.data?.check_type === 'keywords' && <input value={sec.data?.keywords?.join(', ') || ''} onChange={(e) => { const kw = e.target.value.split(/[,\s]+/).map((k: string) => k.trim()).filter((k: string) => k); updateSection(sec.id, 'data', { ...sec.data, keywords: kw }); }} placeholder="Ключевые слова" className="w-full border rounded-lg p-1.5 text-xs" />}
+                        {sec.data?.check_type === 'exact' && (
+                          <div className="flex items-start gap-1">
+                            <ChemicalToolbar onInsert={(s) => { const inp = document.getElementById(`ans-${sec.id}`) as HTMLInputElement; if (inp) { const st = inp.selectionStart || 0; const cv = sec.data?.correct_answer || ''; updateSection(sec.id, 'data', { ...sec.data, correct_answer: cv.substring(0, st) + s + cv.substring(st) }); setTimeout(() => { inp.focus(); inp.setSelectionRange(st + s.length, st + s.length); }, 0); } else { updateSection(sec.id, 'data', { ...sec.data, correct_answer: (sec.data?.correct_answer || '') + s }); } }} />
+                            <input id={`ans-${sec.id}`} value={sec.data?.correct_answer || ''} onChange={(e) => updateSection(sec.id, 'data', { ...sec.data, correct_answer: e.target.value })} placeholder="Правильный ответ" className="flex-1 border rounded-lg p-1.5 text-xs" />
+                          </div>
+                        )}
+                        {sec.data?.check_type === 'keywords' && (
+                          <div className="flex items-start gap-1">
+                            <ChemicalToolbar onInsert={(s) => { const inp = document.getElementById(`kw-${sec.id}`) as HTMLInputElement; if (inp) { const st = inp.selectionStart || 0; const cv = sec.data?.keywords?.join(', ') || ''; const nv = cv.substring(0, st) + s + cv.substring(st); updateSection(sec.id, 'data', { ...sec.data, keywords: nv.split(/[,\s]+/).map((k: string) => k.trim()).filter((k: string) => k) }); setTimeout(() => { inp.focus(); inp.setSelectionRange(st + s.length, st + s.length); }, 0); } else { updateSection(sec.id, 'data', { ...sec.data, keywords: [...(sec.data?.keywords || []), s] }); } }} />
+                            <input id={`kw-${sec.id}`} value={sec.data?.keywords?.join(', ') || ''} onChange={(e) => { const kw = e.target.value.split(/[,\s]+/).map((k: string) => k.trim()).filter((k: string) => k); updateSection(sec.id, 'data', { ...sec.data, keywords: kw }); }} placeholder="Ключевые слова" className="flex-1 border rounded-lg p-1.5 text-xs" />
+                          </div>
+                        )}
                         {sec.data?.check_type === 'range' && <div className="grid grid-cols-2 gap-2"><input type="number" value={sec.data?.range_min || 0} onChange={(e) => updateSection(sec.id, 'data', { ...sec.data, range_min: parseFloat(e.target.value) })} className="w-full border rounded-lg p-1.5 text-xs" /><input type="number" value={sec.data?.range_max || 100} onChange={(e) => updateSection(sec.id, 'data', { ...sec.data, range_max: parseFloat(e.target.value) })} className="w-full border rounded-lg p-1.5 text-xs" /></div>}
                         {sec.data?.check_type === 'variants' && <input value={sec.data?.variants?.join(', ') || ''} onChange={(e) => { const vr = e.target.value.split(/[,\s]+/).map((v: string) => v.trim().toLowerCase()).filter((v: string) => v); updateSection(sec.id, 'data', { ...sec.data, variants: vr }); }} placeholder="Варианты через запятую" className="w-full border rounded-lg p-1.5 text-xs" />}
                       </div>
