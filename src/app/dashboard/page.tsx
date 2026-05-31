@@ -13,6 +13,18 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig); const db = getFirestore(app);
 
+function StudentLinks({ studentId }: { studentId: string }) {
+  const [profile, setProfile] = useState<any>(null);
+  useEffect(() => { if (!studentId) return; getDoc(doc(db, "profiles", studentId)).then((snap) => { if (snap.exists()) setProfile(snap.data()); }); }, [studentId]);
+  if (!profile || (!profile.zoom_link && !profile.board_link)) return null;
+  return (
+    <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200">
+      {profile.zoom_link && <a href={profile.zoom_link} target="_blank" className="text-xs px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600">🎥 Zoom</a>}
+      {profile.board_link && <a href={profile.board_link} target="_blank" className="text-xs px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600">🖊️ Доска</a>}
+    </div>
+  );
+}
+
 function DashboardContent() {
   const searchParams = useSearchParams();
   const [uid, setUid] = useState(""); const [role, setRole] = useState("student");
@@ -23,7 +35,7 @@ function DashboardContent() {
   const [upcoming, setUpcoming] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!uid || typeof window === "undefined") return;
+    if (!uid) return;
     localStorage.setItem("uid", uid); localStorage.setItem("role", role);
     getDoc(doc(db, "profiles", uid)).then((snap) => { if (snap.exists()) setProfile(snap.data()); });
     const isTutor = role === "tutor";
@@ -36,23 +48,17 @@ function DashboardContent() {
   const isTutor = role === "tutor";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-emerald-50/30">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-amber-50">
       <nav className="bg-white/80 backdrop-blur shadow-sm border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <Link href={`/dashboard?uid=${uid}&role=${role}`} className="flex items-center gap-2">
             <span className="text-2xl">🧪🧬</span>
-            <span className="text-lg font-bold bg-gradient-to-r from-indigo-600 to-emerald-500 bg-clip-text text-transparent hidden sm:block">Репетитор ХиБи</span>
+            <span className="text-lg font-bold bg-gradient-to-r from-indigo-600 to-emerald-500 bg-clip-text text-transparent hidden sm:block">Jenyawisch | Химия и биология ЕГЭ ОГЭ</span>
           </Link>
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500 hidden sm:block">{today}</span>
-            <Link href={`/profile?uid=${uid}&role=${role}`}>
-              <div className="w-8 h-8 bg-gradient-to-br from-indigo-400 to-emerald-400 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer hover:scale-110 transition">
-                {profile?.full_name?.[0]?.toUpperCase() || "?"}
-              </div>
-            </Link>
-            <form action="/auth/signout" method="post">
-              <button className="text-sm text-red-400 hover:text-red-600 transition px-3 py-1.5 rounded-lg hover:bg-red-50">Выйти</button>
-            </form>
+            <Link href={`/profile?uid=${uid}&role=${role}`}><div className="w-8 h-8 bg-gradient-to-br from-indigo-400 to-emerald-400 rounded-full flex items-center justify-center text-white text-sm font-bold">{profile?.full_name?.[0]?.toUpperCase() || "?"}</div></Link>
+            <form action="/auth/signout" method="post"><button className="text-sm text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Выйти</button></form>
           </div>
         </div>
       </nav>
@@ -64,13 +70,7 @@ function DashboardContent() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: "Занятий", value: stats.lessons, icon: "📅", color: "from-indigo-500 to-blue-500" },
-            { label: "Проведено", value: stats.completed, icon: "✅", color: "from-emerald-500 to-green-500" },
-            ...(isTutor
-              ? [{ label: "Учеников", value: stats.students, icon: "👥", color: "from-amber-500 to-orange-500" }, { label: "Заданий", value: stats.homeworks, icon: "📚", color: "from-rose-500 to-pink-500" }]
-              : [{ label: "Заданий", value: stats.homeworks, icon: "📚", color: "from-amber-500 to-orange-500" }, { label: "Активных", value: stats.activeHw, icon: "🟢", color: "from-rose-500 to-pink-500" }]),
-          ].map((stat) => (
+          {[{ label: "Занятий", value: stats.lessons, icon: "📅", color: "from-indigo-500 to-blue-500" }, { label: "Проведено", value: stats.completed, icon: "✅", color: "from-emerald-500 to-green-500" }, { label: "Учеников", value: stats.students, icon: "👥", color: "from-amber-500 to-orange-500" }, { label: "Заданий", value: stats.homeworks, icon: "📚", color: "from-rose-500 to-pink-500" }].map((stat) => (
             <div key={stat.label} className="bg-white/80 backdrop-blur rounded-2xl p-4 sm:p-5 shadow-lg border border-white hover:scale-[1.02] transition">
               <div className="flex items-center justify-between mb-2"><span className="text-2xl">{stat.icon}</span><span className={`text-xs font-medium px-2 py-1 rounded-full bg-gradient-to-r ${stat.color} text-white`}>{stat.label}</span></div>
               <p className="text-3xl sm:text-4xl font-bold text-gray-800">{stat.value}</p>
@@ -80,13 +80,14 @@ function DashboardContent() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { href: `/schedule?uid=${uid}&role=${role}`, icon: "📅", title: "Расписание", desc: isTutor ? "Управление занятиями" : "Мои занятия", color: "hover:border-indigo-300" },
-            { href: `/homeworks?uid=${uid}&role=${role}`, icon: "📚", title: "Домашние задания", desc: isTutor ? "Создание и проверка" : "Мои задания", color: "hover:border-amber-300" },
-            ...(isTutor
-              ? [{ href: `/students?uid=${uid}&role=${role}`, icon: "👥", title: "Ученики", desc: "Список и прогресс", color: "hover:border-emerald-300" }, { href: `/library?uid=${uid}&role=${role}`, icon: "📦", title: "Библиотека", desc: "Шаблоны заданий", color: "hover:border-purple-300" }]
-              : [{ href: `/profile?uid=${uid}&role=${role}`, icon: "👤", title: "Мой кабинет", desc: "Прогресс и достижения", color: "hover:border-purple-300" }]),
+            { href: `/schedule?uid=${uid}&role=${role}`, icon: "📅", title: "Расписание", desc: "Управление занятиями" },
+            { href: `/homeworks?uid=${uid}&role=${role}`, icon: "📚", title: "Домашние задания", desc: "Создание и проверка" },
+            { href: `/students?uid=${uid}&role=${role}`, icon: "👥", title: "Ученики", desc: "Список и прогресс" },
+            { href: `/library?uid=${uid}&role=${role}`, icon: "📦", title: "Библиотека", desc: "Шаблоны заданий" },
+            { href: `/exam-trials?uid=${uid}&role=${role}`, icon: "📝", title: "Пробники", desc: "Результаты ЕГЭ/ОГЭ" },
+            { href: `/ai-generator?uid=${uid}&role=${role}`, icon: "🤖", title: "ИИ-генератор", desc: "Создать задания с AI" },
           ].map((card) => (
-            <Link key={card.href} href={card.href} className={`bg-white/80 backdrop-blur rounded-2xl p-5 shadow-lg border-2 border-transparent ${card.color} transition hover:shadow-xl`}>
+            <Link key={card.href} href={card.href} className="bg-white/80 backdrop-blur rounded-2xl p-5 shadow-lg border-2 border-transparent hover:border-indigo-300 transition hover:shadow-xl">
               <span className="text-4xl mb-3 block">{card.icon}</span>
               <h3 className="text-lg font-semibold text-gray-800">{card.title}</h3>
               <p className="text-sm text-gray-500 mt-1">{card.desc}</p>
@@ -95,16 +96,14 @@ function DashboardContent() {
         </div>
 
         <div className="bg-white/80 backdrop-blur rounded-3xl shadow-lg p-6 border border-white">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800">📋 Ближайшие занятия</h2>
-            <Link href={`/schedule?uid=${uid}&role=${role}`} className="text-sm text-indigo-500 hover:text-indigo-700 transition">Все →</Link>
-          </div>
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">📋 Ближайшие занятия</h2>
           {upcoming.length > 0 ? (
             <div className="space-y-3">
               {upcoming.map((l: any, i: number) => (
                 <div key={i} className={`flex items-center justify-between p-4 rounded-2xl border-l-4 ${l.subject === "chemistry" ? "border-l-indigo-500 bg-indigo-50/50" : "border-l-emerald-500 bg-emerald-50/50"}`}>
-                  <div className="flex items-center gap-3"><span className="text-xl">{l.subject === "chemistry" ? "🧪" : "🧬"}</span><div><p className="font-medium text-gray-800">{l.subject === "chemistry" ? "Химия" : "Биология"}</p><p className="text-sm text-gray-500">{isTutor ? `👤 ${l.student_name || l.student_id}` : "🧑‍🏫 Ваш репетитор"}</p></div></div>
-                  <div className="text-right"><p className="font-medium text-gray-700">{new Date(l.start_time).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}</p><p className="text-sm text-gray-500">{new Date(l.start_time).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} – {new Date(l.end_time).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p></div>
+                  <div className="flex items-center gap-3"><span className="text-xl">{l.subject === "chemistry" ? "🧪" : "🧬"}</span><div><p className="font-medium text-gray-800">{l.subject === "chemistry" ? "Химия" : "Биология"}</p><p className="text-sm text-gray-500">{isTutor ? `👤 ${l.student_name || l.student_id}` : "🧑‍🏫 Репетитор"}</p></div></div>
+                  <div className="text-right"><p className="font-medium">{new Date(l.start_time).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}</p><p className="text-sm text-gray-500">{new Date(l.start_time).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p></div>
+                  {isTutor && l.student_id && <StudentLinks studentId={l.student_id} />}
                 </div>
               ))}
             </div>
