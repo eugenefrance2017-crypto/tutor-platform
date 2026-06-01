@@ -15,6 +15,7 @@ const menuItems = [
   { href: "/periodic-table", icon: "🧪", label: "Таблицы" },
   { href: "/leaderboard", icon: "🏆", label: "Рейтинг" },
   { href: "/courses", icon: "📖", label: "Курсы" },
+  { href: "/users", icon: "⚙️", label: "Пользователи" },
 ];
 
 export default function Sidebar() {
@@ -49,11 +50,17 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+      <div className="p-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
         <Link href={`/profile?uid=${uid}&role=${role}`} className="flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl p-2 transition">
           <div className="w-8 h-8 bg-gradient-to-br from-indigo-400 to-emerald-400 rounded-full flex-shrink-0 shadow-lg" />
           {expanded && <span className="text-sm text-gray-600 dark:text-gray-400">Профиль</span>}
         </Link>
+        <form action="/auth/signout" method="post">
+          <button className="w-full flex items-center gap-3 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-xl p-2 transition text-left">
+            <span className="text-xl flex-shrink-0 w-8 text-center">🚪</span>
+            {expanded && <span className="text-sm text-red-500">Выйти</span>}
+          </button>
+        </form>
       </div>
     </div>
   );
