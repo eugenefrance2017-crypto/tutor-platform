@@ -130,11 +130,14 @@ function FinanceContent() {
   const [selectedReceiptImage, setSelectedReceiptImage] = useState<string | null>(null);
   
   const [paymentEnabled, setPaymentEnabled] = useState(false);
-  const [primaryProvider, setPrimaryProvider] = useState<"lava" | "prodamus" | "manual">("manual");
-  const [lavaShopId, setLavaShopId] = useState("");
-  const [lavaSecretKey, setLavaSecretKey] = useState("");
-  const [lavaSuccessUrl, setLavaSuccessUrl] = useState("");
-  const [lavaFailUrl, setLavaFailUrl] = useState("");
+  const [primaryProvider, setPrimaryProvider] = useState<"enot" | "prodamus" | "manual">("manual");
+  
+  // ЗАМЕНЕНО: Lava на Enot
+  const [enotShopId, setEnotShopId] = useState("");
+  const [enotSecretKey, setEnotSecretKey] = useState("");
+  const [enotSuccessUrl, setEnotSuccessUrl] = useState("");
+  const [enotFailUrl, setEnotFailUrl] = useState("");
+  
   const [prodamusShopId, setProdamusShopId] = useState("");
   const [prodamusSecretKey, setProdamusSecretKey] = useState("");
   const [prodamusSuccessUrl, setProdamusSuccessUrl] = useState("");
@@ -146,7 +149,6 @@ function FinanceContent() {
   const [paymentFile, setPaymentFile] = useState<File | null>(null);
   const [paymentUploading, setPaymentUploading] = useState(false);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
-
   const [paymentLoading, setPaymentLoading] = useState<string | null>(null);
 
   useEffect(() => {
@@ -181,10 +183,12 @@ function FinanceContent() {
         const d = snap.data();
         setPaymentEnabled(d.enabled || false);
         setPrimaryProvider(d.primary_provider || "manual");
-        setLavaShopId(d.lava_shop_id || "");
-        setLavaSecretKey(d.lava_secret_key || "");
-        setLavaSuccessUrl(d.lava_success_url || "");
-        setLavaFailUrl(d.lava_fail_url || "");
+        // ЗАМЕНЕНО: Lava на Enot
+        setEnotShopId(d.enot_shop_id || "");
+        setEnotSecretKey(d.enot_secret_key || "");
+        setEnotSuccessUrl(d.enot_success_url || "");
+        setEnotFailUrl(d.enot_fail_url || "");
+        
         setProdamusShopId(d.prodamus_shop_id || "");
         setProdamusSecretKey(d.prodamus_secret_key || "");
         setProdamusSuccessUrl(d.prodamus_success_url || "");
@@ -271,7 +275,8 @@ function FinanceContent() {
     setPaymentLoading(payment.id);
     try {
       const orderId = `payment_${payment.id}_${Date.now()}`;
-      const endpoint = primaryProvider === "lava" ? "/api/payments/lava/create" : "/api/payments/prodamus/create";
+      // ЗАМЕНЕНО: lava на enot
+      const endpoint = primaryProvider === "enot" ? "/api/payments/enot/create" : "/api/payments/prodamus/create";
       
       const response = await fetch(endpoint, {
         method: "POST",
@@ -282,6 +287,9 @@ function FinanceContent() {
           description: `Оплата занятий: ${payment.student_name}`,
           studentId: payment.student_id,
           tutorId: uid,
+          payment_type: "lesson_pack",
+          item_id: "manual_payment",
+          duration_days: 30
         }),
       });
 
@@ -291,7 +299,8 @@ function FinanceContent() {
         throw new Error(data.error || "Failed to create payment");
       }
 
-      toast.success(` Перенаправляем на ${primaryProvider === "lava" ? "Lava" : "Prodamus"}...`);
+      // ЗАМЕНЕНО: lava на enot
+      toast.success(`Перенаправляем на ${primaryProvider === "enot" ? "Enot.io" : "Prodamus"}...`);
       window.open(data.url, "_blank");
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
@@ -379,13 +388,15 @@ function FinanceContent() {
     try {
       await setDoc(doc(db, "settings", "payments"), {
         enabled: paymentEnabled, primary_provider: primaryProvider,
-        lava_shop_id: lavaShopId, lava_secret_key: lavaSecretKey,
-        lava_success_url: lavaSuccessUrl, lava_fail_url: lavaFailUrl,
+        // ЗАМЕНЕНО: Lava на Enot
+        enot_shop_id: enotShopId, enot_secret_key: enotSecretKey,
+        enot_success_url: enotSuccessUrl, enot_fail_url: enotFailUrl,
+        
         prodamus_shop_id: prodamusShopId, prodamus_secret_key: prodamusSecretKey,
         prodamus_success_url: prodamusSuccessUrl, prodamus_fail_url: prodamusFailUrl,
         manual_instructions: manualPaymentInstructions, updated_at: serverTimestamp(),
       }, { merge: true });
-      toast.success(" Настройки оплаты сохранены!");
+      toast.success("⚙️ Настройки оплаты сохранены!");
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
     } finally {
@@ -474,7 +485,7 @@ function FinanceContent() {
 
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
           {[
-            { id: "stats", label: " Статистика и Учет", icon: TrendingUp },
+            { id: "stats", label: "📊 Статистика и Учет", icon: TrendingUp },
             { id: "requests", label: `📥 Заявки с чеками ${paymentRequests.length > 0 ? `(${paymentRequests.length})` : ""}`, icon: Receipt },
             { id: "settings", label: "⚙️ Настройки оплаты", icon: Settings },
           ].map((tab) => (
@@ -594,7 +605,7 @@ function FinanceContent() {
                     <div>
                       <label className="text-xs text-amber-600 font-medium">Тариф</label>
                       <select value={tariff} onChange={(e) => setTariff(e.target.value)} className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white">
-                        <option value="Пробный"> Пробный</option>
+                        <option value="Пробный">🎁 Пробный</option>
                         <option value="Старт">⭐ Старт (4)</option>
                         <option value="Оптима">📦 Оптима (8)</option>
                         <option value="Максимум">🚀 Максимум (12)</option>
@@ -603,7 +614,7 @@ function FinanceContent() {
                   </div>
                   <div className="flex gap-3">
                     <button type="submit" disabled={savingPayment} className="flex-1 bg-amber-500 text-white py-2.5 rounded-xl font-bold hover:bg-amber-600 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                      <Save size={16} /> {savingPayment ? "Сохранение..." : editingPayment ? " Обновить" : "✨ Создать"}
+                      <Save size={16} /> {savingPayment ? "Сохранение..." : editingPayment ? "🔄 Обновить" : "✨ Создать"}
                     </button>
                     <button type="button" onClick={resetPaymentForm} className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition">Отмена</button>
                   </div>
@@ -620,8 +631,8 @@ function FinanceContent() {
                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as any)} className="border border-amber-200 rounded-lg p-1.5 text-sm bg-white">
                   <option value="all">Все статусы</option>
                   <option value="paid">✅ Оплачено</option>
-                  <option value="pending"> Ожидание</option>
-                  <option value="overdue">️ Просрочено</option>
+                  <option value="pending">⏳ Ожидание</option>
+                  <option value="overdue">🔴 Просрочено</option>
                 </select>
                 <div className="relative flex-1 min-w-[150px]">
                   <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-amber-400" />
@@ -659,12 +670,12 @@ function FinanceContent() {
                           </td>
                           <td className="py-3 px-2 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {!payment.confirmed && paymentEnabled && (primaryProvider === "lava" || primaryProvider === "prodamus") && (
+                              {!payment.confirmed && paymentEnabled && (primaryProvider === "enot" || primaryProvider === "prodamus") && (
                                 <button 
                                   onClick={() => payWithProvider(payment)} 
                                   disabled={paymentLoading === payment.id}
-                                  className={`p-1.5 text-white rounded-lg hover:opacity-90 transition disabled:opacity-50 ${primaryProvider === "lava" ? "bg-gradient-to-r from-orange-500 to-red-500" : "bg-gradient-to-r from-purple-500 to-pink-500"}`}
-                                  title={`Оплатить через ${primaryProvider === "lava" ? "Lava" : "Prodamus"}`}
+                                  className={`p-1.5 text-white rounded-lg hover:opacity-90 transition disabled:opacity-50 ${primaryProvider === "enot" ? "bg-gradient-to-r from-blue-600 to-indigo-600" : "bg-gradient-to-r from-purple-500 to-pink-500"}`}
+                                  title={`Оплатить через ${primaryProvider === "enot" ? "Enot.io" : "Prodamus"}`}
                                 >
                                   {paymentLoading === payment.id ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
                                 </button>
@@ -754,10 +765,11 @@ function FinanceContent() {
                   <div>
                     <label className="text-sm font-medium text-stone-700 mb-3 block">Способ оплаты</label>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <button onClick={() => setPrimaryProvider("lava")} className={`p-4 rounded-xl border-2 text-sm font-medium transition text-left ${primaryProvider === "lava" ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-stone-200 bg-white text-stone-600 hover:border-orange-300'}`}>
-                        <div className="text-2xl mb-2">🌋</div>
-                        <div className="font-bold text-base">Lava</div>
-                        <div className="text-xs mt-1 opacity-75">Карты РФ → USDT</div>
+                      {/* ЗАМЕНЕНО: Lava на Enot */}
+                      <button onClick={() => setPrimaryProvider("enot")} className={`p-4 rounded-xl border-2 text-sm font-medium transition text-left ${primaryProvider === "enot" ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-stone-200 bg-white text-stone-600 hover:border-blue-300'}`}>
+                        <div className="text-2xl mb-2">💎</div>
+                        <div className="font-bold text-base">Enot.io</div>
+                        <div className="text-xs mt-1 opacity-75">Карты РФ → Крипта/Счёт</div>
                       </button>
                       <button onClick={() => setPrimaryProvider("prodamus")} className={`p-4 rounded-xl border-2 text-sm font-medium transition text-left ${primaryProvider === "prodamus" ? 'border-purple-500 bg-purple-50 text-purple-800' : 'border-stone-200 bg-white text-stone-600 hover:border-purple-300'}`}>
                         <div className="text-2xl mb-2">🟣</div>
@@ -773,25 +785,26 @@ function FinanceContent() {
                   </div>
 
                   <div className="min-h-[280px]">
-                    {primaryProvider === "lava" && (
-                      <div className="p-5 bg-orange-50 rounded-xl border-2 border-orange-200">
-                        <h4 className="font-bold text-orange-900 mb-4 flex items-center gap-2">🌋 Настройки Lava</h4>
+                    {/* ЗАМЕНЕНО: Lava на Enot */}
+                    {primaryProvider === "enot" && (
+                      <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
+                        <h4 className="font-bold text-blue-900 mb-4 flex items-center gap-2">💎 Настройки Enot.io</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
-                            <label className="text-xs text-stone-600 font-medium">Shop ID</label>
-                            <input type="text" value={lavaShopId} onChange={(e) => setLavaShopId(e.target.value)} className="w-full border border-orange-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-orange-400 focus:outline-none" placeholder="Ваш ID магазина" />
+                            <label className="text-xs text-stone-600 font-medium">Merchant ID</label>
+                            <input type="text" value={enotShopId} onChange={(e) => setEnotShopId(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="Ваш ID магазина" />
                           </div>
                           <div>
                             <label className="text-xs text-stone-600 font-medium">Secret Key</label>
-                            <input type="password" value={lavaSecretKey} onChange={(e) => setLavaSecretKey(e.target.value)} className="w-full border border-orange-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-orange-400 focus:outline-none" placeholder="Секретный ключ" />
+                            <input type="password" value={enotSecretKey} onChange={(e) => setEnotSecretKey(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="Секретный ключ" />
                           </div>
                           <div>
                             <label className="text-xs text-stone-600 font-medium">URL успеха</label>
-                            <input type="text" value={lavaSuccessUrl} onChange={(e) => setLavaSuccessUrl(e.target.value)} className="w-full border border-orange-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-orange-400 focus:outline-none" placeholder="https://jenyawisch.com/payments" />
+                            <input type="text" value={enotSuccessUrl} onChange={(e) => setEnotSuccessUrl(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/success" />
                           </div>
                           <div>
                             <label className="text-xs text-stone-600 font-medium">URL ошибки</label>
-                            <input type="text" value={lavaFailUrl} onChange={(e) => setLavaFailUrl(e.target.value)} className="w-full border border-orange-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-orange-400 focus:outline-none" placeholder="https://jenyawisch.com/payments" />
+                            <input type="text" value={enotFailUrl} onChange={(e) => setEnotFailUrl(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/failed" />
                           </div>
                         </div>
                       </div>
@@ -811,11 +824,11 @@ function FinanceContent() {
                           </div>
                           <div>
                             <label className="text-xs text-stone-600 font-medium">URL успеха</label>
-                            <input type="text" value={prodamusSuccessUrl} onChange={(e) => setProdamusSuccessUrl(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="https://jenyawisch.com/payments" />
+                            <input type="text" value={prodamusSuccessUrl} onChange={(e) => setProdamusSuccessUrl(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/success" />
                           </div>
                           <div>
                             <label className="text-xs text-stone-600 font-medium">URL ошибки</label>
-                            <input type="text" value={prodamusFailUrl} onChange={(e) => setProdamusFailUrl(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="https://jenyawisch.com/payments" />
+                            <input type="text" value={prodamusFailUrl} onChange={(e) => setProdamusFailUrl(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/failed" />
                           </div>
                         </div>
                       </div>
@@ -823,7 +836,7 @@ function FinanceContent() {
 
                     {primaryProvider === "manual" && (
                       <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
-                        <h4 className="font-bold text-green-900 mb-4 flex items-center gap-2"> Настройки ручной оплаты</h4>
+                        <h4 className="font-bold text-green-900 mb-4 flex items-center gap-2">📝 Настройки ручной оплаты</h4>
                         <div className="grid grid-cols-1 gap-4">
                           <div>
                             <label className="text-xs text-stone-600 font-medium">Инструкция для ученика</label>
@@ -838,11 +851,11 @@ function FinanceContent() {
                     )}
                   </div>
 
-                  {(primaryProvider === "lava" || primaryProvider === "prodamus") && (
+                  {(primaryProvider === "enot" || primaryProvider === "prodamus") && (
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800 flex gap-2 items-start">
                       <span className="text-lg flex-shrink-0">💡</span>
                       <div className="flex-1">
-                        <p className="font-medium mb-1">Webhook URL для {primaryProvider === "lava" ? "Lava" : "Prodamus"}:</p>
+                        <p className="font-medium mb-1">Webhook URL для {primaryProvider === "enot" ? "Enot.io" : "Prodamus"}:</p>
                         <code className="bg-blue-100 px-2 py-1 rounded text-xs break-all">https://jenyawisch.com/api/payments/{primaryProvider}/webhook</code>
                         <p className="text-xs mt-2 text-blue-700">Настройте этот URL в кабинете провайдера → Магазин → Webhook</p>
                       </div>
@@ -851,14 +864,14 @@ function FinanceContent() {
 
                   <button onClick={saveSettings} disabled={savingSettings} className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-600 text-white rounded-xl font-bold hover:from-amber-600 hover:to-yellow-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
                     {savingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    {savingSettings ? "Сохранение..." : " Сохранить настройки"}
+                    {savingSettings ? "Сохранение..." : "💾 Сохранить настройки"}
                   </button>
                 </div>
               )}
 
               {!paymentEnabled && (
                 <div className="text-center py-12 bg-stone-50 rounded-xl border-2 border-dashed border-stone-200">
-                  <div className="text-4xl mb-2"></div>
+                  <div className="text-4xl mb-2">🔒</div>
                   <p className="text-stone-600 font-medium">Приём оплаты отключён</p>
                   <p className="text-stone-400 text-xs mt-1">Включите тумблер выше, чтобы настроить провайдера</p>
                 </div>

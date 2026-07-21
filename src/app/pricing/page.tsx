@@ -29,7 +29,7 @@ const DEFAULT_TARIFFS = [
     price: 0,
     pricePerLesson: 0,
     color: "from-emerald-400 to-teal-500",
-    badge: "🎁 Бесплатно",
+    badge: " Бесплатно",
     popular: false,
     features: ["1 занятие", "Знакомство с репетитором", "Определение уровня", "Составление плана"],
   },
@@ -103,7 +103,7 @@ const DEFAULT_GUARANTEES = [
 const DEFAULT_TESTIMONIALS = [
   { name: "Анна К.", role: "Ученица, 11 класс", text: "Сдала ЕГЭ по химии на 92 балла!", score: 92, avatar: "🌸" },
   { name: "Мария П.", role: "Мама ученика", text: "Очень довольна результатом!", score: null, avatar: "💐" },
-  { name: "Дмитрий С.", role: "Ученик, 10 класс", text: "Тренажёры на платформе — это просто находка!", score: null, avatar: "🌷" },
+  { name: "Дмитрий С.", role: "Ученик, 10 класс", text: "Тренажёры на платформе — это просто находка!", score: null, avatar: "" },
 ];
 
 function PricingContent() {
@@ -128,7 +128,7 @@ function PricingContent() {
 
   const [tutorId, setTutorId] = useState<string>("");
   const [isPaying, setIsPaying] = useState(false);
-  const [paymentProvider, setPaymentProvider] = useState<"lava" | "prodamus" | "manual" | null>(null);
+  const [paymentProvider, setPaymentProvider] = useState<"enot" | "prodamus" | "manual" | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -176,7 +176,7 @@ function PricingContent() {
 
   const calcResult = calculatePrice(calculatorLessons);
 
-  const handlePayment = async (tariff: any, provider: "lava" | "prodamus" | "manual") => {
+  const handlePayment = async (tariff: any, provider: "enot" | "prodamus" | "manual") => {
     if (!uid) {
       toast.error("Сначала войдите в аккаунт");
       router.push(`/login?redirect=/pricing&tariff=${tariff.id}`);
@@ -185,7 +185,7 @@ function PricingContent() {
 
     if (provider === "manual") {
       toast.success("Отлично! Теперь загрузите чек в Личном кабинете.");
-      setShowPaymentModal(false);
+      setSelectedTariff(null);
       router.push(`/dashboard?uid=${uid}&role=student`);
       return;
     }
@@ -194,7 +194,10 @@ function PricingContent() {
     setPaymentProvider(provider);
     try {
       const orderId = `tariff_${tariff.id}_${uid}_${Date.now()}`;
-      const endpoint = provider === "lava" ? "/api/payments/lava/create" : "/api/payments/prodamus/create";
+      const endpoint = 
+        provider === "enot" ? "/api/payments/enot/create" :
+        provider === "prodamus" ? "/api/payments/prodamus/create" :
+        "/api/payments/enot/create";
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -204,9 +207,10 @@ function PricingContent() {
           orderId,
           description: `Тариф: ${tariff.name} (${tariff.lessons} занятий)`,
           studentId: uid,
-          tutorId: tutorId,
+          tutorId: tutorId || null,
           payment_type: "subscription",
-          lessons: tariff.lessons,
+          item_id: tariff.id,
+          duration_days: 30,
         }),
       });
 
@@ -216,12 +220,17 @@ function PricingContent() {
         throw new Error(data.error || "Не удалось создать платеж");
       }
 
-      toast.success(`Перенаправляем на ${provider === "lava" ? "Lava" : "Prodamus"}...`);
-      window.open(data.url, "_blank");
-      setSelectedTariff(null);
+      toast.success(`Перенаправляем на ${provider === "enot" ? "Enot.io" : "Prodamus"}...`);
+      
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error("Не получен URL для оплаты");
+      }
+      
     } catch (error: any) {
+      console.error("Payment error:", error);
       toast.error(`Ошибка: ${error.message}`);
-    } finally {
       setIsPaying(false);
       setPaymentProvider(null);
     }
@@ -242,7 +251,7 @@ function PricingContent() {
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-rose-50 to-amber-50 relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none opacity-20">
         <div className="absolute top-10 left-10 text-8xl">💕</div>
-        <div className="absolute bottom-20 right-10 text-7xl">🌸</div>
+        <div className="absolute bottom-20 right-10 text-7xl"></div>
         <div className="absolute top-1/3 right-1/4 text-6xl">💝</div>
         <div className="absolute bottom-1/3 left-1/4 text-6xl">🌷</div>
         <div className="absolute top-1/2 left-1/2 text-5xl">✨</div>
@@ -263,7 +272,7 @@ function PricingContent() {
             <span className="text-4xl">🌸</span>
           </div>
           <p className="text-rose-600/70 font-serif italic text-lg">
-            "Can I go where you go?" 💝
+            "Can I go where you go?" 
           </p>
           <p className="text-stone-600 mt-2">Индивидуальные занятия по химии и биологии</p>
         </div>
@@ -510,7 +519,7 @@ function PricingContent() {
         </div>
       </div>
 
-      {/* УМНАЯ МОДАЛКА ОПЛАТЫ */}
+      {/* МОДАЛКА ОПЛАТЫ */}
       {selectedTariff && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedTariff(null)}>
           <div className="bg-white rounded-3xl p-6 w-full max-w-md border-2 border-pink-200 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -527,7 +536,7 @@ function PricingContent() {
             {selectedTariff.price === 0 ? (
               <div className="text-center">
                 <p className="text-stone-600 text-sm mb-6 font-serif italic">
-                  Бесплатное занятие — познакомимся, определим уровень и составим план подготовки 💕
+                  Бесплатное занятие — познакомимся, определим уровень и составим план подготовки 
                 </p>
                 <Link
                   href={`/dashboard?uid=${uid}&role=${role}&action=book_trial`}
@@ -555,12 +564,12 @@ function PricingContent() {
                 </p>
                 <div className="space-y-3 mb-4">
                   <button
-                    onClick={() => handlePayment(selectedTariff, "lava")}
+                    onClick={() => handlePayment(selectedTariff, "enot")}
                     disabled={isPaying}
-                    className="w-full flex items-center justify-center gap-3 p-4 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold hover:opacity-90 transition disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-3 p-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold hover:opacity-90 transition disabled:opacity-50"
                   >
-                    {isPaying && paymentProvider === "lava" ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>🌋</span>}
-                    Оплатить через Lava (Карта → USDT)
+                    {isPaying && paymentProvider === "enot" ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>💎</span>}
+                    Оплатить через Enot.io
                   </button>
 
                   <button
@@ -569,7 +578,7 @@ function PricingContent() {
                     className="w-full flex items-center justify-center gap-3 p-4 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold hover:opacity-90 transition disabled:opacity-50"
                   >
                     {isPaying && paymentProvider === "prodamus" ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>🟣</span>}
-                    Оплатить через Prodamus (Карта → РФ счёт)
+                    Оплатить через Prodamus
                   </button>
 
                   <button
