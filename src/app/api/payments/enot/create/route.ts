@@ -36,7 +36,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Создаём запись в Firestore
     const paymentRef = await addDoc(collection(db, 'payments'), {
       order_id: orderId,
       amount: parseFloat(amount),
@@ -53,7 +52,6 @@ export async function POST(request: NextRequest) {
 
     const merchantId = process.env.ENOT_MERCHANT_ID;
     const secretKey = process.env.ENOT_SECRET_KEY;
-    const secondKey = process.env.ENOT_SECOND_KEY || secretKey;
 
     if (!merchantId || !secretKey) {
       throw new Error('Enot.io credentials not configured');
@@ -64,15 +62,13 @@ export async function POST(request: NextRequest) {
     const failUrl = `${baseUrl}/payments/failed?order_id=${orderId}`;
     const webhookUrl = `${baseUrl}/api/payments/enot/webhook`;
 
-    // Генерируем подпись для Enot.io
-    // Формат: amount:order_id:merchant_secret_key:currency
+    // Генерация подписи по документации Enot.io
     const signString = `${amount}:${orderId}:${secretKey}:RUB`;
     const signature = crypto
-      .createHash('sha256')
+      .createHash('md5')
       .update(signString)
       .digest('hex');
 
-    // Параметры для Enot.io API
     const enotData = {
       m_shop: merchantId,
       m_orderid: orderId,
@@ -85,12 +81,20 @@ export async function POST(request: NextRequest) {
       m_notify_url: webhookUrl,
     };
 
-    // Отправляем запрос в Enot.io
-    const enotResponse = await fetch('https://enot.io/merchant/create', {
+    // ✅ ИСПРАВЛЕНО: добавлено /api/ в URL
+    const enotResponse = await fetch('https://enot.io/merchant/api/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(enotData),
     });
+
+    // ✅ ИСПРАВЛЕНО: защита от HTML-ответов (404/500 от самого Enot)
+    const contentType = enotResponse.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await enotResponse.text();
+      console.error('Enot.io вернул не JSON:', text);
+      throw new Error('Enot.io вернул ошибку сервера. Проверьте ключи и URL.');
+    }
 
     const enotResult = await enotResponse.json();
 

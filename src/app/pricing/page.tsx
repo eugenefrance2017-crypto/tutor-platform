@@ -176,28 +176,36 @@ function PricingContent() {
 
   const calcResult = calculatePrice(calculatorLessons);
 
-  const handlePayment = async (tariff: any, provider: "enot" | "prodamus" | "manual") => {
+    const handlePayment = async (tariff: any, provider: "enot" | "prodamus" | "manual") => {
+    // 1. Обработка бесплатного пробного урока
+    if (tariff.price === 0) {
+      toast.success("🎉 Отлично! Перенаправляем на запись...");
+      setSelectedTariff(null);
+      router.push(`/dashboard?uid=${uid}&role=${role}&action=book_trial`);
+      return;
+    }
+
     if (!uid) {
       toast.error("Сначала войдите в аккаунт");
       router.push(`/login?redirect=/pricing&tariff=${tariff.id}`);
       return;
     }
 
+    // 2. Обработка ручной оплаты (показываем инструкцию, а не просто выбрасываем)
     if (provider === "manual") {
-      toast.success("Отлично! Теперь загрузите чек в Личном кабинете.");
+      toast.success("Чек отправлен! Репетитор проверит его в течение 24 часов.");
       setSelectedTariff(null);
-      router.push(`/dashboard?uid=${uid}&role=student`);
+      // Перенаправляем на страницу, где ученик может загрузить чек (или в дашборд)
+      router.push(`/dashboard?uid=${uid}&role=student&tab=payments`);
       return;
     }
 
+    // 3. Обработка автоматической оплаты (Enot / Prodamus)
     setIsPaying(true);
     setPaymentProvider(provider);
     try {
       const orderId = `tariff_${tariff.id}_${uid}_${Date.now()}`;
-      const endpoint = 
-        provider === "enot" ? "/api/payments/enot/create" :
-        provider === "prodamus" ? "/api/payments/prodamus/create" :
-        "/api/payments/enot/create";
+      const endpoint = provider === "enot" ? "/api/payments/enot/create" : "/api/payments/prodamus/create";
 
       const response = await fetch(endpoint, {
         method: "POST",
