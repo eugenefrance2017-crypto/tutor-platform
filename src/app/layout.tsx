@@ -1,25 +1,28 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
-import { Toaster } from "react-hot-toast";
 import Sidebar from "./Sidebar";
-import ChemRef from "./ChemRef";
 
-export const metadata: Metadata = { title: "Jenyawisch | Химия и биология ЕГЭ ОГЭ", description: "Платформа для подготовки к ЕГЭ и ОГЭ" };
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#6366f1" };
+const inter = Inter({ subsets: ["latin"] });
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const metadata: Metadata = {
+  title: "Jenyawisch",
+  description: "Tutor platform",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="ru" suppressHydrationWarning>
-      <body>
-        <Suspense fallback={null}>
+    <html lang="ru">
+      <body className={inter.className} style={{ backgroundColor: "#000000", margin: 0, padding: 0 }}>
+        <Suspense fallback={<div className="fixed top-0 left-0 h-full w-64 bg-stone-900" />}>
           <Sidebar />
         </Suspense>
-        <div className="md:ml-16">
-          {children}
-        </div>
-        <ChemRef />
-        <Toaster position="top-center" />
+        {children}
       </body>
     </html>
   );

@@ -1,0 +1,4 @@
+{
+    "ollama-autopilot.general.autopilotEnabled": false,
+    "ollama-autopilot.model.modelName": "gemma4"
+}

@@ -1,1 +1,219 @@
 @import "tailwindcss";
+
+@theme {
+  --color-debut: #8CC63F;
+  --color-fearless: #FFD700;
+  --color-speaknow: #7B2D8E;
+  --color-red: #E31B23;
+  --color-1989: #5BC0EB;
+  --color-reputation: #1A1A1A;
+  --color-lover: #FF2A5E;
+  --color-folklore: #8A9A8B;
+  --color-evermore: #C67B4B;
+  --color-ttpd: #D4C4B7;
+  --color-tloas-orange: #FF5E00;
+  --color-tloas-mint: #98FF98;
+  --color-tloas-purple: #9B30FF;
+}
+
+/* ========== ERAS TOUR ФОН ========== */
+.eras-bg {
+  background: linear-gradient(125deg, #8CC63F 0%, #FFD700 12%, #E31B23 24%, #7B2D8E 36%, #5BC0EB 48%, #FF2A5E 60%, #C67B4B 72%, #8A9A8B 80%, #1C2951 90%, #D4C4B7 100%);
+  background-size: 300% 300%;
+  animation: erasShift 20s ease infinite;
+  position: relative;
+  min-height: 100vh;
+}
+
+@keyframes erasShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.eras-bg::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.25) 1px, transparent 1px), radial-gradient(circle, rgba(255,215,0,0.2) 2px, transparent 2px);
+  background-size: 40px 40px, 80px 80px;
+  background-position: 0 0, 20px 30px;
+  pointer-events: none;
+  animation: sparkle 6s linear infinite;
+}
+
+@keyframes sparkle {
+  0% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.3; }
+}
+
+.eras-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* ========== КАРТОЧКИ ========== */
+.glass-card {
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 1rem;
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 25px -12px rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 215, 0, 0.3);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #8CC63F, #5BC0EB, #FF2A5E);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ========== АНИМАЦИИ ========== */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-float { animation: float 3s ease infinite; }
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow { animation: spin-slow 8s linear infinite; }
+
+@keyframes bounce-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.animate-bounce-gentle { animation: bounce-gentle 2s ease infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slideIn { animation: slideIn 0.3s ease-out; }
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(245, 158, 11, 0.6); }
+}
+
+.animate-pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
+
+/* ========== СКРОЛЛБАРЫ ========== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F5E6D3;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D4A574;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #C9A96E;
+}
+
+textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+textarea::-webkit-scrollbar-thumb {
+  background: #D4A574;
+  border-radius: 3px;
+}
+
+/* ========== БАЗОВЫЕ СТИЛИ ========== */
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* ========== TOAST УВЕДОМЛЕНИЯ ========== */
+[role="status"] {
+  background: #FFF8F0 !important;
+  color: #3D2817 !important;
+  border: 1px solid #D4A574 !important;
+  border-radius: 12px !important;
+  padding: 16px 20px !important;
+  box-shadow: 0 10px 40px rgba(139, 111, 71, 0.2) !important;
+}
+
+[role="status"] > div {
+  color: #3D2817 !important;
+}
+
+/* ========== ЗАДЕРЖКИ АНИМАЦИЙ ========== */
+.delay-0 { animation-delay: 0ms; }
+.delay-50 { animation-delay: 50ms; }
+.delay-100 { animation-delay: 100ms; }
+.delay-150 { animation-delay: 150ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-250 { animation-delay: 250ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-350 { animation-delay: 350ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-450 { animation-delay: 450ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-550 { animation-delay: 550ms; }
+.delay-600 { animation-delay: 600ms; }
+.delay-650 { animation-delay: 650ms; }
+.delay-700 { animation-delay: 700ms; }
+.delay-750 { animation-delay: 750ms; }
+.delay-800 { animation-delay: 800ms; }
+.delay-850 { animation-delay: 850ms; }

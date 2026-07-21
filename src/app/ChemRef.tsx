@@ -2,226 +2,112 @@
 
 import { useState } from "react";
 
-// ОФИЦИАЛЬНАЯ ТАБЛИЦА РАСТВОРИМОСТИ ЕГЭ
-const ANIONS = ["OH⁻", "F⁻", "Cl⁻", "Br⁻", "I⁻", "S²⁻", "SO₃²⁻", "SO₄²⁻", "NO₃⁻", "CO₃²⁻", "SiO₃²⁻", "PO₄³⁻", "CH₃COO⁻"];
-
-const SOLUBILITY_ROWS = [
-  { ion: "H⁺",        vals: "Р Р Р Р Р Р Р Р Р Р Н Р Р" },
-  { ion: "Li⁺",       vals: "Р М Р Р Р Р Р Р Р Р Р Р Р" },
-  { ion: "Na⁺",       vals: "Р Р Р Р Р Р Р Р Р Р Р Р Р" },
-  { ion: "K⁺",        vals: "Р Р Р Р Р Р Р Р Р Р Р Р Р" },
-  { ion: "Rb⁺",       vals: "Р Р Р Р Р Р Р Р Р Р Р Р Р" },
-  { ion: "Cs⁺",       vals: "Р Р Р Р Р Р Р Р Р Р Р Р Р" },
-  { ion: "NH₄⁺",      vals: "Р Р Р Р Р Р Р Р Р Р Р Р Р" },
-  { ion: "Be²⁺",      vals: "Н Р Р Р Р — Р Р Р — Р Н Р" },
-  { ion: "Mg²⁺",      vals: "Н М Р Р Р — Р Р Р Н Н Н Р" },
-  { ion: "Ca²⁺",      vals: "М Н Р Р Р М М М Р Н Н Н Р" },
-  { ion: "Sr²⁺",      vals: "М Р Р Р Р Р М М Р Н Н Н Р" },
-  { ion: "Ba²⁺",      vals: "Р М Р Р Р Р Н Н Р Н Н Н Р" },
-  { ion: "Al³⁺",      vals: "Н Р Р Р Р — — Р Р — Н Н М" },
-  { ion: "Cr³⁺",      vals: "Н Р Р Р Р — — Р Р — Н Н Р" },
-  { ion: "Fe²⁺",      vals: "Н Р Р Р Р Н Н Р Р Н Н Н Р" },
-  { ion: "Fe³⁺",      vals: "Н Р Р Р Р — — Р Р — Н Н Р" },
-  { ion: "Mn²⁺",      vals: "Н Р Р Р Р Н Н Р Р Н Н Н Р" },
-  { ion: "Zn²⁺",      vals: "Н Р Р Р Р Н Н Р Р Н Н Н Р" },
-  { ion: "Cu²⁺",      vals: "Н Р Р Р — Н Н Р Р Н Н Н Р" },
-  { ion: "Ag⁺",       vals: "— Р Н Н Н Н Н М Р Н Н Н М" },
-  { ion: "Hg²⁺",      vals: "— Р М Н Н Н Н М Р — Н Н Р" },
-  { ion: "Pb²⁺",      vals: "Н М М М Н Н Н Н Р Н Н Н Р" },
-  { ion: "Sn²⁺",      vals: "Н Р Р Р Р Н — Р Р — Н Н Р" },
+// ============ ПОЛНАЯ ТАБЛИЦА МЕНДЕЛЕЕВА ============
+const PERIODIC_DATA = [
+  { period: 1, groups: [{ A: "H", B: null }, { A: null, B: null }, { A: null, B: null }, { A: null, B: null }, { A: null, B: null }, { A: null, B: null }, { A: null, B: null }, { A: "He", B: null }] },
+  { period: 2, groups: [{ A: "Li", B: null }, { A: "Be", B: null }, { A: "B", B: null }, { A: "C", B: null }, { A: "N", B: null }, { A: "O", B: null }, { A: "F", B: null }, { A: "Ne", B: null }] },
+  { period: 3, groups: [{ A: "Na", B: null }, { A: "Mg", B: null }, { A: "Al", B: null }, { A: "Si", B: null }, { A: "P", B: null }, { A: "S", B: null }, { A: "Cl", B: null }, { A: "Ar", B: null }] },
+  { period: 4, groups: [{ A: "K", B: "Cu" }, { A: "Ca", B: "Zn" }, { A: "Ga", B: "Sc" }, { A: "Ge", B: "Ti" }, { A: "As", B: "V" }, { A: "Se", B: "Cr" }, { A: "Br", B: "Mn" }, { A: "Kr", B: ["Fe","Co","Ni"] }] },
+  { period: 5, groups: [{ A: "Rb", B: "Ag" }, { A: "Sr", B: "Cd" }, { A: "In", B: "Y" }, { A: "Sn", B: "Zr" }, { A: "Sb", B: "Nb" }, { A: "Te", B: "Mo" }, { A: "I", B: "Tc" }, { A: "Xe", B: ["Ru","Rh","Pd"] }] },
+  { period: 6, groups: [{ A: "Cs", B: "Au" }, { A: "Ba", B: "Hg" }, { A: "Tl", B: "La*" }, { A: "Pb", B: "Hf" }, { A: "Bi", B: "Ta" }, { A: "Po", B: "W" }, { A: "At", B: "Re" }, { A: "Rn", B: ["Os","Ir","Pt"] }] },
+  { period: 7, groups: [{ A: "Fr", B: "Rg" }, { A: "Ra", B: "Cn" }, { A: "Nh", B: "Ac*" }, { A: "Fl", B: "Rf" }, { A: "Mc", B: "Db" }, { A: "Lv", B: "Sg" }, { A: "Ts", B: "Bh" }, { A: "Og", B: ["Hs","Mt","Ds"] }] },
 ];
 
-// Цвета осадков
-const PRECIPITATE_COLORS: Record<string, { bg: string; name: string; hex: string; equation?: string }> = {
-  "Ag⁺_Cl⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый творожистый", hex: "#ffffff", equation: "Ag⁺ + Cl⁻ → AgCl↓" },
-  "Ag⁺_Br⁻": { bg: "bg-amber-100", name: "Светло-жёлтый", hex: "#fef3c7", equation: "Ag⁺ + Br⁻ → AgBr↓" },
-  "Ag⁺_I⁻": { bg: "bg-yellow-300", name: "Жёлтый", hex: "#fde047", equation: "Ag⁺ + I⁻ → AgI↓" },
-  "Ag⁺_S²⁻": { bg: "bg-gray-900", name: "Чёрный", hex: "#111827", equation: "2Ag⁺ + S²⁻ → Ag₂S↓" },
-  "Ag⁺_SO₄²⁻": { bg: "bg-gray-100", name: "Белый (малораств.)", hex: "#f3f4f6", equation: "2Ag⁺ + SO₄²⁻ ⇌ Ag₂SO₄↓" },
-  "Ag⁺_CO₃²⁻": { bg: "bg-amber-50", name: "Желтоватый", hex: "#fffbeb", equation: "2Ag⁺ + CO₃²⁻ → Ag₂CO₃↓" },
-  "Ag⁺_PO₄³⁻": { bg: "bg-yellow-200", name: "Жёлтый", hex: "#fef08a", equation: "3Ag⁺ + PO₄³⁻ → Ag₃PO₄↓" },
-  "Ba²⁺_SO₄²⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "Ba²⁺ + SO₄²⁻ → BaSO₄↓" },
-  "Ba²⁺_CO₃²⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "Ba²⁺ + CO₃²⁻ → BaCO₃↓" },
-  "Ba²⁺_PO₄³⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "3Ba²⁺ + 2PO₄³⁻ → Ba₃(PO₄)₂↓" },
-  "Ca²⁺_OH⁻": { bg: "bg-gray-100", name: "Белый (малораств.)", hex: "#f3f4f6", equation: "Ca²⁺ + 2OH⁻ ⇌ Ca(OH)₂↓" },
-  "Ca²⁺_CO₃²⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый (мел, мрамор)", hex: "#ffffff", equation: "Ca²⁺ + CO₃²⁻ → CaCO₃↓" },
-  "Ca²⁺_PO₄³⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "3Ca²⁺ + 2PO₄³⁻ → Ca₃(PO₄)₂↓" },
-  "Ca²⁺_SO₄²⁻": { bg: "bg-gray-100", name: "Белый (малораств.)", hex: "#f3f4f6", equation: "Ca²⁺ + SO₄²⁻ ⇌ CaSO₄↓" },
-  "Mg²⁺_OH⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "Mg²⁺ + 2OH⁻ → Mg(OH)₂↓" },
-  "Mg²⁺_CO₃²⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "Mg²⁺ + CO₃²⁻ → MgCO₃↓" },
-  "Al³⁺_OH⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый студенистый", hex: "#ffffff", equation: "Al³⁺ + 3OH⁻ → Al(OH)₃↓" },
-  "Fe²⁺_OH⁻": { bg: "bg-gray-400", name: "Серо-зелёный", hex: "#9ca3af", equation: "Fe²⁺ + 2OH⁻ → Fe(OH)₂↓" },
-  "Fe²⁺_S²⁻": { bg: "bg-gray-900", name: "Чёрный", hex: "#111827", equation: "Fe²⁺ + S²⁻ → FeS↓" },
-  "Fe³⁺_OH⁻": { bg: "bg-orange-700", name: "Красно-бурый (ржавчина)", hex: "#c2410c", equation: "Fe³⁺ + 3OH⁻ → Fe(OH)₃↓" },
-  "Cu²⁺_OH⁻": { bg: "bg-blue-400", name: "Голубой (синий)", hex: "#60a5fa", equation: "Cu²⁺ + 2OH⁻ → Cu(OH)₂↓" },
-  "Cu²⁺_S²⁻": { bg: "bg-gray-900", name: "Чёрный", hex: "#111827", equation: "Cu²⁺ + S²⁻ → CuS↓" },
-  "Cu²⁺_CO₃²⁻": { bg: "bg-emerald-400", name: "Зелёный (малахит)", hex: "#34d399", equation: "2Cu²⁺ + 2CO₃²⁻ + H₂O → (CuOH)₂CO₃↓ + CO₂↑" },
-  "Zn²⁺_OH⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "Zn²⁺ + 2OH⁻ → Zn(OH)₂↓" },
-  "Zn²⁺_S²⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "Zn²⁺ + S²⁻ → ZnS↓" },
-  "Pb²⁺_S²⁻": { bg: "bg-gray-900", name: "Чёрный", hex: "#111827", equation: "Pb²⁺ + S²⁻ → PbS↓" },
-  "Pb²⁺_I⁻": { bg: "bg-yellow-400", name: "Золотисто-жёлтый", hex: "#facc15", equation: "Pb²⁺ + 2I⁻ → PbI₂↓" },
-  "Pb²⁺_SO₄²⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый", hex: "#ffffff", equation: "Pb²⁺ + SO₄²⁻ → PbSO₄↓" },
-  "Pb²⁺_Cl⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый (малораств.)", hex: "#ffffff", equation: "Pb²⁺ + 2Cl⁻ ⇌ PbCl₂↓" },
-  "Hg²⁺_S²⁻": { bg: "bg-gray-900", name: "Чёрный (киноварь)", hex: "#111827", equation: "Hg²⁺ + S²⁻ → HgS↓" },
-  "Hg²⁺_I⁻": { bg: "bg-red-500", name: "Красный", hex: "#ef4444", equation: "Hg²⁺ + 2I⁻ → HgI₂↓" },
-  "Mn²⁺_OH⁻": { bg: "bg-pink-200", name: "Розовый", hex: "#fbcfe8", equation: "Mn²⁺ + 2OH⁻ → Mn(OH)₂↓" },
-  "Mn²⁺_S²⁻": { bg: "bg-pink-300", name: "Телесный", hex: "#f9a8d4", equation: "Mn²⁺ + S²⁻ → MnS↓" },
-  "Cr³⁺_OH⁻": { bg: "bg-emerald-400", name: "Серо-зелёный", hex: "#34d399", equation: "Cr³⁺ + 3OH⁻ → Cr(OH)₃↓" },
-  "H⁺_SiO₃²⁻": { bg: "bg-white border-2 border-gray-400", name: "Белый студенистый (гель)", hex: "#f3f4f6", equation: "2H⁺ + SiO₃²⁻ → H₂SiO₃↓" },
+const LANTHANOIDS = ["La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu"];
+const ACTINOIDS = ["Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr"];
+const GROUP_LABELS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
+
+const ELEMENT_DATA: Record<string, any> = {
+  "H":{symbol:"H",name:"Водород",mass:1.008,number:1,block:"s"},"He":{symbol:"He",name:"Гелий",mass:4.0026,number:2,block:"s"},"Li":{symbol:"Li",name:"Литий",mass:6.94,number:3,block:"s"},"Be":{symbol:"Be",name:"Бериллий",mass:9.0122,number:4,block:"s"},"B":{symbol:"B",name:"Бор",mass:10.81,number:5,block:"p"},"C":{symbol:"C",name:"Углерод",mass:12.011,number:6,block:"p"},"N":{symbol:"N",name:"Азот",mass:14.007,number:7,block:"p"},"O":{symbol:"O",name:"Кислород",mass:15.999,number:8,block:"p"},"F":{symbol:"F",name:"Фтор",mass:18.998,number:9,block:"p"},"Ne":{symbol:"Ne",name:"Неон",mass:20.180,number:10,block:"p"},"Na":{symbol:"Na",name:"Натрий",mass:22.990,number:11,block:"s"},"Mg":{symbol:"Mg",name:"Магний",mass:24.305,number:12,block:"s"},"Al":{symbol:"Al",name:"Алюминий",mass:26.982,number:13,block:"p"},"Si":{symbol:"Si",name:"Кремний",mass:28.085,number:14,block:"p"},"P":{symbol:"P",name:"Фосфор",mass:30.974,number:15,block:"p"},"S":{symbol:"S",name:"Сера",mass:32.06,number:16,block:"p"},"Cl":{symbol:"Cl",name:"Хлор",mass:35.45,number:17,block:"p"},"Ar":{symbol:"Ar",name:"Аргон",mass:39.948,number:18,block:"p"},"K":{symbol:"K",name:"Калий",mass:39.098,number:19,block:"s"},"Ca":{symbol:"Ca",name:"Кальций",mass:40.078,number:20,block:"s"},"Sc":{symbol:"Sc",name:"Скандий",mass:44.956,number:21,block:"d"},"Ti":{symbol:"Ti",name:"Титан",mass:47.867,number:22,block:"d"},"V":{symbol:"V",name:"Ванадий",mass:50.942,number:23,block:"d"},"Cr":{symbol:"Cr",name:"Хром",mass:51.996,number:24,block:"d"},"Mn":{symbol:"Mn",name:"Марганец",mass:54.938,number:25,block:"d"},"Fe":{symbol:"Fe",name:"Железо",mass:55.845,number:26,block:"d"},"Co":{symbol:"Co",name:"Кобальт",mass:58.933,number:27,block:"d"},"Ni":{symbol:"Ni",name:"Никель",mass:58.693,number:28,block:"d"},"Cu":{symbol:"Cu",name:"Медь",mass:63.546,number:29,block:"d"},"Zn":{symbol:"Zn",name:"Цинк",mass:65.38,number:30,block:"d"},"Ga":{symbol:"Ga",name:"Галлий",mass:69.723,number:31,block:"p"},"Ge":{symbol:"Ge",name:"Германий",mass:72.630,number:32,block:"p"},"As":{symbol:"As",name:"Мышьяк",mass:74.922,number:33,block:"p"},"Se":{symbol:"Se",name:"Селен",mass:78.971,number:34,block:"p"},"Br":{symbol:"Br",name:"Бром",mass:79.904,number:35,block:"p"},"Kr":{symbol:"Kr",name:"Криптон",mass:83.798,number:36,block:"p"},"Rb":{symbol:"Rb",name:"Рубидий",mass:85.468,number:37,block:"s"},"Sr":{symbol:"Sr",name:"Стронций",mass:87.62,number:38,block:"s"},"Y":{symbol:"Y",name:"Иттрий",mass:88.906,number:39,block:"d"},"Zr":{symbol:"Zr",name:"Цирконий",mass:91.224,number:40,block:"d"},"Nb":{symbol:"Nb",name:"Ниобий",mass:92.906,number:41,block:"d"},"Mo":{symbol:"Mo",name:"Молибден",mass:95.95,number:42,block:"d"},"Tc":{symbol:"Tc",name:"Технеций",mass:98,number:43,block:"d"},"Ru":{symbol:"Ru",name:"Рутений",mass:101.07,number:44,block:"d"},"Rh":{symbol:"Rh",name:"Родий",mass:102.91,number:45,block:"d"},"Pd":{symbol:"Pd",name:"Палладий",mass:106.42,number:46,block:"d"},"Ag":{symbol:"Ag",name:"Серебро",mass:107.87,number:47,block:"d"},"Cd":{symbol:"Cd",name:"Кадмий",mass:112.41,number:48,block:"d"},"In":{symbol:"In",name:"Индий",mass:114.82,number:49,block:"p"},"Sn":{symbol:"Sn",name:"Олово",mass:118.71,number:50,block:"p"},"Sb":{symbol:"Sb",name:"Сурьма",mass:121.76,number:51,block:"p"},"Te":{symbol:"Te",name:"Теллур",mass:127.60,number:52,block:"p"},"I":{symbol:"I",name:"Йод",mass:126.90,number:53,block:"p"},"Xe":{symbol:"Xe",name:"Ксенон",mass:131.29,number:54,block:"p"},"Cs":{symbol:"Cs",name:"Цезий",mass:132.91,number:55,block:"s"},"Ba":{symbol:"Ba",name:"Барий",mass:137.33,number:56,block:"s"},"La":{symbol:"La",name:"Лантан",mass:138.91,number:57,block:"f"},"Ce":{symbol:"Ce",name:"Церий",mass:140.12,number:58,block:"f"},"Pr":{symbol:"Pr",name:"Празеодим",mass:140.91,number:59,block:"f"},"Nd":{symbol:"Nd",name:"Неодим",mass:144.24,number:60,block:"f"},"Pm":{symbol:"Pm",name:"Прометий",mass:145,number:61,block:"f"},"Sm":{symbol:"Sm",name:"Самарий",mass:150.36,number:62,block:"f"},"Eu":{symbol:"Eu",name:"Европий",mass:151.96,number:63,block:"f"},"Gd":{symbol:"Gd",name:"Гадолиний",mass:157.25,number:64,block:"f"},"Tb":{symbol:"Tb",name:"Тербий",mass:158.93,number:65,block:"f"},"Dy":{symbol:"Dy",name:"Диспрозий",mass:162.50,number:66,block:"f"},"Ho":{symbol:"Ho",name:"Гольмий",mass:164.93,number:67,block:"f"},"Er":{symbol:"Er",name:"Эрбий",mass:167.26,number:68,block:"f"},"Tm":{symbol:"Tm",name:"Тулий",mass:168.93,number:69,block:"f"},"Yb":{symbol:"Yb",name:"Иттербий",mass:173.05,number:70,block:"f"},"Lu":{symbol:"Lu",name:"Лютеций",mass:174.97,number:71,block:"f"},"Hf":{symbol:"Hf",name:"Гафний",mass:178.49,number:72,block:"d"},"Ta":{symbol:"Ta",name:"Тантал",mass:180.95,number:73,block:"d"},"W":{symbol:"W",name:"Вольфрам",mass:183.84,number:74,block:"d"},"Re":{symbol:"Re",name:"Рений",mass:186.21,number:75,block:"d"},"Os":{symbol:"Os",name:"Осмий",mass:190.23,number:76,block:"d"},"Ir":{symbol:"Ir",name:"Иридий",mass:192.22,number:77,block:"d"},"Pt":{symbol:"Pt",name:"Платина",mass:195.08,number:78,block:"d"},"Au":{symbol:"Au",name:"Золото",mass:196.97,number:79,block:"d"},"Hg":{symbol:"Hg",name:"Ртуть",mass:200.59,number:80,block:"d"},"Tl":{symbol:"Tl",name:"Таллий",mass:204.38,number:81,block:"p"},"Pb":{symbol:"Pb",name:"Свинец",mass:207.2,number:82,block:"p"},"Bi":{symbol:"Bi",name:"Висмут",mass:208.98,number:83,block:"p"},"Po":{symbol:"Po",name:"Полоний",mass:209,number:84,block:"p"},"At":{symbol:"At",name:"Астат",mass:210,number:85,block:"p"},"Rn":{symbol:"Rn",name:"Радон",mass:222,number:86,block:"p"},"Fr":{symbol:"Fr",name:"Франций",mass:223,number:87,block:"s"},"Ra":{symbol:"Ra",name:"Радий",mass:226,number:88,block:"s"},"Ac":{symbol:"Ac",name:"Актиний",mass:227,number:89,block:"f"},"Th":{symbol:"Th",name:"Торий",mass:232.04,number:90,block:"f"},"Pa":{symbol:"Pa",name:"Протактиний",mass:231.04,number:91,block:"f"},"U":{symbol:"U",name:"Уран",mass:238.03,number:92,block:"f"},"Np":{symbol:"Np",name:"Нептуний",mass:237,number:93,block:"f"},"Pu":{symbol:"Pu",name:"Плутоний",mass:244,number:94,block:"f"},"Am":{symbol:"Am",name:"Америций",mass:243,number:95,block:"f"},"Cm":{symbol:"Cm",name:"Кюрий",mass:247,number:96,block:"f"},"Bk":{symbol:"Bk",name:"Берклий",mass:247,number:97,block:"f"},"Cf":{symbol:"Cf",name:"Калифорний",mass:251,number:98,block:"f"},"Es":{symbol:"Es",name:"Эйнштейний",mass:252,number:99,block:"f"},"Fm":{symbol:"Fm",name:"Фермий",mass:257,number:100,block:"f"},"Md":{symbol:"Md",name:"Менделевий",mass:258,number:101,block:"f"},"No":{symbol:"No",name:"Нобелий",mass:259,number:102,block:"f"},"Lr":{symbol:"Lr",name:"Лоуренсий",mass:266,number:103,block:"f"},"Rf":{symbol:"Rf",name:"Резерфордий",mass:267,number:104,block:"d"},"Db":{symbol:"Db",name:"Дубний",mass:268,number:105,block:"d"},"Sg":{symbol:"Sg",name:"Сиборгий",mass:269,number:106,block:"d"},"Bh":{symbol:"Bh",name:"Борий",mass:270,number:107,block:"d"},"Hs":{symbol:"Hs",name:"Хассий",mass:269,number:108,block:"d"},"Mt":{symbol:"Mt",name:"Мейтнерий",mass:278,number:109,block:"d"},"Ds":{symbol:"Ds",name:"Дармштадтий",mass:281,number:110,block:"d"},"Rg":{symbol:"Rg",name:"Рентгений",mass:282,number:111,block:"d"},"Cn":{symbol:"Cn",name:"Коперниций",mass:285,number:112,block:"d"},"Nh":{symbol:"Nh",name:"Нихоний",mass:286,number:113,block:"p"},"Fl":{symbol:"Fl",name:"Флеровий",mass:289,number:114,block:"p"},"Mc":{symbol:"Mc",name:"Московий",mass:290,number:115,block:"p"},"Lv":{symbol:"Lv",name:"Ливерморий",mass:293,number:116,block:"p"},"Ts":{symbol:"Ts",name:"Теннессин",mass:294,number:117,block:"p"},"Og":{symbol:"Og",name:"Оганесон",mass:294,number:118,block:"p"},
 };
 
-// Гидролиз для несуществующих соединений (—)
-const HYDROLYSIS_INFO: Record<string, { color: string; name: string; hex: string; equation: string }> = {
-  "Al³⁺_S²⁻": { color: "Белый + газ", name: "Al(OH)₃↓ + H₂S↑", hex: "#ffffff", equation: "2Al³⁺ + 3S²⁻ + 6H₂O → 2Al(OH)₃↓ + 3H₂S↑" },
-  "Al³⁺_CO₃²⁻": { color: "Белый + газ", name: "Al(OH)₃↓ + CO₂↑", hex: "#ffffff", equation: "2Al³⁺ + 3CO₃²⁻ + 3H₂O → 2Al(OH)₃↓ + 3CO₂↑" },
-  "Al³⁺_SO₃²⁻": { color: "Белый + газ", name: "Al(OH)₃↓ + SO₂↑", hex: "#ffffff", equation: "2Al³⁺ + 3SO₃²⁻ + 3H₂O → 2Al(OH)₃↓ + 3SO₂↑" },
-  "Cr³⁺_S²⁻": { color: "Зелёный + газ", name: "Cr(OH)₃↓ + H₂S↑", hex: "#34d399", equation: "2Cr³⁺ + 3S²⁻ + 6H₂O → 2Cr(OH)₃↓ + 3H₂S↑" },
-  "Cr³⁺_CO₃²⁻": { color: "Зелёный + газ", name: "Cr(OH)₃↓ + CO₂↑", hex: "#34d399", equation: "2Cr³⁺ + 3CO₃²⁻ + 3H₂O → 2Cr(OH)₃↓ + 3CO₂↑" },
-  "Cr³⁺_SO₃²⁻": { color: "Зелёный + газ", name: "Cr(OH)₃↓ + SO₂↑", hex: "#34d399", equation: "2Cr³⁺ + 3SO₃²⁻ + 3H₂O → 2Cr(OH)₃↓ + 3SO₂↑" },
-  "Fe³⁺_S²⁻": { color: "Бурый + газ", name: "Fe(OH)₃↓ + H₂S↑", hex: "#c2410c", equation: "2Fe³⁺ + 3S²⁻ + 6H₂O → 2Fe(OH)₃↓ + 3H₂S↑" },
-  "Fe³⁺_CO₃²⁻": { color: "Бурый + газ", name: "Fe(OH)₃↓ + CO₂↑", hex: "#c2410c", equation: "2Fe³⁺ + 3CO₃²⁻ + 3H₂O → 2Fe(OH)₃↓ + 3CO₂↑" },
-  "Fe³⁺_SO₃²⁻": { color: "Бурый + газ", name: "Fe(OH)₃↓ + SO₂↑", hex: "#c2410c", equation: "2Fe³⁺ + 3SO₃²⁻ + 3H₂O → 2Fe(OH)₃↓ + 3SO₂↑" },
-  "Cu²⁺_I⁻": { color: "Белый + I₂", name: "CuI↓ + I₂", hex: "#ffffff", equation: "2Cu²⁺ + 4I⁻ → 2CuI↓ + I₂" },
-  "Hg²⁺_OH⁻": { color: "Жёлтый", name: "HgO↓ (разлагается)", hex: "#eab308", equation: "Hg²⁺ + 2OH⁻ → HgO↓ + H₂O" },
-  "Ag⁺_OH⁻": { color: "Бурый", name: "Ag₂O↓ (разлагается)", hex: "#92400e", equation: "2Ag⁺ + 2OH⁻ → Ag₂O↓ + H₂O" },
-};
-
-function getPrecipitateKey(cation: string, anion: string): string {
-  return `${cation}_${anion}`;
+function getBlockColor(block: string): string {
+  switch (block) { case "s": return "bg-rose-200"; case "p": return "bg-amber-100"; case "d": return "bg-sky-200"; case "f": return "bg-emerald-200"; default: return "bg-gray-200"; }
 }
 
-function getHydrolysisInfo(cation: string, anion: string) {
-  return HYDROLYSIS_INFO[getPrecipitateKey(cation, anion)] || null;
-}
+// ============ ПОЛНАЯ ТАБЛИЦА РАСТВОРИМОСТИ (ВСЕ ИОНЫ) ============
+const CATIONS = ["H⁺","Li⁺","NH₄⁺","K⁺","Na⁺","Ba²⁺","Ca²⁺","Mg²⁺","Al³⁺","Cr³⁺","Fe²⁺","Fe³⁺","Mn²⁺","Zn²⁺","Cu²⁺","Ag⁺","Hg²⁺","Pb²⁺"];
 
-// Таблица Менделеева
-const PERIODIC_SHORT = [
-  { period: 1, group: "IA", elements: [{ n: 1, sym: "H", name: "Водород", mass: "1" }] },
-  { period: 1, group: "VIIIA", elements: [{ n: 2, sym: "He", name: "Гелий", mass: "4" }] },
-  { period: 2, group: "IA", elements: [{ n: 3, sym: "Li", name: "Литий", mass: "7" }] },
-  { period: 2, group: "IIA", elements: [{ n: 4, sym: "Be", name: "Бериллий", mass: "9" }] },
-  { period: 2, group: "IIIA", elements: [{ n: 5, sym: "B", name: "Бор", mass: "11" }] },
-  { period: 2, group: "IVA", elements: [{ n: 6, sym: "C", name: "Углерод", mass: "12" }] },
-  { period: 2, group: "VA", elements: [{ n: 7, sym: "N", name: "Азот", mass: "14" }] },
-  { period: 2, group: "VIA", elements: [{ n: 8, sym: "O", name: "Кислород", mass: "16" }] },
-  { period: 2, group: "VIIA", elements: [{ n: 9, sym: "F", name: "Фтор", mass: "19" }] },
-  { period: 2, group: "VIIIA", elements: [{ n: 10, sym: "Ne", name: "Неон", mass: "20" }] },
-  { period: 3, group: "IA", elements: [{ n: 11, sym: "Na", name: "Натрий", mass: "23" }] },
-  { period: 3, group: "IIA", elements: [{ n: 12, sym: "Mg", name: "Магний", mass: "24" }] },
-  { period: 3, group: "IIIA", elements: [{ n: 13, sym: "Al", name: "Алюминий", mass: "27" }] },
-  { period: 3, group: "IVA", elements: [{ n: 14, sym: "Si", name: "Кремний", mass: "28" }] },
-  { period: 3, group: "VA", elements: [{ n: 15, sym: "P", name: "Фосфор", mass: "31" }] },
-  { period: 3, group: "VIA", elements: [{ n: 16, sym: "S", name: "Сера", mass: "32" }] },
-  { period: 3, group: "VIIA", elements: [{ n: 17, sym: "Cl", name: "Хлор", mass: "35,5" }] },
-  { period: 3, group: "VIIIA", elements: [{ n: 18, sym: "Ar", name: "Аргон", mass: "40" }] },
-  { period: 4, group: "IA", elements: [{ n: 19, sym: "K", name: "Калий", mass: "39" }] },
-  { period: 4, group: "IIA", elements: [{ n: 20, sym: "Ca", name: "Кальций", mass: "40" }] },
-  { period: 4, group: "VIB", elements: [{ n: 24, sym: "Cr", name: "Хром", mass: "52" }] },
-  { period: 4, group: "VIIB", elements: [{ n: 25, sym: "Mn", name: "Марганец", mass: "55" }] },
-  { period: 4, group: "VIIIB", elements: [{ n: 26, sym: "Fe", name: "Железо", mass: "56" }] },
-  { period: 4, group: "IB", elements: [{ n: 29, sym: "Cu", name: "Медь", mass: "64" }] },
-  { period: 4, group: "IIB", elements: [{ n: 30, sym: "Zn", name: "Цинк", mass: "65" }] },
-  { period: 4, group: "VIIA", elements: [{ n: 35, sym: "Br", name: "Бром", mass: "80" }] },
-  { period: 5, group: "IA", elements: [{ n: 37, sym: "Rb", name: "Рубидий", mass: "85" }] },
-  { period: 5, group: "IIA", elements: [{ n: 38, sym: "Sr", name: "Стронций", mass: "88" }] },
-  { period: 5, group: "IB", elements: [{ n: 47, sym: "Ag", name: "Серебро", mass: "108" }] },
-  { period: 5, group: "VIIA", elements: [{ n: 53, sym: "I", name: "Йод", mass: "127" }] },
-  { period: 6, group: "IA", elements: [{ n: 55, sym: "Cs", name: "Цезий", mass: "133" }] },
-  { period: 6, group: "IIA", elements: [{ n: 56, sym: "Ba", name: "Барий", mass: "137" }] },
-  { period: 6, group: "VIIIB", elements: [{ n: 78, sym: "Pt", name: "Платина", mass: "195" }] },
-  { period: 6, group: "IB", elements: [{ n: 79, sym: "Au", name: "Золото", mass: "197" }] },
-  { period: 6, group: "IIB", elements: [{ n: 80, sym: "Hg", name: "Ртуть", mass: "201" }] },
-  { period: 6, group: "IVA", elements: [{ n: 82, sym: "Pb", name: "Свинец", mass: "207" }] },
+const SOLUBILITY_DATA: { anion: string; data: Record<string, { solubility: string; color?: string; precipitateColor?: string; ionicEquation?: string; hydrolysis?: string }> }[] = [
+  { anion:"OH⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"М",color:"bg-yellow-100",precipitateColor:"белый"},"Mg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Mg²⁺ + 2OH⁻ → Mg(OH)₂↓"},"Al³⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый студенистый",ionicEquation:"Al³⁺ + 3OH⁻ → Al(OH)₃↓"},"Cr³⁺":{solubility:"Н",color:"bg-green-200",precipitateColor:"серо-зелёный",ionicEquation:"Cr³⁺ + 3OH⁻ → Cr(OH)₃↓"},"Fe²⁺":{solubility:"Н",color:"bg-green-300",precipitateColor:"зеленоватый",ionicEquation:"Fe²⁺ + 2OH⁻ → Fe(OH)₂↓"},"Fe³⁺":{solubility:"Н",color:"bg-orange-300",precipitateColor:"бурый",ionicEquation:"Fe³⁺ + 3OH⁻ → Fe(OH)₃↓"},"Mn²⁺":{solubility:"Н",color:"bg-pink-200",precipitateColor:"светло-розовый",ionicEquation:"Mn²⁺ + 2OH⁻ → Mn(OH)₂↓"},"Zn²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Zn²⁺ + 2OH⁻ → Zn(OH)₂↓"},"Cu²⁺":{solubility:"Н",color:"bg-blue-300",precipitateColor:"голубой",ionicEquation:"Cu²⁺ + 2OH⁻ → Cu(OH)₂↓"},"Ag⁺":{solubility:"—",color:"bg-gray-300",precipitateColor:"разлагается",hydrolysis:"2AgOH → Ag₂O↓ + H₂O (бурый)"},"Hg²⁺":{solubility:"—",color:"bg-gray-300",precipitateColor:"разлагается",hydrolysis:"Hg(OH)₂ → HgO↓ + H₂O"},"Pb²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Pb²⁺ + 2OH⁻ → Pb(OH)₂↓"}}},
+  { anion:"F⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"М",color:"bg-yellow-100"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"М",color:"bg-yellow-100"},"Ca²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Ca²⁺ + 2F⁻ → CaF₂↓"},"Mg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Al³⁺":{solubility:"М",color:"bg-yellow-100"},"Cr³⁺":{solubility:"Н",color:"bg-green-100",precipitateColor:"зелёный"},"Fe²⁺":{solubility:"М",color:"bg-yellow-100"},"Fe³⁺":{solubility:"Н",color:"bg-yellow-100",precipitateColor:"желтоватый"},"Mn²⁺":{solubility:"М",color:"bg-yellow-100"},"Zn²⁺":{solubility:"М",color:"bg-yellow-100"},"Cu²⁺":{solubility:"М",color:"bg-yellow-100"},"Ag⁺":{solubility:"Р",color:"bg-white"},"Hg²⁺":{solubility:"Р",color:"bg-white"},"Pb²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Pb²⁺ + 2F⁻ → PbF₂↓"}}},
+  { anion:"Cl⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"Р",color:"bg-white"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"Р",color:"bg-white"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"Н",color:"bg-white border-2 border-gray-400",precipitateColor:"белый творожистый",ionicEquation:"Ag⁺ + Cl⁻ → AgCl↓"},"Hg²⁺":{solubility:"Р",color:"bg-white"},"Pb²⁺":{solubility:"М",color:"bg-yellow-100",precipitateColor:"белый",ionicEquation:"Pb²⁺ + 2Cl⁻ → PbCl₂↓"}}},
+  { anion:"Br⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"Р",color:"bg-white"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"Р",color:"bg-white"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"Н",color:"bg-yellow-200",precipitateColor:"светло-жёлтый",ionicEquation:"Ag⁺ + Br⁻ → AgBr↓"},"Hg²⁺":{solubility:"М",color:"bg-yellow-100"},"Pb²⁺":{solubility:"М",color:"bg-yellow-100",precipitateColor:"белый"}}},
+  { anion:"I⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"Р",color:"bg-white"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"2Fe³⁺ + 2I⁻ → 2Fe²⁺ + I₂ (ОВР, буреет)"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"2Cu²⁺ + 4I⁻ → 2CuI↓ + I₂"},"Ag⁺":{solubility:"Н",color:"bg-yellow-400",precipitateColor:"жёлтый",ionicEquation:"Ag⁺ + I⁻ → AgI↓"},"Hg²⁺":{solubility:"Н",color:"bg-red-300",precipitateColor:"красный",ionicEquation:"Hg²⁺ + 2I⁻ → HgI₂↓"},"Pb²⁺":{solubility:"Н",color:"bg-yellow-300",precipitateColor:"золотисто-жёлтый",ionicEquation:"Pb²⁺ + 2I⁻ → PbI₂↓"}}},
+  { anion:"NO₃⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"Р",color:"bg-white"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"Р",color:"bg-white"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"Р",color:"bg-white"},"Hg²⁺":{solubility:"Р",color:"bg-white"},"Pb²⁺":{solubility:"Р",color:"bg-white"}}},
+  { anion:"NO₂⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"гидролизуется"},"Cr³⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"гидролизуется"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"гидролизуется"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"М",color:"bg-yellow-100",precipitateColor:"белый"},"Hg²⁺":{solubility:"Р",color:"bg-white"},"Pb²⁺":{solubility:"Р",color:"bg-white"}}},
+  { anion:"S²⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"М",color:"bg-yellow-100"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Al₂S₃ + 6H₂O → 2Al(OH)₃↓ + 3H₂S↑"},"Cr³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Cr₂S₃ + 6H₂O → 2Cr(OH)₃↓ + 3H₂S↑"},"Fe²⁺":{solubility:"Н",color:"bg-gray-800 text-white",precipitateColor:"чёрный",ionicEquation:"Fe²⁺ + S²⁻ → FeS↓"},"Fe³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Fe₂S₃ + 6H₂O → 2Fe(OH)₃↓ + 3H₂S↑"},"Mn²⁺":{solubility:"Н",color:"bg-pink-300",precipitateColor:"розовый",ionicEquation:"Mn²⁺ + S²⁻ → MnS↓"},"Zn²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Zn²⁺ + S²⁻ → ZnS↓"},"Cu²⁺":{solubility:"Н",color:"bg-gray-800 text-white",precipitateColor:"чёрный",ionicEquation:"Cu²⁺ + S²⁻ → CuS↓"},"Ag⁺":{solubility:"Н",color:"bg-gray-800 text-white",precipitateColor:"чёрный",ionicEquation:"2Ag⁺ + S²⁻ → Ag₂S↓"},"Hg²⁺":{solubility:"Н",color:"bg-gray-800 text-white",precipitateColor:"чёрный",ionicEquation:"Hg²⁺ + S²⁻ → HgS↓"},"Pb²⁺":{solubility:"Н",color:"bg-gray-800 text-white",precipitateColor:"чёрный",ionicEquation:"Pb²⁺ + S²⁻ → PbS↓"}}},
+  { anion:"SO₃²⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Ba²⁺ + SO₃²⁻ → BaSO₃↓"},"Ca²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Mg²⁺":{solubility:"М",color:"bg-yellow-100"},"Al³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Al₂(SO₃)₃ + 3H₂O → 2Al(OH)₃↓ + 3SO₂↑"},"Cr³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Cr₂(SO₃)₃ + 3H₂O → 2Cr(OH)₃↓ + 3SO₂↑"},"Fe²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Fe³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Fe₂(SO₃)₃ + 3H₂O → 2Fe(OH)₃↓ + 3SO₂↑"},"Mn²⁺":{solubility:"Н",color:"bg-pink-100",precipitateColor:"розовый"},"Zn²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Cu²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Ag⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"2Ag⁺ + SO₃²⁻ → Ag₂SO₃↓"},"Hg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Pb²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"}}},
+  { anion:"SO₄²⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Ba²⁺ + SO₄²⁻ → BaSO₄↓"},"Ca²⁺":{solubility:"М",color:"bg-yellow-100",precipitateColor:"белый"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"Р",color:"bg-white"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"Р",color:"bg-white"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"М",color:"bg-yellow-100"},"Hg²⁺":{solubility:"Р",color:"bg-white"},"Pb²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Pb²⁺ + SO₄²⁻ → PbSO₄↓"}}},
+  { anion:"CO₃²⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Ba²⁺ + CO₃²⁻ → BaCO₃↓"},"Ca²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Ca²⁺ + CO₃²⁻ → CaCO₃↓"},"Mg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Al³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Al₂(CO₃)₃ + 3H₂O → 2Al(OH)₃↓ + 3CO₂↑"},"Cr³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Cr₂(CO₃)₃ + 3H₂O → 2Cr(OH)₃↓ + 3CO₂↑"},"Fe²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Fe³⁺":{solubility:"—",color:"bg-gray-300",hydrolysis:"Fe₂(CO₃)₃ + 3H₂O → 2Fe(OH)₃↓ + 3CO₂↑"},"Mn²⁺":{solubility:"Н",color:"bg-pink-100",precipitateColor:"розовый"},"Zn²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Cu²⁺":{solubility:"Н",color:"bg-green-300",precipitateColor:"зелёный",ionicEquation:"Cu²⁺ + CO₃²⁻ → CuCO₃↓"},"Ag⁺":{solubility:"Н",color:"bg-yellow-200",precipitateColor:"жёлтый",ionicEquation:"2Ag⁺ + CO₃²⁻ → Ag₂CO₃↓"},"Hg²⁺":{solubility:"Н",color:"bg-yellow-100",precipitateColor:"жёлтый"},"Pb²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"}}},
+  { anion:"SiO₃²⁻",data:{"H⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"студенистый",ionicEquation:"2H⁺ + SiO₃²⁻ → H₂SiO₃↓"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"гидролизуется"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Ca²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Mg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Al³⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Cr³⁺":{solubility:"Н",color:"bg-green-100",precipitateColor:"зелёный"},"Fe²⁺":{solubility:"Н",color:"bg-green-100",precipitateColor:"зеленоватый"},"Fe³⁺":{solubility:"Н",color:"bg-yellow-100",precipitateColor:"жёлтый"},"Mn²⁺":{solubility:"Н",color:"bg-pink-100",precipitateColor:"розовый"},"Zn²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Cu²⁺":{solubility:"Н",color:"bg-blue-200",precipitateColor:"голубой"},"Ag⁺":{solubility:"Н",color:"bg-yellow-200",precipitateColor:"жёлтый"},"Hg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Pb²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"}}},
+  { anion:"PO₄³⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"3Li⁺ + PO₄³⁻ → Li₃PO₄↓"},"NH₄⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"гидролизуется обратимо"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"3Ba²⁺ + 2PO₄³⁻ → Ba₃(PO₄)₂↓"},"Ca²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"3Ca²⁺ + 2PO₄³⁻ → Ca₃(PO₄)₂↓"},"Mg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Al³⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый",ionicEquation:"Al³⁺ + PO₄³⁻ → AlPO₄↓"},"Cr³⁺":{solubility:"Н",color:"bg-green-100",precipitateColor:"зелёный"},"Fe²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Fe³⁺":{solubility:"Н",color:"bg-yellow-200",precipitateColor:"жёлтый",ionicEquation:"Fe³⁺ + PO₄³⁻ → FePO₄↓"},"Mn²⁺":{solubility:"Н",color:"bg-pink-100",precipitateColor:"розовый"},"Zn²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Cu²⁺":{solubility:"Н",color:"bg-blue-200",precipitateColor:"голубой",ionicEquation:"3Cu²⁺ + 2PO₄³⁻ → Cu₃(PO₄)₂↓"},"Ag⁺":{solubility:"Н",color:"bg-yellow-300",precipitateColor:"жёлтый",ionicEquation:"3Ag⁺ + PO₄³⁻ → Ag₃PO₄↓"},"Hg²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"},"Pb²⁺":{solubility:"Н",color:"bg-white border-2 border-gray-300",precipitateColor:"белый"}}},
+  { anion:"CrO₄²⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Н",color:"bg-yellow-300",precipitateColor:"жёлтый",ionicEquation:"Ba²⁺ + CrO₄²⁻ → BaCrO₄↓"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"?",color:"bg-gray-100"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"?",color:"bg-gray-100"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Н",color:"bg-yellow-200",precipitateColor:"жёлто-коричневый",ionicEquation:"Cu²⁺ + CrO₄²⁻ → CuCrO₄↓"},"Ag⁺":{solubility:"Н",color:"bg-red-300",precipitateColor:"красно-коричневый",ionicEquation:"2Ag⁺ + CrO₄²⁻ → Ag₂CrO₄↓"},"Hg²⁺":{solubility:"Н",color:"bg-red-200",precipitateColor:"красный"},"Pb²⁺":{solubility:"Н",color:"bg-yellow-400",precipitateColor:"жёлтый",ionicEquation:"Pb²⁺ + CrO₄²⁻ → PbCrO₄↓"}}},
+  { anion:"Cr₂O₇²⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"Р",color:"bg-white"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"Р",color:"bg-white"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"Н",color:"bg-red-400",precipitateColor:"красный",ionicEquation:"2Ag⁺ + Cr₂O₇²⁻ → Ag₂Cr₂O₇↓"},"Hg²⁺":{solubility:"Н",color:"bg-red-200",precipitateColor:"красный"},"Pb²⁺":{solubility:"Н",color:"bg-yellow-300",precipitateColor:"жёлтый"}}},
+  { anion:"MnO₄⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"Р",color:"bg-white"},"Cr³⁺":{solubility:"Р",color:"bg-white"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"Р",color:"bg-white"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"Р",color:"bg-white"},"Hg²⁺":{solubility:"Р",color:"bg-white"},"Pb²⁺":{solubility:"Р",color:"bg-white"}}},
+  { anion:"CH₃COO⁻",data:{"H⁺":{solubility:"Р",color:"bg-white"},"Li⁺":{solubility:"Р",color:"bg-white"},"NH₄⁺":{solubility:"Р",color:"bg-white"},"K⁺":{solubility:"Р",color:"bg-white"},"Na⁺":{solubility:"Р",color:"bg-white"},"Ba²⁺":{solubility:"Р",color:"bg-white"},"Ca²⁺":{solubility:"Р",color:"bg-white"},"Mg²⁺":{solubility:"Р",color:"bg-white"},"Al³⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"Al³⁺ + 3CH₃COO⁻ + 2H₂O → Al(OH)₂CH₃COO↓ + 2CH₃COOH"},"Cr³⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"Cr³⁺ + 3CH₃COO⁻ + 2H₂O → Cr(OH)₂CH₃COO↓ + 2CH₃COOH"},"Fe²⁺":{solubility:"Р",color:"bg-white"},"Fe³⁺":{solubility:"?",color:"bg-gray-100",hydrolysis:"Fe³⁺ + 3CH₃COO⁻ + 2H₂O → Fe(OH)₂CH₃COO↓ (красный) + 2CH₃COOH"},"Mn²⁺":{solubility:"Р",color:"bg-white"},"Zn²⁺":{solubility:"Р",color:"bg-white"},"Cu²⁺":{solubility:"Р",color:"bg-white"},"Ag⁺":{solubility:"М",color:"bg-yellow-100",precipitateColor:"белый"},"Hg²⁺":{solubility:"Р",color:"bg-white"},"Pb²⁺":{solubility:"Р",color:"bg-white"}}},
 ];
-
-const GROUP_COLORS: Record<string, string> = {
-  "IA": "bg-red-100 border-red-300", "IIA": "bg-orange-100 border-orange-300",
-  "IIIA": "bg-yellow-100 border-yellow-300", "IVA": "bg-lime-100 border-lime-300",
-  "VA": "bg-green-100 border-green-300", "VIA": "bg-emerald-100 border-emerald-300",
-  "VIIA": "bg-cyan-100 border-cyan-300", "VIIIA": "bg-blue-100 border-blue-300",
-  "IB": "bg-amber-200 border-amber-400", "IIB": "bg-gray-200 border-gray-400",
-  "VIB": "bg-violet-100 border-violet-300", "VIIB": "bg-purple-100 border-purple-300",
-  "VIIIB": "bg-pink-100 border-pink-300",
-};
 
 const ACTIVITY_SERIES = "Li → Rb → K → Ba → Sr → Ca → Na → Mg → Be → Al → Mn → Zn → Cr → Fe → Cd → Co → Ni → Sn → Pb → H₂ → Sb → Bi → Cu → Hg → Ag → Pt → Au";
 
 export default function ChemRef() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"solubility" | "activity" | "periodic">("solubility");
-  const [selectedPrecipitate, setSelectedPrecipitate] = useState<any>(null);
-
-  function handleCellClick(cation: string, anion: string) {
-    const key = getPrecipitateKey(cation, anion);
-    let info = PRECIPITATE_COLORS[key];
-    
-    if (!info) {
-      info = getHydrolysisInfo(cation, anion);
-    }
-    
-    if (info) setSelectedPrecipitate({ ...info, cation, anion });
-  }
-
-  function getCellStyle(cation: string, anion: string, value: string): string {
-    if (value === "Р") return "bg-emerald-100 text-emerald-800 font-bold";
-    if (value === "—") return "bg-gray-100 text-gray-400 font-bold cursor-pointer hover:ring-2 hover:ring-indigo-400 hover:scale-110 transition";
-    
-    const key = getPrecipitateKey(cation, anion);
-    const info = PRECIPITATE_COLORS[key] || getHydrolysisInfo(cation, anion);
-    
-    if (info) {
-      return `${info.bg} text-gray-800 font-bold cursor-pointer hover:ring-2 hover:ring-indigo-400 hover:scale-110 transition`;
-    }
-    
-    return "bg-amber-100 text-amber-800 font-bold cursor-pointer hover:ring-2 hover:ring-amber-400 hover:scale-110 transition";
-  }
+  const [selectedCell, setSelectedCell] = useState<any>(null);
 
   return (
     <>
       <button onClick={() => setOpen(!open)} className="fixed bottom-4 right-4 z-50 w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-full shadow-2xl hover:scale-110 transition-all flex items-center justify-center text-2xl" title="Справочник ЕГЭ">🧪</button>
 
       {open && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setOpen(false); setSelectedPrecipitate(null); }}>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setOpen(false); setSelectedCell(null); }}>
           <div className="bg-white rounded-3xl shadow-2xl p-4 sm:p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4"><h2 className="font-bold text-xl">🧪 Справочник ЕГЭ</h2><button onClick={() => { setOpen(false); setSelectedPrecipitate(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">×</button></div>
+            <div className="flex items-center justify-between mb-4"><h2 className="font-bold text-xl">🧪 Справочник ЕГЭ</h2><button onClick={() => { setOpen(false); setSelectedCell(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">×</button></div>
 
             <div className="flex gap-2 mb-4 flex-wrap">
-              {[{ key: "solubility", label: "🧪 Растворимость" }, { key: "activity", label: "⚡ Ряд активности" }, { key: "periodic", label: "📊 Менделеев" }].map((t) => (
-                <button key={t.key} onClick={() => { setTab(t.key as any); setSelectedPrecipitate(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${tab === t.key ? "bg-indigo-500 text-white" : "bg-gray-100 hover:bg-gray-200"}`}>{t.label}</button>
+              {[{ key: "solubility", label: "💧 Растворимость" }, { key: "activity", label: "⚡ Ряд активности" }, { key: "periodic", label: "📊 Менделеев" }].map((t) => (
+                <button key={t.key} onClick={() => { setTab(t.key as any); setSelectedCell(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${tab === t.key ? "bg-indigo-500 text-white" : "bg-gray-100 hover:bg-gray-200"}`}>{t.label}</button>
               ))}
             </div>
 
-            {selectedPrecipitate && (
-              <div className="mb-4 p-4 rounded-2xl border-2" style={{ backgroundColor: selectedPrecipitate.hex + '30', borderColor: selectedPrecipitate.hex }}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-12 h-12 rounded-full border-2 border-gray-300 shadow-inner" style={{ backgroundColor: selectedPrecipitate.hex }} />
-                  <div><p className="font-bold text-sm">{selectedPrecipitate.cation} + {selectedPrecipitate.anion}</p><p className="text-xs">{selectedPrecipitate.name}</p></div>
+            {/* Модальное окно по центру */}
+            {selectedCell && (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedCell(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-gray-200" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-4"><h3 className="font-bold text-lg text-gray-800">{selectedCell.cation} + {selectedCell.anion}</h3><button onClick={() => setSelectedCell(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 text-xl transition">×</button></div>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3"><span className="text-sm text-gray-500">Растворимость:</span><span className={`px-3 py-1 rounded-full text-sm font-bold ${selectedCell.solubility==="Р"?"bg-emerald-100 text-emerald-700":selectedCell.solubility==="М"?"bg-yellow-100 text-yellow-700":selectedCell.solubility==="Н"?"bg-blue-100 text-blue-700":"bg-gray-200 text-gray-600"}`}>{selectedCell.solubility==="Р"?"Растворимо":selectedCell.solubility==="М"?"Малорастворимо":selectedCell.solubility==="Н"?"Нерастворимо":selectedCell.solubility==="—"?"Разлагается":"Нет данных"}</span></div>
+                    {selectedCell.precipitateColor&&<div className="flex items-center gap-3"><span className="text-sm text-gray-500">Цвет осадка:</span><span className="font-medium">{selectedCell.precipitateColor}</span></div>}
+                    {selectedCell.ionicEquation&&<div className="bg-blue-50 rounded-xl p-4"><p className="text-xs text-blue-600 mb-1 font-medium">Сокращённое ионное уравнение:</p><p className="text-sm font-mono">{selectedCell.ionicEquation}</p></div>}
+                    {selectedCell.hydrolysis&&<div className="bg-amber-50 rounded-xl p-4"><p className="text-xs text-amber-600 mb-1 font-medium">Гидролиз / Примечание:</p><p className="text-sm font-mono">{selectedCell.hydrolysis}</p></div>}
+                  </div>
                 </div>
-                {selectedPrecipitate.equation && <div className="bg-white/80 rounded-xl p-3 font-mono text-sm text-center font-bold">{selectedPrecipitate.equation}</div>}
               </div>
             )}
 
             {tab === "solubility" && (
               <div className="overflow-x-auto">
                 <div className="text-xs mb-2 flex flex-wrap gap-3 bg-gray-50 rounded-xl p-2">
-                  <span>🟢 Р — растворимо</span><span>🟡 М — мало</span><span>🔴 Н — осадок</span><span>⬜ — — гидролиз (нажми)</span>
+                  <span>🟢 Р — растворимо</span><span>🟡 М — мало</span><span>🔴 Н — осадок</span><span>⬜ — — гидролиз</span>
                 </div>
                 <table className="w-full text-xs border-2 border-gray-300 rounded-xl">
-                  <thead><tr><th className="border p-1.5 bg-indigo-100 font-bold sticky left-0">Ион</th>{ANIONS.map((a) => <th key={a} className="border p-1.5 bg-indigo-100 font-bold whitespace-nowrap">{a}</th>)}</tr></thead>
+                  <thead><tr><th className="border p-1.5 bg-indigo-100 font-bold sticky left-0">Ион</th>{CATIONS.map((c) => <th key={c} className="border p-1.5 bg-indigo-100 font-bold whitespace-nowrap">{c}</th>)}</tr></thead>
                   <tbody>
-                    {SOLUBILITY_ROWS.map((row) => {
-                      const vals = row.vals.split(" ");
-                      return (
-                        <tr key={row.ion}>
-                          <td className="border p-1.5 font-bold bg-gray-50 sticky left-0 whitespace-nowrap">{row.ion}</td>
-                          {vals.map((v, i) => (
-                            <td key={i} onClick={() => handleCellClick(row.ion, ANIONS[i])} className={`border p-1.5 text-center text-[11px] ${getCellStyle(row.ion, ANIONS[i], v)}`}>
-                              {v}
+                    {SOLUBILITY_DATA.map((row) => (
+                      <tr key={row.anion}>
+                        <td className="border p-1.5 font-bold bg-gray-50 sticky left-0 whitespace-nowrap">{row.anion}</td>
+                        {CATIONS.map((cat) => {
+                          const cell = row.data[cat];
+                          if (!cell) return <td key={cat} className="border p-1.5 text-center">—</td>;
+                          const isClickable = cell.ionicEquation || cell.hydrolysis || cell.solubility === "Н" || cell.solubility === "—";
+                          return (
+                            <td key={cat} onClick={() => isClickable && setSelectedCell({ anion: row.anion, cation: cat, ...cell })} className={`border p-1.5 text-center text-[11px] font-bold transition ${cell.color || "bg-white"} ${isClickable ? "cursor-pointer hover:ring-2 hover:ring-indigo-400" : ""}`}>
+                              {cell.solubility}
                             </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
+                          );
+                        })}
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -235,19 +121,30 @@ export default function ChemRef() {
             )}
 
             {tab === "periodic" && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                {PERIODIC_SHORT.map((item, idx) => (
-                  <div key={idx} className={`rounded-xl p-2 text-center border-2 ${GROUP_COLORS[item.group] || 'bg-gray-50 border-gray-200'} hover:shadow-lg transition cursor-pointer`}>
-                    <span className="text-[9px] text-gray-400">{item.group}</span>
-                    {item.elements.map((el) => (
-                      <div key={el.n}>
-                        <p className="text-xl font-black text-gray-800">{el.sym}</p>
-                        <p className="text-[9px] text-gray-500">{el.name}</p>
-                        <p className="text-[10px] text-gray-400 font-mono">{el.mass}</p>
-                      </div>
-                    ))}
+              <div className="overflow-x-auto">
+                <div className="min-w-[700px]">
+                  <div className="flex flex-wrap gap-2 mb-2 text-[10px]">
+                    {[{label:"s",color:"bg-rose-200"},{label:"p",color:"bg-amber-100"},{label:"d",color:"bg-sky-200"},{label:"f",color:"bg-emerald-200"}].map(item=>(<div key={item.label} className="flex items-center gap-1"><div className={`w-3 h-3 rounded ${item.color}`}/>{item.label}</div>))}
                   </div>
-                ))}
+                  <div className="flex"><div className="w-8 flex-shrink-0"/>{GROUP_LABELS.map((l,i)=>(<div key={i} className="flex-1 text-center text-xs font-bold">{l}</div>))}</div>
+                  <div className="flex mb-1"><div className="w-8 flex-shrink-0"/>{GROUP_LABELS.map((_,i)=>(<div key={i} className="flex-1 flex text-[9px] text-gray-400"><span className="flex-1 text-center">A</span><span className="flex-1 text-center">B</span></div>))}</div>
+                  {PERIODIC_DATA.map((pd) => (
+                    <div key={pd.period} className="flex border-t border-gray-200">
+                      <div className="w-8 flex items-center justify-center flex-shrink-0 bg-gray-50 text-[10px] font-bold">{pd.period}</div>
+                      {pd.groups.map((g, gi) => (
+                        <div key={gi} className="flex-1 flex border-l border-gray-200 min-h-[40px]">
+                          <div className="flex-1 flex flex-col items-center justify-center p-0.5">
+                            {Array.isArray(g.A) ? g.A.map(el=>{const d=ELEMENT_DATA[el];if(!d)return null;return(<div key={el} className={`w-full text-center rounded text-[9px] leading-tight py-0.5 ${getBlockColor(d.block)}`}><span className="opacity-60">{d.number}</span> <span className="font-bold">{el}</span> <span className="opacity-50">{d.mass}</span></div>);}) : g.A ? (()=>{const el=(g.A as string).replace("*","");const d=ELEMENT_DATA[el];if(!d)return null;return(<div key={el} className={`w-full text-center rounded text-[9px] leading-tight py-0.5 ${getBlockColor(d.block)}`}><span className="opacity-60">{d.number}</span> <span className="font-bold">{g.A}</span> <span className="opacity-50">{d.mass}</span></div>);})() : null}
+                          </div>
+                          <div className="flex-1 flex flex-col items-center justify-center p-0.5">
+                            {Array.isArray(g.B) ? g.B.map(el=>{const d=ELEMENT_DATA[el];if(!d)return null;return(<div key={el} className={`w-full text-center rounded text-[9px] leading-tight py-0.5 ${getBlockColor(d.block)}`}><span className="opacity-60">{d.number}</span> <span className="font-bold">{el}</span> <span className="opacity-50">{d.mass}</span></div>);}) : g.B ? (()=>{const d=ELEMENT_DATA[g.B as string];if(!d)return null;return(<div key={g.B} className={`w-full text-center rounded text-[9px] leading-tight py-0.5 ${getBlockColor(d.block)}`}><span className="opacity-60">{d.number}</span> <span className="font-bold">{g.B}</span> <span className="opacity-50">{d.mass}</span></div>);})() : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div className="mt-2 flex"><div className="w-8 flex-shrink-0"/><div className="flex-1"><p className="text-[10px] text-gray-500">Лантаноиды: {LANTHANOIDS.join(" ")}</p><p className="text-[10px] text-gray-500">Актиноиды: {ACTINOIDS.join(" ")}</p></div></div>
+                </div>
               </div>
             )}
           </div>
