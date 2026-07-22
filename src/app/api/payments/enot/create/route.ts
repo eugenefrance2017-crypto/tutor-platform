@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirestore, collection, addDoc } from 'firebase/firestore';
 import { initializeApp } from 'firebase/app';
-import crypto from 'crypto';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -51,43 +50,40 @@ export async function POST(request: NextRequest) {
       provider: 'enot',
     });
 
-    const merchantId = process.env.ENOT_MERCHANT_ID;
+    const shopId = process.env.ENOT_MERCHANT_ID;
     const secretKey = process.env.ENOT_SECRET_KEY;
 
-    if (!merchantId || !secretKey) {
+    if (!shopId || !secretKey) {
       throw new Error('Enot.io credentials not configured');
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://jenyawisch.com';
     
-    // 2. Формируем подпись (MD5 от amount:orderid:secretkey:currency)
-    const signString = `${amount}:${orderId}:${secretKey}:RUB`;
-    const signature = crypto
-      .createHash('md5')
-      .update(signString)
-      .digest('hex');
-
-    // 3. Данные для Enot.io
+    // 2. Данные для Enot.io API v2 (без MD5, только заголовок x-api-key)
     const enotData = {
-      m_shop: merchantId,
-      m_orderid: orderId,
-      m_amount: amount,
-      m_curr: 'RUB',
-      m_desc: Buffer.from(description || 'Оплата на платформе').toString('base64'),
-      m_sign: signature,
-      m_url: `${baseUrl}/payments/success?order_id=${orderId}`,
-      m_fail_url: `${baseUrl}/payments/failed?order_id=${orderId}`,
-      m_notify_url: `${baseUrl}/api/payments/enot/webhook`,
+      amount: parseFloat(amount),
+      order_id: orderId,
+      currency: 'RUB',
+      shop_id: shopId,
+      comment: description || 'Оплата на платформе',
+      success_url: `${baseUrl}/payments/success?order_id=${orderId}`,
+      fail_url: `${baseUrl}/payments/failed?order_id=${orderId}`,
+      hook_url: `${baseUrl}/api/payments/enot/webhook`,
+      custom_fields: JSON.stringify({ studentId, payment_type, item_id, duration_days }),
     };
 
-    // ✅ ИСПРАВЛЕНО: Правильный URL для создания счета в Enot.io
-    const enotResponse = await fetch('https://enot.io/merchant/api/invoice', {
+    // ✅ ПРАВИЛЬНЫЙ URL и заголовки для Enot.io API v2
+    const enotResponse = await fetch('https://api.enot.io/invoice/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'x-api-key': secretKey, // ✅ Секретный ключ передается здесь
+      },
       body: JSON.stringify(enotData),
     });
 
-    // 4. Проверяем, что ответ именно JSON, а не HTML-ошибка
+    // 3. Проверяем ответ
     const contentType = enotResponse.headers.get('content-type');
     if (!enotResponse.ok || !contentType?.includes('application/json')) {
       const errorText = await enotResponse.text();
@@ -96,14 +92,17 @@ export async function POST(request: NextRequest) {
     }
 
     const enotResult = await enotResponse.json();
+    console.log('Enot.io response:', enotResult);
 
-    if (!enotResult.url) {
-      throw new Error(enotResult.message || 'Не удалось получить ссылку на оплату');
+    // В API v2 URL находится внутри объекта data
+    if (!enotResult.data || !enotResult.data.url) {
+      console.error('No URL in response:', enotResult);
+      throw new Error(enotResult.error || 'Не удалось получить ссылку на оплату');
     }
 
     return NextResponse.json({
       success: true,
-      url: enotResult.url,
+      url: enotResult.data.url, // ✅ Берем URL отсюда
       orderId: orderId,
     });
 
