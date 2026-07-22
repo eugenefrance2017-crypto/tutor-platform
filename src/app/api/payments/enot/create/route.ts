@@ -31,12 +31,13 @@ export async function POST(request: NextRequest) {
 
     if (!amount || !orderId || !studentId) {
       return NextResponse.json(
-        { error: 'Missing required fields: amount, orderId, studentId' },
+        { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const paymentRef = await addDoc(collection(db, 'payments'), {
+    // 1. Сохраняем платеж в базе как "pending"
+    await addDoc(collection(db, 'payments'), {
       order_id: orderId,
       amount: parseFloat(amount),
       student_id: studentId,
@@ -58,17 +59,15 @@ export async function POST(request: NextRequest) {
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://jenyawisch.com';
-    const successUrl = `${baseUrl}/payments/success?order_id=${orderId}`;
-    const failUrl = `${baseUrl}/payments/failed?order_id=${orderId}`;
-    const webhookUrl = `${baseUrl}/api/payments/enot/webhook`;
-
-    // Генерация подписи по документации Enot.io
+    
+    // 2. Формируем подпись (MD5 от amount:orderid:secretkey:currency)
     const signString = `${amount}:${orderId}:${secretKey}:RUB`;
     const signature = crypto
       .createHash('md5')
       .update(signString)
       .digest('hex');
 
+    // 3. Данные для Enot.io
     const enotData = {
       m_shop: merchantId,
       m_orderid: orderId,
@@ -76,31 +75,30 @@ export async function POST(request: NextRequest) {
       m_curr: 'RUB',
       m_desc: Buffer.from(description || 'Оплата на платформе').toString('base64'),
       m_sign: signature,
-      m_url: successUrl,
-      m_fail_url: failUrl,
-      m_notify_url: webhookUrl,
+      m_url: `${baseUrl}/payments/success?order_id=${orderId}`,
+      m_fail_url: `${baseUrl}/payments/failed?order_id=${orderId}`,
+      m_notify_url: `${baseUrl}/api/payments/enot/webhook`,
     };
 
-    // ✅ ИСПРАВЛЕНО: добавлено /api/ в URL
-    const enotResponse = await fetch('https://enot.io/merchant/api/create', {
+    // ✅ ИСПРАВЛЕНО: Правильный URL для создания счета в Enot.io
+    const enotResponse = await fetch('https://enot.io/merchant/api/invoice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(enotData),
     });
 
-    // ✅ ИСПРАВЛЕНО: защита от HTML-ответов (404/500 от самого Enot)
+    // 4. Проверяем, что ответ именно JSON, а не HTML-ошибка
     const contentType = enotResponse.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      const text = await enotResponse.text();
-      console.error('Enot.io вернул не JSON:', text);
-      throw new Error('Enot.io вернул ошибку сервера. Проверьте ключи и URL.');
+    if (!enotResponse.ok || !contentType?.includes('application/json')) {
+      const errorText = await enotResponse.text();
+      console.error('Enot.io error:', errorText);
+      throw new Error(`Enot.io вернул ошибку: ${enotResponse.status}`);
     }
 
     const enotResult = await enotResponse.json();
 
-    if (!enotResponse.ok || !enotResult.url) {
-      console.error('Enot.io API error:', enotResult);
-      throw new Error(enotResult.message || 'Enot.io API error');
+    if (!enotResult.url) {
+      throw new Error(enotResult.message || 'Не удалось получить ссылку на оплату');
     }
 
     return NextResponse.json({
@@ -110,7 +108,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Ошибка создания платежа Enot.io:', error);
+    console.error('❌ Ошибка создания платежа:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to create payment' },
       { status: 500 }
