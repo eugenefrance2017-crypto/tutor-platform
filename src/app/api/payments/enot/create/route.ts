@@ -17,25 +17,12 @@ const db = getFirestore(app);
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      amount,
-      orderId,
-      description,
-      studentId,
-      tutorId,
-      payment_type,
-      item_id,
-      duration_days,
-    } = body;
+    const { amount, orderId, description, studentId, tutorId, payment_type, item_id, duration_days } = body;
 
     if (!amount || !orderId || !studentId) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Сохраняем платеж в базе как "pending"
     await addDoc(collection(db, 'payments'), {
       order_id: orderId,
       amount: parseFloat(amount),
@@ -59,7 +46,6 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://jenyawisch.com';
     
-    // 2. Данные для Enot.io API v2 (без MD5, только заголовок x-api-key)
     const enotData = {
       amount: parseFloat(amount),
       order_id: orderId,
@@ -72,37 +58,34 @@ export async function POST(request: NextRequest) {
       custom_fields: JSON.stringify({ studentId, payment_type, item_id, duration_days }),
     };
 
-    // ✅ ПРАВИЛЬНЫЙ URL и заголовки для Enot.io API v2
     const enotResponse = await fetch('https://api.enot.io/invoice/create', {
       method: 'POST',
       headers: { 
         'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'x-api-key': secretKey, // ✅ Секретный ключ передается здесь
+        'x-api-key': secretKey,
       },
       body: JSON.stringify(enotData),
     });
 
-    // 3. Проверяем ответ
-    const contentType = enotResponse.headers.get('content-type');
-    if (!enotResponse.ok || !contentType?.includes('application/json')) {
-      const errorText = await enotResponse.text();
-      console.error('Enot.io error:', errorText);
-      throw new Error(`Enot.io вернул ошибку: ${enotResponse.status}`);
+    // ✅ УЛУЧШЕННАЯ ОБРАБОТКА ОШИБОК: покажем точный текст от Enot.io
+    if (!enotResponse.ok) {
+      const errorData = await enotResponse.json().catch(() => ({ error: await enotResponse.text() }));
+      console.error('❌ Детали ошибки Enot.io:', errorData);
+      
+      const errorMsg = errorData.error || errorData.message || JSON.stringify(errorData);
+      throw new Error(`Enot.io (${enotResponse.status}): ${errorMsg}`);
     }
 
     const enotResult = await enotResponse.json();
-    console.log('Enot.io response:', enotResult);
 
-    // В API v2 URL находится внутри объекта data
     if (!enotResult.data || !enotResult.data.url) {
-      console.error('No URL in response:', enotResult);
       throw new Error(enotResult.error || 'Не удалось получить ссылку на оплату');
     }
 
     return NextResponse.json({
       success: true,
-      url: enotResult.data.url, // ✅ Берем URL отсюда
+      url: enotResult.data.url,
       orderId: orderId,
     });
 
