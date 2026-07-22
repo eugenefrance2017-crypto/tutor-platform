@@ -33,31 +33,35 @@ export default function LandingPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ ОТПРАВКИ В TELEGRAM
   async function sendTelegramNotification(name: string, contact: string, subject: string, goal: string, comment: string) {
-    const TELEGRAM_BOT_TOKEN = "8700232255:AAECQqAMQIBA8X2nplDMMh_UvWoJgQGC59s";
-    
     const subjectName = subject === "chemistry" ? "🧪 Химия" : subject === "biology" ? "🧬 Биология" : "🧪🧬 Химия и биология";
     const goalName = goal === "ege" ? "🎯 ЕГЭ" : goal === "oge" ? "📙 ОГЭ" : goal === "improve" ? "📈 Подтянуть" : "💬 Другое";
     
-    const message = `📩 *Новая заявка!*\n\n👤 *Имя:* ${name}\n📞 *Контакты:* ${contact}\n📚 *Предмет:* ${subjectName}\n🎯 *Цель:* ${goalName}${comment ? `\n💬 *Комментарий:* ${comment}` : ""}`;
-    
+    const message = `
+🔔 <b>Новая заявка с сайта!</b>
+
+👤 <b>Имя:</b> ${name}
+📞 <b>Контакт:</b> ${contact}
+📚 <b>Предмет:</b> ${subjectName}
+🎯 <b>Цель:</b> ${goalName}
+💬 <b>Комментарий:</b> ${comment || 'Не указан'}
+    `.trim();
+
     try {
-      const updates = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`);
-      const data = await updates.json();
-      if (data.result && data.result.length > 0) {
-        const chatId = data.result[data.result.length - 1].message.chat.id;
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: message,
-            parse_mode: "Markdown",
-          }),
-        });
+      const response = await fetch('/api/telegram/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      
+      if (!response.ok) {
+        console.error('❌ Ошибка отправки в Telegram');
+      } else {
+        console.log('✅ Уведомление в Telegram успешно отправлено!');
       }
     } catch (error) {
-      console.error("Ошибка отправки в Telegram:", error);
+      console.error("❌ Ошибка сети при отправке в Telegram:", error);
     }
   }
 
@@ -80,6 +84,7 @@ export default function LandingPage() {
         created_at: serverTimestamp(),
       });
       
+      // Вызываем обновленную функцию
       await sendTelegramNotification(appName, appContact, appSubject, appGoal, appComment);
       
       setAppSent(true);

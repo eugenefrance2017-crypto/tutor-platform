@@ -17,12 +17,25 @@ const db = getFirestore(app);
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { amount, orderId, description, studentId, tutorId, payment_type, item_id, duration_days } = body;
+    const {
+      amount,
+      orderId,
+      description,
+      studentId,
+      tutorId,
+      payment_type,
+      item_id,
+      duration_days,
+    } = body;
 
     if (!amount || !orderId || !studentId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
     }
 
+    // 1. Сохраняем платеж в базе как "pending"
     await addDoc(collection(db, 'payments'), {
       order_id: orderId,
       amount: parseFloat(amount),
@@ -46,6 +59,7 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://jenyawisch.com';
     
+    // 2. Данные для Enot.io API v2
     const enotData = {
       amount: parseFloat(amount),
       order_id: orderId,
@@ -58,6 +72,7 @@ export async function POST(request: NextRequest) {
       custom_fields: JSON.stringify({ studentId, payment_type, item_id, duration_days }),
     };
 
+    // ✅ ПРАВИЛЬНЫЙ URL и заголовки для Enot.io API v2
     const enotResponse = await fetch('https://api.enot.io/invoice/create', {
       method: 'POST',
       headers: { 
@@ -68,16 +83,23 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(enotData),
     });
 
-    // ✅ УЛУЧШЕННАЯ ОБРАБОТКА ОШИБОК: покажем точный текст от Enot.io
+    // ✅ ИСПРАВЛЕННАЯ ОБРАБОТКА ОШИБОК (без await внутри catch)
     if (!enotResponse.ok) {
-      const errorData = await enotResponse.json().catch(() => ({ error: await enotResponse.text() }));
-      console.error('❌ Детали ошибки Enot.io:', errorData);
+      let errorData;
+      try {
+        errorData = await enotResponse.json();
+      } catch (e) {
+        // Если ответ не JSON, читаем как обычный текст
+        errorData = { error: await enotResponse.text() };
+      }
       
+      console.error('❌ Детали ошибки Enot.io:', errorData);
       const errorMsg = errorData.error || errorData.message || JSON.stringify(errorData);
       throw new Error(`Enot.io (${enotResponse.status}): ${errorMsg}`);
     }
 
     const enotResult = await enotResponse.json();
+    console.log('Enot.io response:', enotResult);
 
     if (!enotResult.data || !enotResult.data.url) {
       throw new Error(enotResult.error || 'Не удалось получить ссылку на оплату');
