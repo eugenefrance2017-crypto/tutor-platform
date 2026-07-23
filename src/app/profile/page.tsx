@@ -450,6 +450,84 @@ function ProfileContent() {
           )}
         </div>
 
+        {/* 🔔 Уведомления в Telegram */}
+        <div className="bg-white/90 backdrop-blur rounded-2xl p-5 shadow-sm border-2 border-pink-100">
+          <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            💌 Уведомления в Telegram
+          </h3>
+          
+          {profile.telegram_chat_id ? (
+            // ✅ УЖЕ ПРИВЯЗАН
+            <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+              <div className="text-3xl">😸</div>
+              <div className="flex-1">
+                <p className="font-medium text-emerald-800">Уведомления активны!</p>
+                <p className="text-xs text-emerald-600">Вы получаете напоминания об уроках и ДЗ.</p>
+              </div>
+              <button 
+                onClick={async () => {
+                  if (window.confirm("Отвязать Telegram? Вы перестанете получать уведомления.")) {
+                    await updateDoc(doc(db, "profiles", uid), { telegram_chat_id: null });
+                    const snap = await getDoc(doc(db, "profiles", uid));
+                    if (snap.exists()) setProfile(snap.data());
+                    toast.success("Telegram отвязан");
+                  }
+                }}
+                className="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1.5 rounded-lg hover:bg-red-50 transition"
+              >
+                Отвязать
+              </button>
+            </div>
+          ) : (
+            // ❌ НЕ ПРИВЯЗАН
+            <div className="space-y-3">
+              {!profile.telegram_bind_code ? (
+                <button 
+                  onClick={async () => {
+                    const code = Math.random().toString(36).substring(2, 10);
+                    await updateDoc(doc(db, "profiles", uid), { telegram_bind_code: code });
+                    const snap = await getDoc(doc(db, "profiles", uid));
+                    if (snap.exists()) setProfile(snap.data());
+                  }}
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-400 to-indigo-500 text-white py-3 rounded-xl font-medium hover:from-blue-500 hover:to-indigo-600 transition shadow-lg"
+                >
+                  <span>🔗</span> Привязать Telegram
+                </button>
+              ) : (
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 space-y-3">
+                  <p className="text-sm text-blue-800 font-medium">
+                    1. Нажмите на кнопку ниже, чтобы открыть бота.
+                  </p>
+                  <p className="text-sm text-blue-800 font-medium">
+                    2. Нажмите <b>Start</b> или отправьте команду.
+                  </p>
+                  
+                  {/* ⚠️ ЗАМЕНИ 'YOUR_BOT_USERNAME' НА РЕАЛЬНЫЙ ЮЗЕРНЕЙМ ТВОЕГО БОТА (без @) */}
+                  <a 
+                    href={`https://t.me/jenyawisch_bot?start=${profile.telegram_bind_code}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center bg-blue-500 text-white py-3 rounded-xl font-bold hover:bg-blue-600 transition animate-pulse"
+                  >
+                    🚀 Открыть бота и привязать
+                  </a>
+                  
+                  <button 
+                    onClick={async () => {
+                      await updateDoc(doc(db, "profiles", uid), { telegram_bind_code: null });
+                      const snap = await getDoc(doc(db, "profiles", uid));
+                      if (snap.exists()) setProfile(snap.data());
+                    }}
+                    className="w-full text-xs text-gray-500 hover:text-gray-700 py-2"
+                  >
+                    Отмена / Сгенерировать новый код
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Цитата дня */}
         <div className="bg-gradient-to-r from-pink-100 via-rose-100 to-blue-100 rounded-2xl p-5 shadow-sm border-2 border-pink-200">
           <div className="flex items-start gap-3">

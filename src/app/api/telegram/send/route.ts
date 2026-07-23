@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { message } = await request.json();
+    const { message, targetChatId } = await request.json();
     
     const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    // Если targetChatId не передан, шлем тебе (админу)
+    const chatId = targetChatId || process.env.TELEGRAM_CHAT_ID;
 
     if (!token || !chatId) {
-      console.error('❌ Ошибка: Не хватает TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID в .env.local');
-      return NextResponse.json({ error: 'Настройки Telegram не найдены' }, { status: 500 });
+      console.error('❌ Ошибка: Не хватает токена или chat_id');
+      return NextResponse.json({ error: 'Настройки не найдены' }, { status: 500 });
     }
 
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -29,9 +30,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true });
-
   } catch (error) {
-    console.error('❌ Внутренняя ошибка сервера Telegram:', error);
+    console.error('❌ Внутренняя ошибка:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -416,7 +416,7 @@ function DailyLoad({ weekDates, getLessonsForDate, theme }: any) {
     >
       <div className="flex justify-between items-center mb-2">
         <span className={`text-xs font-medium ${isDark ? 'text-red-400' : 'text-red-500'}`}>
-           Загрузка по дням
+          📊 Загрузка по дням
         </span>
       </div>
       <div className="flex gap-1">
@@ -469,7 +469,7 @@ function AnimatedWeekGrid({
   const statusStyles = {
     scheduled: isDark ? "border-l-4 border-blue-400 bg-blue-900/30" : "border-l-4 border-blue-500 bg-blue-50",
     completed: isDark ? "border-l-4 border-green-400 bg-green-900/30 opacity-75" : "border-l-4 border-green-500 bg-green-50 opacity-75",
-    cancelled: isDark ? "border-l-4 border-gray-500 bg-gray-800/50 line-through opacity-50" : "border-l-4 border-gray-400 bg-gray-100 line-through opacity-50",
+    cancelled: isDark ? "border-l-4 border-rose-800 bg-rose-950/30 line-through opacity-50" : "border-l-4 border-rose-200 bg-rose-50 line-through opacity-50",
   };
 
   return (
@@ -545,7 +545,7 @@ function AnimatedWeekGrid({
                       className={`group relative p-1.5 rounded-lg text-xs cursor-grab active:cursor-grabbing transition shadow-sm ${statusStyles[l.status as keyof typeof statusStyles]}`}
                     >
                       {l.recurring_group && (
-                        <span className="absolute top-0 right-0 text-[10px] bg-purple-500/50 text-white px-1 rounded"></span>
+                        <span className="absolute top-0 right-0 text-[10px] bg-purple-500/50 text-white px-1 rounded">🔄</span>
                       )}
                       
                       <div className="font-medium truncate flex items-center gap-1 justify-between">
@@ -640,7 +640,7 @@ function AnimatedWeekGrid({
   );
 }
 
-// ============ 📖 RED ERA MODAL ============
+// ============  RED ERA MODAL ============
 function RedEraModal({ isOpen, onClose, children, theme }: any) {
   if (!isOpen) return null;
   const isDark = theme === 'dark';
@@ -752,6 +752,28 @@ function ScheduleContent() {
     localStorage.setItem('theme', newTheme);
   };
 
+  // 🚀 НОВАЯ ФУНКЦИЯ: Отправка персонального уведомления ученику
+  async function sendTelegramToStudent(studentId: string, message: string) {
+    try {
+      const studentSnap = await getDoc(doc(db, "profiles", studentId));
+      if (studentSnap.exists()) {
+        const studentData = studentSnap.data();
+        if (studentData.telegram_chat_id) {
+          await fetch('/api/telegram/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              message, 
+              targetChatId: studentData.telegram_chat_id 
+            }),
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Ошибка отправки уведомления ученику:", error);
+    }
+  }
+
   const filteredLessons = useMemo(() => {
     return lessons.filter(l => {
       if (filterStudent !== 'all' && l.student_id !== filterStudent) return false;
@@ -857,7 +879,7 @@ function ScheduleContent() {
       if (upcomingLessons.length > 0) {
         const newNotifications = upcomingLessons.map(l => ({
           id: l.id,
-          message: `🔔 Через час занятие с ${l.student_name} (${l.subject === "chemistry" ? "🧪 Химия" : " Биология"})`,
+          message: `🔔 Через час занятие с ${l.student_name} (${l.subject === "chemistry" ? "🧪 Химия" : "🧬 Биология"})`,
           time: new Date(l.start_time).toLocaleTimeString(),
         }));
         setNotifications(newNotifications);
@@ -921,17 +943,23 @@ function ScheduleContent() {
     const hwTemplateId = (form.elements.namedItem("hw_template") as HTMLSelectElement)?.value || null;
     const duration = (form.elements.namedItem("duration") as HTMLInputElement)?.value;
     const repeatWeeks = parseInt((form.elements.namedItem("repeat_weeks") as HTMLInputElement)?.value || "0");
+    const zoomLink = (form.elements.namedItem("zoom_link") as HTMLInputElement)?.value || "";
+    const subject = (form.elements.namedItem("subject") as HTMLSelectElement).value;
+    const studentName = students.find((s) => s.id === studentId)?.full_name || "Ученик";
+    const subjectName = subject === "chemistry" ? "🧪 Химии" : "🧬 Биологии";
+    const dateStr = new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    const timeStr = `${startTime} – ${endTime}`;
 
     const baseData = {
       tutor_id: uid,
       student_id: studentId,
-      student_name: students.find((s) => s.id === studentId)?.full_name || "",
-      subject: (form.elements.namedItem("subject") as HTMLSelectElement).value,
+      student_name: studentName,
+      subject: subject,
       start_time: startISO,
       end_time: endISO,
       duration: duration || 60,
       hw_template_id: hwTemplateId,
-      zoom_link: (form.elements.namedItem("zoom_link") as HTMLInputElement)?.value || "",
+      zoom_link: zoomLink,
       board_link: (form.elements.namedItem("board_link") as HTMLInputElement)?.value || "",
       notes: (form.elements.namedItem("notes") as HTMLTextAreaElement)?.value || "",
       topics: (form.elements.namedItem("topics") as HTMLInputElement)?.value || "",
@@ -942,6 +970,11 @@ function ScheduleContent() {
       toast.success("Занятие обновлено!");
     } else {
       await addDoc(collection(db, "lessons"), { ...baseData, status: "scheduled", created_at: new Date().toISOString() });
+      
+      // 🚀 ОТПРАВКА УВЕДОМЛЕНИЯ УЧЕНИКУ
+      const msg = `📅 Привет, ${studentName}!\n\nУ нас запланировано новое занятие по ${subjectName}.\n🗓 Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n🔗 Ссылка: ${zoomLink}` : ''}\n\nДо встречи! 🧪🧬`;
+      await sendTelegramToStudent(studentId, msg);
+
       if (repeatWeeks > 0) {
         for (let i = 1; i <= repeatWeeks; i++) {
           const nextDate = new Date(date);
@@ -975,7 +1008,7 @@ function ScheduleContent() {
     }
   }
 
-  // ИЗМЕНЕНО: setStatus теперь списывает урок с баланса
+  // ИЗМЕНЕНО: setStatus теперь списывает урок с баланса и отправляет уведомление
   async function setStatus(lesson: any) {
     const currentBalance = lessonBalances[lesson.student_id] || 0;
     
@@ -1021,20 +1054,38 @@ function ScheduleContent() {
     }
     await updateDoc(doc(db, "lessons", lesson.id), { status: "completed" });
     
-    const report = `📋 Отчёт о занятии\n\n📅 ${new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}\n⏰ ${new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – ${new Date(lesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}\n🧑‍🎓 Ученик: ${lesson.student_name || 'Не указан'}\n📚 Предмет: ${lesson.subject === 'chemistry' ? 'Химия' : 'Биология'}\n✅ Статус: Проведено${lesson.hw_template_id ? '\n📝 ДЗ: Отправлено' : ''}${lesson.topics ? '\n🎯 Темы: ' + lesson.topics : ''}`;
+    const report = `📋 Отчёт о занятии\n\n📅 ${new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}\n⏰ ${new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – ${new Date(lesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}\n🧑‍🎓 Ученик: ${lesson.student_name || 'Не указан'}\n📚 Предмет: ${lesson.subject === 'chemistry' ? 'Химия' : 'Биология'}\n✅ Статус: Проведено${lesson.hw_template_id ? '\n📝 ДЗ: Отправлено' : ''}${lesson.topics ? '\n Темы: ' + lesson.topics : ''}`;
     
     setReportText(report);
     setShowReport(true);
     toast.success("Занятие проведено!");
+
+    // 🚀 ОТПРАВКА УВЕДОМЛЕНИЯ УЧЕНИКУ О ДЗ
+    const hwMsg = lesson.hw_template_id 
+      ? `✅ Отличная работа на уроке, ${lesson.student_name}!\n\nЗанятие проведено. Тебе уже отправлено домашнее задание, проверь раздел "ДЗ" в личном кабинете. Не забудь его выполнить! 🚀`
+      : `✅ Отличная работа на уроке, ${lesson.student_name}!\n\nЗанятие проведено. Не забудь повторить пройденный материал. Увидимся на следующем занятии! 🚀`;
+    
+    await sendTelegramToStudent(lesson.student_id, hwMsg);
   }
 
   async function cancelLesson(id: string) {
-    const reason = prompt("Причина отмены (необязательно):");
+    const lesson = lessons.find(l => l.id === id);
+    if (!lesson) return;
+
+    const reason = prompt("Причина отмены (необязательно):") || "По техническим причинам";
+    
     await updateDoc(doc(db, "lessons", id), {
       status: "cancelled",
-      cancel_reason: reason || "",
+      cancel_reason: reason,
       cancelled_at: new Date().toISOString(),
     });
+
+    // 🚀 ОТПРАВКА УВЕДОМЛЕНИЯ УЧЕНИКУ ОБ ОТМЕНЕ
+    const dateStr = new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    const timeStr = new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const msg = `🥀 Привет, ${lesson.student_name}.\n\nК сожалению, наше занятие на ${dateStr} в ${timeStr} отменено.\nПричина: ${reason}.\n\nМы скоро свяжемся с тобой для переноса. Хорошего дня!`;
+    await sendTelegramToStudent(lesson.student_id, msg);
+
     toast.success("Занятие отменено!");
   }
 
@@ -1153,7 +1204,7 @@ function ScheduleContent() {
 
             <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className={`px-3 py-1.5 text-xs rounded-xl border ${isDark ? 'bg-gray-800 border-red-500/30 text-red-300' : 'bg-white border-red-200 text-red-700'}`}>
               <option value="all">📚 Все предметы</option>
-              <option value="chemistry">🧪 Химия</option>
+              <option value="chemistry"> Химия</option>
               <option value="biology">🧬 Биология</option>
             </select>
 
@@ -1211,7 +1262,7 @@ function ScheduleContent() {
                         <span>✅ {stat.completed}</span>
                         <span>📋 {stat.total}</span>
                         <span>⏱️ {stat.hours.toFixed(1)}ч</span>
-                        <span className={`font-bold ${balance === 0 ? 'text-red-500' : 'text-green-600'}`}> {balance}</span>
+                        <span className={`font-bold ${balance === 0 ? 'text-red-500' : 'text-green-600'}`}> 📦 {balance}</span>
                       </div>
                     </motion.div>
                   );
@@ -1374,7 +1425,7 @@ function ScheduleContent() {
             <div className={`p-5 rounded-t-2xl sticky top-0 z-10 bg-gradient-to-r from-red-500 to-rose-500`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="font-bold text-2xl text-white">{editLesson ? "✏️ Редактировать занятие" : " Создать занятие"}</h2>
+                  <h2 className="font-bold text-2xl text-white">{editLesson ? "✏️ Редактировать занятие" : "✨ Создать занятие"}</h2>
                   <p className="text-white/80 text-sm mt-1">Заполните все поля</p>
                 </div>
                 <motion.button 
@@ -1399,7 +1450,7 @@ function ScheduleContent() {
                   </div>
 
                   <div>
-                    <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}> Предмет *</label>
+                    <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📚 Предмет *</label>
                     <select name="subject" required defaultValue={editLesson?.subject || "chemistry"} className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`}>
                       <option value="chemistry">🧪 Химия</option>
                       <option value="biology">🧬 Биология</option>
@@ -1424,7 +1475,7 @@ function ScheduleContent() {
 
                   {!editLesson && (
                     <div>
-                      <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}> Повторять (недель)</label>
+                      <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>🔄 Повторять (недель)</label>
                       <input type="number" name="repeat_weeks" min="0" max="52" defaultValue="0" placeholder="0 — не повторять" className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} />
                       <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Создаст занятие на каждую неделю в это же время</p>
                     </div>
@@ -1463,7 +1514,7 @@ function ScheduleContent() {
               </div>
 
               <div className="mt-4">
-                <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📝 Заметки (план урока)</label>
+                <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}> Заметки (план урока)</label>
                 <textarea name="notes" rows={4} defaultValue={editLesson?.notes || ""} placeholder="Темы, материалы, домашнее задание..." className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} />
               </div>
 
@@ -1572,7 +1623,7 @@ function ScheduleContent() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  📧 Telegram
+                   Telegram
                 </motion.button>
               </div>
             </div>
