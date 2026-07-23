@@ -2,12 +2,12 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, Suspense, useMemo } from "react";
+import { useState, useEffect, Suspense, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { initializeApp } from "firebase/app";
 import {
-  getFirestore, collection, addDoc, deleteDoc, updateDoc, query, where, onSnapshot, getDocs, doc, getDoc, increment
+  getFirestore, collection, addDoc, deleteDoc, updateDoc, query, where, onSnapshot, getDocs, doc, getDoc
 } from "firebase/firestore";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -148,7 +148,7 @@ function AnimatedTitle({ theme, onThemeToggle }: any) {
           animate={{ rotate: [0, -10, 10, 0] }}
           transition={{ duration: 3, repeat: Infinity, delay: 0.5 }}
         >
-          
+          🍁
         </motion.span>
         <motion.span 
           className="text-3xl"
@@ -188,7 +188,7 @@ function RedButton({ children, onClick, className = "", type = "button" }: any) 
   );
 }
 
-// ============ ⏱️ RED TIMER ============
+// ============ ️ RED TIMER ============
 function RedTimer({ startTime, endTime }: { startTime: Date; endTime: Date }) {
   const [timeLeft, setTimeLeft] = useState("");
   const [status, setStatus] = useState<'before' | 'active' | 'ended'>('before');
@@ -404,7 +404,7 @@ function HeatMap({ lessons, theme }: { lessons: any[]; theme: string }) {
   );
 }
 
-// ============ 📊 DAILY LOAD ============
+// ============  DAILY LOAD ============
 function DailyLoad({ weekDates, getLessonsForDate, theme }: any) {
   const isDark = theme === 'dark';
   
@@ -545,7 +545,7 @@ function AnimatedWeekGrid({
                       className={`group relative p-1.5 rounded-lg text-xs cursor-grab active:cursor-grabbing transition shadow-sm ${statusStyles[l.status as keyof typeof statusStyles]}`}
                     >
                       {l.recurring_group && (
-                        <span className="absolute top-0 right-0 text-[10px] bg-purple-500/50 text-white px-1 rounded">🔄</span>
+                        <span className="absolute top-0 right-0 text-[10px] bg-purple-500/50 text-white px-1 rounded"></span>
                       )}
                       
                       <div className="font-medium truncate flex items-center gap-1 justify-between">
@@ -594,7 +594,7 @@ function AnimatedWeekGrid({
                           title="Заметки"
                           whileHover={{ scale: 1.2 }}
                         >
-                          📝
+                          
                         </motion.button>
                         <motion.button 
                           onClick={(e) => { e.stopPropagation(); exportToCalendar(l); }} 
@@ -618,7 +618,7 @@ function AnimatedWeekGrid({
                               className="p-0.5 text-xs hover:scale-110 transition"
                               whileHover={{ scale: 1.2 }}
                             >
-                              🗑️
+                              ️
                             </motion.button>
                           </>
                         )}
@@ -740,7 +740,6 @@ function ScheduleContent() {
   const [lessonNotes, setLessonNotes] = useState("");
   const [lessonTopics, setLessonTopics] = useState("");
   
-  // НОВОЕ: Состояние для хранения балансов уроков учеников
   const [lessonBalances, setLessonBalances] = useState<Record<string, number>>({});
 
   const isTutor = role === "tutor";
@@ -752,27 +751,28 @@ function ScheduleContent() {
     localStorage.setItem('theme', newTheme);
   };
 
-  // 🚀 НОВАЯ ФУНКЦИЯ: Отправка персонального уведомления ученику
-  async function sendTelegramToStudent(studentId: string, message: string) {
+  //  ФУНКЦИЯ ОТПРАВКИ УВЕДОМЛЕНИЯ (БЕЗ БЛОКИРОВКИ UI)
+  const sendTelegramToStudent = useCallback(async (studentId: string, message: string) => {
     try {
       const studentSnap = await getDoc(doc(db, "profiles", studentId));
       if (studentSnap.exists()) {
         const studentData = studentSnap.data();
         if (studentData.telegram_chat_id) {
-          await fetch('/api/telegram/send', {
+          // Отправляем в фоне — не ждём ответа
+          fetch('/api/telegram/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               message, 
               targetChatId: studentData.telegram_chat_id 
             }),
-          });
+          }).catch(err => console.error("Ошибка отправки уведомления:", err));
         }
       }
     } catch (error) {
-      console.error("Ошибка отправки уведомления ученику:", error);
+      console.error("Ошибка получения профиля ученика:", error);
     }
-  }
+  }, []);
 
   const filteredLessons = useMemo(() => {
     return lessons.filter(l => {
@@ -782,30 +782,31 @@ function ScheduleContent() {
     });
   }, [lessons, filterStudent, filterSubject]);
 
-  // НОВОЕ: Загрузка балансов учеников при загрузке страницы
+  // ОПТИМИЗИРОВАННАЯ загрузка балансов (один запрос вместо цикла)
   useEffect(() => {
     if (!isTutor || students.length === 0) return;
+    
     const fetchBalances = async () => {
-      const balances: Record<string, number> = {};
-      for (const student of students) {
-        try {
-          const docRef = doc(db, "lesson_balances", student.id);
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            balances[student.id] = snap.data().remaining || 0;
-          } else {
-            balances[student.id] = 0;
-          }
-        } catch (e) {
-          balances[student.id] = 0;
-        }
+      try {
+        const balances: Record<string, number> = {};
+        // Загружаем все балансы одним запросом
+        const balancesSnap = await getDocs(collection(db, "lesson_balances"));
+        balancesSnap.forEach(docSnap => {
+          balances[docSnap.id] = docSnap.data().remaining || 0;
+        });
+        // Для учеников без баланса ставим 0
+        students.forEach(s => {
+          if (!(s.id in balances)) balances[s.id] = 0;
+        });
+        setLessonBalances(balances);
+      } catch (e) {
+        console.error("Ошибка загрузки балансов:", e);
       }
-      setLessonBalances(balances);
     };
     fetchBalances();
   }, [students, isTutor]);
 
-  const getWeekDates = () => {
+  const getWeekDates = useCallback(() => {
     const now = new Date();
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - now.getDay() + 1 + currentWeek * 7);
@@ -816,9 +817,9 @@ function ScheduleContent() {
       dates.push(d);
     }
     return dates;
-  };
+  }, [currentWeek]);
 
-  const getMonthDates = () => {
+  const getMonthDates = useCallback(() => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth() + currentWeek, 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + currentWeek + 1, 0);
@@ -839,17 +840,19 @@ function ScheduleContent() {
       dates.push(d);
     }
     return dates;
-  };
+  }, [currentWeek]);
 
   const weekDates = viewMode === 'week' ? getWeekDates() : getMonthDates();
   const weekStr = viewMode === 'week'
     ? `${weekDates[0].toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} – ${weekDates[6].toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`
     : `${weekDates[7]?.toLocaleDateString("ru-RU", { month: "long", year: "numeric" }) || weekDates[0].toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}`;
 
-  const getLessonsForDate = (date: Date) => filteredLessons.filter((l) => {
-    const d = new Date(l.start_time);
-    return d.getDate() === date.getDate() && d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
-  }).sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  const getLessonsForDate = useCallback((date: Date) => {
+    return filteredLessons.filter((l) => {
+      const d = new Date(l.start_time);
+      return d.getDate() === date.getDate() && d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
+    }).sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  }, [filteredLessons]);
 
   const today = new Date();
   const monthNames = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -879,7 +882,7 @@ function ScheduleContent() {
       if (upcomingLessons.length > 0) {
         const newNotifications = upcomingLessons.map(l => ({
           id: l.id,
-          message: `🔔 Через час занятие с ${l.student_name} (${l.subject === "chemistry" ? "🧪 Химия" : "🧬 Биология"})`,
+          message: `🔔 Через час занятие с ${l.student_name} (${l.subject === "chemistry" ? " Химия" : "🧬 Биология"})`,
           time: new Date(l.start_time).toLocaleTimeString(),
         }));
         setNotifications(newNotifications);
@@ -971,9 +974,9 @@ function ScheduleContent() {
     } else {
       await addDoc(collection(db, "lessons"), { ...baseData, status: "scheduled", created_at: new Date().toISOString() });
       
-      // 🚀 ОТПРАВКА УВЕДОМЛЕНИЯ УЧЕНИКУ
+      //  УВЕДОМЛЕНИЕ В ФОНЕ (не блокирует UI)
       const msg = `📅 Привет, ${studentName}!\n\nУ нас запланировано новое занятие по ${subjectName}.\n🗓 Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n🔗 Ссылка: ${zoomLink}` : ''}\n\nДо встречи! 🧪🧬`;
-      await sendTelegramToStudent(studentId, msg);
+      sendTelegramToStudent(studentId, msg);
 
       if (repeatWeeks > 0) {
         for (let i = 1; i <= repeatWeeks; i++) {
@@ -1008,23 +1011,19 @@ function ScheduleContent() {
     }
   }
 
-  // ИЗМЕНЕНО: setStatus теперь списывает урок с баланса и отправляет уведомление
   async function setStatus(lesson: any) {
     const currentBalance = lessonBalances[lesson.student_id] || 0;
     
-    // Проверка баланса перед проведением
     if (currentBalance <= 0) {
       const confirmZero = window.confirm(`⚠️ У ученика ${lesson.student_name} закончились уроки в пакете (остаток: 0). Всё равно отметить занятие как проведённое?`);
       if (!confirmZero) return;
     } else {
-      // Списание урока
       try {
         const balanceRef = doc(db, "lesson_balances", lesson.student_id);
         await updateDoc(balanceRef, {
           remaining: currentBalance - 1,
           last_updated: new Date().toISOString()
         });
-        // Обновляем локальный стейт
         setLessonBalances(prev => ({ ...prev, [lesson.student_id]: currentBalance - 1 }));
         toast.success(`Списан 1 урок. Осталось: ${currentBalance - 1}`);
       } catch (error) {
@@ -1054,18 +1053,18 @@ function ScheduleContent() {
     }
     await updateDoc(doc(db, "lessons", lesson.id), { status: "completed" });
     
-    const report = `📋 Отчёт о занятии\n\n📅 ${new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}\n⏰ ${new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – ${new Date(lesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}\n🧑‍🎓 Ученик: ${lesson.student_name || 'Не указан'}\n📚 Предмет: ${lesson.subject === 'chemistry' ? 'Химия' : 'Биология'}\n✅ Статус: Проведено${lesson.hw_template_id ? '\n📝 ДЗ: Отправлено' : ''}${lesson.topics ? '\n Темы: ' + lesson.topics : ''}`;
+    const report = `📋 Отчёт о занятии\n\n📅 ${new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}\n⏰ ${new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – ${new Date(lesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}\n🧑🎓 Ученик: ${lesson.student_name || 'Не указан'}\n📚 Предмет: ${lesson.subject === 'chemistry' ? 'Химия' : 'Биология'}\n✅ Статус: Проведено${lesson.hw_template_id ? '\n📝 ДЗ: Отправлено' : ''}${lesson.topics ? '\n🎯 Темы: ' + lesson.topics : ''}`;
     
     setReportText(report);
     setShowReport(true);
     toast.success("Занятие проведено!");
 
-    // 🚀 ОТПРАВКА УВЕДОМЛЕНИЯ УЧЕНИКУ О ДЗ
+    // 🚀 УВЕДОМЛЕНИЕ В ФОНЕ
     const hwMsg = lesson.hw_template_id 
-      ? `✅ Отличная работа на уроке, ${lesson.student_name}!\n\nЗанятие проведено. Тебе уже отправлено домашнее задание, проверь раздел "ДЗ" в личном кабинете. Не забудь его выполнить! 🚀`
+      ? `✅ Отличная работа на уроке, ${lesson.student_name}!\n\nЗанятие проведено. Тебе уже отправлено домашнее задание, проверь раздел "ДЗ" в личном кабинете. Не забудь его выполнить! `
       : `✅ Отличная работа на уроке, ${lesson.student_name}!\n\nЗанятие проведено. Не забудь повторить пройденный материал. Увидимся на следующем занятии! 🚀`;
     
-    await sendTelegramToStudent(lesson.student_id, hwMsg);
+    sendTelegramToStudent(lesson.student_id, hwMsg);
   }
 
   async function cancelLesson(id: string) {
@@ -1080,11 +1079,11 @@ function ScheduleContent() {
       cancelled_at: new Date().toISOString(),
     });
 
-    // 🚀 ОТПРАВКА УВЕДОМЛЕНИЯ УЧЕНИКУ ОБ ОТМЕНЕ
+    // 🚀 УВЕДОМЛЕНИЕ В ФОНЕ
     const dateStr = new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
     const timeStr = new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     const msg = `🥀 Привет, ${lesson.student_name}.\n\nК сожалению, наше занятие на ${dateStr} в ${timeStr} отменено.\nПричина: ${reason}.\n\nМы скоро свяжемся с тобой для переноса. Хорошего дня!`;
-    await sendTelegramToStudent(lesson.student_id, msg);
+    sendTelegramToStudent(lesson.student_id, msg);
 
     toast.success("Занятие отменено!");
   }
@@ -1136,19 +1135,15 @@ function ScheduleContent() {
 
   return (
     <div className={`min-h-screen relative ${isDark ? 'bg-black' : 'bg-gradient-to-br from-red-50 via-rose-50 to-amber-50'}`}>
-      {/* Фоновые эффекты */}
       {!isDark && <FallingLeaves />}
       <VintageOverlay />
       
-      {/* Sidebar */}
       <Sidebar theme={theme} />
       
-      {/* Notification Bell */}
       <div className="fixed top-4 right-20 z-50">
         <NotificationBell uid={uid} role={role} isDark={isDark} />
       </div>
       
-      {/* Notifications */}
       <AnimatePresence>
         {showNotifications && notifications.length > 0 && (
           <div className="fixed top-20 right-4 z-50 space-y-2">
@@ -1165,10 +1160,8 @@ function ScheduleContent() {
       </AnimatePresence>
 
       <div className="relative z-20 max-w-6xl mx-auto p-4 sm:p-6 pt-20">
-        {/* Заголовок */}
         <AnimatedTitle theme={theme} onThemeToggle={toggleTheme} />
 
-        {/* Фильтры и переключатели */}
         <motion.div 
           className={`rounded-2xl p-3 mb-4 shadow-md border ${isDark ? 'bg-gray-900/80 border-red-500/30' : 'bg-white/90 backdrop-blur border-red-200'}`}
           initial={{ opacity: 0, y: 20 }}
@@ -1191,7 +1184,7 @@ function ScheduleContent() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                🗓️ Месяц
+                ️ Месяц
               </motion.button>
             </div>
 
@@ -1204,7 +1197,7 @@ function ScheduleContent() {
 
             <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className={`px-3 py-1.5 text-xs rounded-xl border ${isDark ? 'bg-gray-800 border-red-500/30 text-red-300' : 'bg-white border-red-200 text-red-700'}`}>
               <option value="all">📚 Все предметы</option>
-              <option value="chemistry"> Химия</option>
+              <option value="chemistry">🧪 Химия</option>
               <option value="biology">🧬 Биология</option>
             </select>
 
@@ -1221,7 +1214,7 @@ function ScheduleContent() {
                 whileHover={{ scale: 1.2, rotate: 10 }}
                 whileTap={{ scale: 0.9 }}
               >
-                
+                📊
               </motion.button>
               {isTutor && (
                 <RedButton onClick={() => { setShowForm(true); setEditLesson(null); }}>
@@ -1232,7 +1225,6 @@ function ScheduleContent() {
           </div>
         </motion.div>
 
-        {/* Статистика по ученикам */}
         <AnimatePresence>
           {showStats && isTutor && (
             <motion.div 
@@ -1242,7 +1234,7 @@ function ScheduleContent() {
               exit={{ opacity: 0, height: 0 }}
             >
               <h3 className={`font-semibold mb-3 flex items-center gap-2 ${isDark ? 'text-red-300' : 'text-red-700'}`}>
-                <span>📊</span> Статистика по ученикам
+                <span></span> Статистика по ученикам
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 {students.map((s, idx) => {
@@ -1261,8 +1253,8 @@ function ScheduleContent() {
                       <div className={`flex gap-2 mt-1 text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                         <span>✅ {stat.completed}</span>
                         <span>📋 {stat.total}</span>
-                        <span>⏱️ {stat.hours.toFixed(1)}ч</span>
-                        <span className={`font-bold ${balance === 0 ? 'text-red-500' : 'text-green-600'}`}> 📦 {balance}</span>
+                        <span>️ {stat.hours.toFixed(1)}ч</span>
+                        <span className={`font-bold ${balance === 0 ? 'text-red-500' : 'text-green-600'}`}> {balance}</span>
                       </div>
                     </motion.div>
                   );
@@ -1272,7 +1264,6 @@ function ScheduleContent() {
           )}
         </AnimatePresence>
 
-        {/* Загрузка по дням */}
         {viewMode === 'week' && (
           <motion.div 
             className="mb-4"
@@ -1285,12 +1276,10 @@ function ScheduleContent() {
           </motion.div>
         )}
 
-        {/* Навигация */}
         <div className="mb-4">
           <WeekNavigator currentWeek={currentWeek} setCurrentWeek={setCurrentWeek} weekStr={weekStr} theme={theme} />
         </div>
 
-        {/* Календарь */}
         <AnimatePresence mode="wait">
           <motion.div
             key={viewMode + currentWeek}
@@ -1323,7 +1312,6 @@ function ScheduleContent() {
           </motion.div>
         </AnimatePresence>
 
-        {/* Сегодня */}
         <motion.div 
           className={`mt-6 rounded-2xl p-4 shadow-md border ${isDark ? 'bg-gray-900/80 border-red-500/30' : 'bg-white/90 backdrop-blur border-red-200'}`}
           initial={{ opacity: 0, y: 20 }}
@@ -1406,7 +1394,7 @@ function ScheduleContent() {
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
                         >
-                          📅
+                          
                         </motion.button>
                       </div>
                     </motion.div>
@@ -1418,7 +1406,6 @@ function ScheduleContent() {
         </motion.div>
       </div>
 
-      {/* Модалка создания/редактирования занятия */}
       <AnimatePresence>
         {showForm && (
           <RedEraModal isOpen={showForm} onClose={() => { setShowForm(false); setEditLesson(null); }} theme={theme}>
@@ -1452,7 +1439,7 @@ function ScheduleContent() {
                   <div>
                     <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📚 Предмет *</label>
                     <select name="subject" required defaultValue={editLesson?.subject || "chemistry"} className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`}>
-                      <option value="chemistry">🧪 Химия</option>
+                      <option value="chemistry"> Химия</option>
                       <option value="biology">🧬 Биология</option>
                     </select>
                   </div>
@@ -1475,7 +1462,7 @@ function ScheduleContent() {
 
                   {!editLesson && (
                     <div>
-                      <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>🔄 Повторять (недель)</label>
+                      <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}> Повторять (недель)</label>
                       <input type="number" name="repeat_weeks" min="0" max="52" defaultValue="0" placeholder="0 — не повторять" className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} />
                       <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Создаст занятие на каждую неделю в это же время</p>
                     </div>
@@ -1514,7 +1501,7 @@ function ScheduleContent() {
               </div>
 
               <div className="mt-4">
-                <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}> Заметки (план урока)</label>
+                <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📝 Заметки (план урока)</label>
                 <textarea name="notes" rows={4} defaultValue={editLesson?.notes || ""} placeholder="Темы, материалы, домашнее задание..." className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} />
               </div>
 
@@ -1537,7 +1524,6 @@ function ScheduleContent() {
         )}
       </AnimatePresence>
 
-      {/* Модалка заметок после занятия */}
       <AnimatePresence>
         {showNotesModal && selectedLessonForNotes && (
           <RedEraModal isOpen={showNotesModal} onClose={() => setShowNotesModal(false)} theme={theme}>
@@ -1581,7 +1567,6 @@ function ScheduleContent() {
         )}
       </AnimatePresence>
 
-      {/* Отчёт о занятии */}
       <AnimatePresence>
         {showReport && (
           <RedEraModal isOpen={showReport} onClose={() => setShowReport(false)} theme={theme}>
