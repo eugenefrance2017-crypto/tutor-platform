@@ -54,7 +54,12 @@ const SUBSCRIPTS = ["₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉
 const COEFFICIENTS = ["2", "3", "4", "5", "6", "7", "8", "9"];
 const CHARGES = ["⁺", "⁻", "²⁺", "³⁺", "⁴⁺", "²⁻", "³⁻", "⁰"];
 const BONDS = ["-", "=", "≡"];
-const BRACKETS = ["(", ")"];
+const BRACKETS = ["(", ")", "[", "]", "{", "}"];
+
+// ✅ НОВЫЕ КАТЕГОРИИ СИМВОЛОВ
+const ARROWS = ["→", "←", "⇄", "⇌", "↔", "⟶"];
+const SIGNS = ["+", "=", "↑", "↓", "t°", "°C", "Δ", "hν", "кат.", "t, кат."];
+const SPACES = [" ", "  "]; // обычный и двойной пробел
 
 interface MoleculeBuilderProps {
   onAdd: (formula: string) => void;
@@ -69,15 +74,15 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
     const chars = initialValue.split("");
     let i = 0;
     while (i < chars.length) {
-      if (chars[i] === " " || chars[i] === "(" || chars[i] === ")") {
+      if (chars[i] === " " || chars[i] === "(" || chars[i] === ")" || chars[i] === "[" || chars[i] === "]" || chars[i] === "{" || chars[i] === "}") {
         parsed.push(chars[i]); i++;
       } else if (/[A-Z]/.test(chars[i])) {
         let symbol = chars[i]; i++;
         while (i < chars.length && /[a-z]/.test(chars[i])) { symbol += chars[i]; i++; }
         parsed.push(symbol);
-      } else if (/[₀-₉⁺⁻⁰²³⁴⁵⁶⁷⁸⁹]/.test(chars[i])) {
+      } else if (/[₀-₉⁺⁻⁰²³⁴⁵⁶⁷⁸⁹→←⇄⇌↔⟶↑↓+°Δ]/.test(chars[i])) {
         let num = chars[i]; i++;
-        while (i < chars.length && /[₀-₉⁺⁻⁰²³⁴⁵⁶⁷⁸⁹]/.test(chars[i])) { num += chars[i]; i++; }
+        while (i < chars.length && /[₀-₉⁺⁻⁰²³⁴⁵⁶⁷⁸⁹→←⇄⇌↔⟶↑↓+°Δ]/.test(chars[i])) { num += chars[i]; i++; }
         parsed.push(num);
       } else { i++; }
     }
@@ -117,16 +122,30 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
     if (blocks.length > 0) { setHistory([...history, blocks]); setBlocks([]); }
   }
   function getFormula(): string { return blocks.join(""); }
+  
+  // ✅ Расширенная валидация с учётом всех типов скобок
   function validateFormula(): { valid: boolean; message: string } {
     const formula = getFormula();
     if (!formula) return { valid: false, message: "Формула пустая" };
-    let bracketCount = 0;
+    
+    const stack: string[] = [];
+    const pairs: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+    const openers = Object.keys(pairs);
+    const closers = Object.values(pairs);
+    
     for (const char of formula) {
-      if (char === "(") bracketCount++;
-      if (char === ")") bracketCount--;
-      if (bracketCount < 0) return { valid: false, message: "Неправильный порядок скобок" };
+      if (openers.includes(char)) {
+        stack.push(char);
+      } else if (closers.includes(char)) {
+        const last = stack.pop();
+        if (!last || pairs[last] !== char) {
+          return { valid: false, message: `Непарная скобка "${char}"` };
+        }
+      }
     }
-    if (bracketCount !== 0) return { valid: false, message: "Не все скобки закрыты" };
+    if (stack.length > 0) {
+      return { valid: false, message: `Не закрыта скобка "${stack[stack.length - 1]}"` };
+    }
     return { valid: true, message: "Формула корректна" };
   }
 
@@ -140,15 +159,25 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           {validation.valid ? '✓ Корректно' : `✗ ${validation.message}`}
         </div>
       </div>
+      
       <div className="bg-white rounded-xl p-4 mb-4 min-h-[60px] border-2 border-dashed border-purple-300 flex flex-wrap items-center gap-0.5 shadow-inner">
         {blocks.length === 0 ? (
           <span className="text-gray-400 text-sm italic">Нажмите на атомы, чтобы собрать молекулу</span>
         ) : (
           blocks.map((block, i) => (
-            <span key={i} className={`text-xl font-mono font-bold ${/[A-Z]/.test(block) ? 'text-purple-700' : /[₀-₉]/.test(block) ? 'text-amber-600' : /[⁺⁻]/.test(block) ? 'text-red-600' : 'text-gray-600'}`}>{block}</span>
+            <span key={i} className={`text-xl font-mono font-bold ${
+              /[A-Z]/.test(block) ? 'text-purple-700' : 
+              /[₀-₉]/.test(block) ? 'text-amber-600' : 
+              /[⁺⁻]/.test(block) ? 'text-red-600' :
+              /[→←⇄⇌↔⟶]/.test(block) ? 'text-blue-600' :
+              /[↑↓]/.test(block) ? 'text-emerald-600' :
+              block === ' ' ? 'bg-gray-100 px-1 rounded' :
+              'text-gray-600'
+            }`}>{block === ' ' ? '␣' : block}</span>
           ))
         )}
       </div>
+      
       {selectedAtom && (
         <div className="bg-purple-100 rounded-lg p-3 mb-4 border border-purple-200">
           <p className="text-sm text-purple-800">
@@ -156,6 +185,7 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           </p>
         </div>
       )}
+      
       <div className="mb-4">
         <p className="text-xs text-purple-700 font-semibold mb-2">🔬 Атомы:</p>
         <div className="flex flex-wrap gap-1.5">
@@ -166,6 +196,7 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           ))}
         </div>
       </div>
+      
       <div className="mb-4">
         <p className="text-xs text-purple-700 font-semibold mb-2">🔢 Индексы:</p>
         <div className="flex flex-wrap gap-1.5">
@@ -174,6 +205,7 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           ))}
         </div>
       </div>
+      
       <div className="mb-4">
         <p className="text-xs text-purple-700 font-semibold mb-2">🔢 Коэффициенты:</p>
         <div className="flex flex-wrap gap-1.5">
@@ -182,6 +214,7 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           ))}
         </div>
       </div>
+      
       <div className="mb-4">
         <p className="text-xs text-purple-700 font-semibold mb-2">⚡ Заряды ионов:</p>
         <div className="flex flex-wrap gap-1.5">
@@ -190,6 +223,7 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           ))}
         </div>
       </div>
+      
       <div className="mb-4">
         <p className="text-xs text-purple-700 font-semibold mb-2">🔲 Скобки:</p>
         <div className="flex flex-wrap gap-1.5">
@@ -198,6 +232,54 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           ))}
         </div>
       </div>
+      
+      {/* ✅ НОВАЯ СЕКЦИЯ: Стрелки */}
+      <div className="mb-4">
+        <p className="text-xs text-purple-700 font-semibold mb-2">➡️ Стрелки реакций:</p>
+        <div className="flex flex-wrap gap-1.5">
+          {ARROWS.map((arrow) => (
+            <button key={arrow} onClick={() => addBlock(arrow)} className="px-4 py-2 bg-white rounded-lg text-lg font-mono font-bold hover:bg-blue-100 hover:border-blue-400 transition border-2 border-blue-200 text-blue-700" title={
+              arrow === "→" ? "Необратимая реакция" :
+              arrow === "←" ? "Обратная стрелка" :
+              arrow === "⇄" ? "Обратимая реакция" :
+              arrow === "⇌" ? "Равновесие" :
+              arrow === "↔" ? "Двунаправленная" :
+              "Стрелка"
+            }>{arrow}</button>
+          ))}
+        </div>
+      </div>
+      
+      {/* ✅ НОВАЯ СЕКЦИЯ: Знаки реакций */}
+      <div className="mb-4">
+        <p className="text-xs text-purple-700 font-semibold mb-2">🧮 Знаки и условия:</p>
+        <div className="flex flex-wrap gap-1.5">
+          {SIGNS.map((sign) => (
+            <button key={sign} onClick={() => addBlock(sign)} className="px-3 py-2 bg-white rounded-lg text-sm font-mono font-bold hover:bg-emerald-100 hover:border-emerald-400 transition border-2 border-emerald-200 text-emerald-700" title={
+              sign === "+" ? "Плюс (разделитель)" :
+              sign === "=" ? "Равно" :
+              sign === "↑" ? "Выделение газа" :
+              sign === "↓" ? "Выпадение осадка" :
+              sign === "t°" ? "Нагревание" :
+              sign === "°C" ? "Градусы Цельсия" :
+              sign === "Δ" ? "Изменение / нагрев" :
+              sign === "hν" ? "Свет / фотон" :
+              sign === "кат." ? "Катализатор" :
+              "Условие реакции"
+            }>{sign}</button>
+          ))}
+        </div>
+      </div>
+      
+      {/* ✅ НОВАЯ СЕКЦИЯ: Пробелы */}
+      <div className="mb-4">
+        <p className="text-xs text-purple-700 font-semibold mb-2">␣ Пробелы:</p>
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => addBlock(" ")} className="px-4 py-2 bg-white rounded-lg text-sm font-mono font-bold hover:bg-gray-100 hover:border-gray-400 transition border-2 border-gray-200 text-gray-700">␣ Одинарный</button>
+          <button onClick={() => addBlock("  ")} className="px-4 py-2 bg-white rounded-lg text-sm font-mono font-bold hover:bg-gray-100 hover:border-gray-400 transition border-2 border-gray-200 text-gray-700">␣␣ Двойной</button>
+        </div>
+      </div>
+      
       <div className="mb-4">
         <p className="text-xs text-purple-700 font-semibold mb-2">🔗 Связи (для органики):</p>
         <div className="flex flex-wrap gap-1.5">
@@ -206,18 +288,21 @@ export default function MoleculeBuilder({ onAdd, onCancel, initialValue }: Molec
           ))}
         </div>
       </div>
+      
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
         <button onClick={undo} disabled={history.length <= 1} className="py-2.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition disabled:opacity-50 disabled:cursor-not-allowed">↩️ Отменить</button>
         <button onClick={redo} disabled={redoStack.length === 0} className="py-2.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition disabled:opacity-50 disabled:cursor-not-allowed">↪️ Вернуть</button>
         <button onClick={removeLast} disabled={blocks.length === 0} className="py-2.5 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium hover:bg-amber-200 transition disabled:opacity-50 disabled:cursor-not-allowed">⌫ Удалить</button>
         <button onClick={clearAll} disabled={blocks.length === 0} className="py-2.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 transition disabled:opacity-50 disabled:cursor-not-allowed">🧹 Очистить</button>
       </div>
+      
       <div className="flex gap-2">
         <button onClick={() => onAdd(getFormula())} disabled={!validation.valid} className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-violet-700 text-white rounded-xl text-sm font-bold hover:from-purple-700 hover:to-violet-800 transition shadow-md shadow-purple-300 disabled:opacity-50 disabled:cursor-not-allowed">✅ Добавить формулу</button>
         <button onClick={onCancel} className="px-6 py-3 bg-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-300 transition">Отмена</button>
       </div>
+      
       <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-        <p className="text-xs text-purple-700">💡 <strong>Подсказка:</strong> Используйте скобки для групп атомов. Например: Ca(OH)₂, Fe₂(SO₄)₃</p>
+        <p className="text-xs text-purple-700">💡 <strong>Подсказка:</strong> Используйте скобки для групп атомов: Ca(OH)₂, Fe₂(SO₄)₃. Стрелки для уравнений: H₂ + O₂ → H₂O. Знаки ↑ и ↓ для указания газа и осадка.</p>
       </div>
     </div>
   );

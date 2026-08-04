@@ -65,13 +65,13 @@ interface Progress {
 }
 
 const SUBJECTS: Record<string, { label: string; icon: string }> = {
-  chemistry: { label: "Химия", icon: "🧪" },
+  chemistry: { label: "Химия", icon: "" },
   biology: { label: "Биология", icon: "🧬" },
 };
 
 const COVERS = [
-  "from-rose-400 to-pink-600",
   "from-violet-400 to-purple-600",
+  "from-fuchsia-400 to-pink-600",
   "from-amber-400 to-orange-600",
   "from-emerald-400 to-teal-600",
   "from-blue-400 to-indigo-600",
@@ -366,7 +366,7 @@ function CoursesListContent() {
     link.download = `${course.title.replace(/\s+/g, '_')}_export.json`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success(" Курс экспортирован!");
+    toast.success("📦 Курс экспортирован!");
     setShowExportModal(null);
   };
 
@@ -439,7 +439,7 @@ function CoursesListContent() {
 
   const totalPages = Math.ceil(filteredCourses.length / coursesPerPage);
 
-  const bg = darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-rose-50 via-white to-pink-50';
+  const bg = darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-violet-50 via-purple-50 to-fuchsia-50';
   const cardBg = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100';
   const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
   const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-500';
@@ -448,7 +448,7 @@ function CoursesListContent() {
   if (loadingAuth || loading) {
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center`}>
-        <div className="w-16 h-16 border-4 border-rose-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -460,96 +460,111 @@ function CoursesListContent() {
           <div className="text-6xl mb-4">🔒</div>
           <h2 className={`text-2xl font-bold ${textPrimary} mb-2`}>Войдите в аккаунт</h2>
           <p className={`${textSecondary} text-sm mb-6`}>Чтобы получить доступ к курсам</p>
-          <Link href="/login" className="inline-block px-6 py-3 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-2xl font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all">Войти</Link>
+          <Link href="/login" className="inline-block px-6 py-3 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-2xl font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all">Войти</Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`min-h-screen ${bg} transition-colors duration-300`}>
+    <div className={`min-h-screen ${bg} transition-colors duration-300 relative overflow-hidden`}>
       <Toaster position="top-right" />
 
-      <div className="max-w-7xl mx-auto p-6">
-        <motion.nav initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className={`flex items-center gap-2 text-sm ${textSecondary} mb-6`}>
-          <Link href={`/dashboard?uid=${uid}&role=${role}`} className="flex items-center gap-2 hover:text-rose-500 transition">
-            <Home className="w-4 h-4" /><span>Главная</span>
-          </Link>
-          <ChevronRight className="w-4 h-4" />
-          <Folder className="w-4 h-4" />
-          <span className={textPrimary}>Курсы</span>
-        </motion.nav>
+      {/* Фоновые элементы Speak Now */}
+      <div className="fixed inset-0 pointer-events-none opacity-20">
+        <div className="absolute top-10 left-10 text-8xl">📚</div>
+        <div className="absolute bottom-20 right-10 text-7xl">🐉</div>
+        <div className="absolute top-1/3 right-1/4 text-6xl">✨</div>
+        <div className="absolute bottom-1/3 left-1/4 text-6xl"></div>
+      </div>
 
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8 flex-wrap gap-4">
-          <div>
-            <h1 className={`text-4xl font-black ${darkMode ? 'text-white' : 'text-transparent bg-clip-text bg-gradient-to-r from-rose-600 to-pink-600'} mb-2`}>
-              {isTutor ? "Мои курсы" : "Каталог курсов"}
+      <div className="max-w-7xl mx-auto p-6 relative z-10">
+        {/* ШАПКА ПО ЦЕНТРУ В СТИЛЕ SPEAK NOW */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          className="text-center mb-8"
+        >
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <span className="text-4xl"></span>
+            <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 drop-shadow-sm">
+              {isTutor ? "МОИ КУРСЫ" : "КАТАЛОГ КУРСОВ"}
             </h1>
-            <p className={textSecondary}>{isTutor ? "Управляйте своими курсами" : "Выберите курс и начните обучение"}</p>
+            <span className="text-4xl"></span>
           </div>
+          <p className="text-purple-600/70 font-serif italic text-sm">
+            "I had the time of my life fighting dragons with you" 
+          </p>
+        </motion.div>
+
+        {/* Панель управления */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8 flex-wrap gap-4">
+          <div className="flex-1"></div>
           <div className="flex items-center gap-3">
             <button onClick={() => setDarkMode(!darkMode)} className={`p-2.5 rounded-2xl ${darkMode ? 'bg-gray-800 text-yellow-400 border-gray-700' : 'bg-white text-gray-600 border-gray-100'} border shadow-sm`}>
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             {isTutor && (
-              <button onClick={() => setShowCreateModal(true)} className="px-6 py-2.5 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-2xl font-semibold shadow-lg shadow-rose-200 hover:shadow-xl transition-all flex items-center gap-2">
+              <button onClick={() => setShowCreateModal(true)} className="px-6 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-2xl font-semibold shadow-lg shadow-violet-200 hover:shadow-xl transition-all flex items-center gap-2">
                 <Plus className="w-5 h-5" /><span>Новый курс</span>
               </button>
             )}
           </div>
         </motion.div>
 
+        {/* Фильтры */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`${cardBg} rounded-3xl p-4 shadow-sm border mb-8`}>
           <div className="flex flex-wrap gap-3 items-center">
             <div className="flex-1 min-w-[250px] relative">
-              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Поиск по названию, описанию, тегам..." className={`w-full ${inputBg} border-2 rounded-2xl pl-12 pr-4 py-3 text-sm focus:border-rose-300 focus:outline-none transition-all`} />
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Поиск по названию, описанию, тегам..." className={`w-full ${inputBg} border-2 rounded-2xl pl-12 pr-4 py-3 text-sm focus:border-violet-300 focus:outline-none transition-all`} />
               <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400`} />
             </div>
-            <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-rose-300 focus:outline-none transition-all cursor-pointer`}>
-              <option value="all">🎨 Все предметы</option>
-              <option value="chemistry"> Химия</option>
+            <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-violet-300 focus:outline-none transition-all cursor-pointer`}>
+              <option value="all"> Все предметы</option>
+              <option value="chemistry">🧪 Химия</option>
               <option value="biology">🧬 Биология</option>
             </select>
-            <select value={filterAccess} onChange={(e) => setFilterAccess(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-rose-300 focus:outline-none transition-all cursor-pointer`}>
+            <select value={filterAccess} onChange={(e) => setFilterAccess(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-violet-300 focus:outline-none transition-all cursor-pointer`}>
               <option value="all"> Все типы</option>
               <option value="free">🆓 Бесплатные</option>
-              <option value="paid">💰 Платные</option>
+              <option value="paid"> Платные</option>
               <option value="assigned">🔒 По назначению</option>
             </select>
             {isTutor && (
-              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-rose-300 focus:outline-none transition-all cursor-pointer`}>
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-violet-300 focus:outline-none transition-all cursor-pointer`}>
                 <option value="all">📊 Все статусы</option>
                 <option value="published">✅ Опубликованные</option>
                 <option value="draft">📝 Черновики</option>
               </select>
             )}
-            <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-rose-300 focus:outline-none transition-all cursor-pointer`}>
+            <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-violet-300 focus:outline-none transition-all cursor-pointer`}>
               <option value="all">🏷️ Все теги</option>
               {POPULAR_TAGS.map(tag => <option key={tag} value={tag}>{tag}</option>)}
             </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-rose-300 focus:outline-none transition-all cursor-pointer`}>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className={`${inputBg} border-2 rounded-2xl px-4 py-3 text-sm focus:border-violet-300 focus:outline-none transition-all cursor-pointer`}>
               <option value="updated">🕐 По дате изменения</option>
               <option value="created">📅 По дате создания</option>
               <option value="title">🔤 По названию</option>
-              <option value="popular"> По популярности</option>
+              <option value="popular">🔥 По популярности</option>
             </select>
             <div className={`flex ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'} rounded-2xl p-1 border-2`}>
-              <button onClick={() => setViewMode('grid')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${viewMode === 'grid' ? (darkMode ? 'bg-gray-600 text-white' : 'bg-white text-rose-600 shadow-sm') : textSecondary}`}>
+              <button onClick={() => setViewMode('grid')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${viewMode === 'grid' ? (darkMode ? 'bg-gray-600 text-white' : 'bg-white text-violet-600 shadow-sm') : textSecondary}`}>
                 <Grid className="w-4 h-4" />
               </button>
-              <button onClick={() => setViewMode('list')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${viewMode === 'list' ? (darkMode ? 'bg-gray-600 text-white' : 'bg-white text-rose-600 shadow-sm') : textSecondary}`}>
+              <button onClick={() => setViewMode('list')} className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${viewMode === 'list' ? (darkMode ? 'bg-gray-600 text-white' : 'bg-white text-violet-600 shadow-sm') : textSecondary}`}>
                 <List className="w-4 h-4" />
               </button>
             </div>
           </div>
         </motion.div>
 
+        {/* Список курсов */}
         {filteredCourses.length === 0 ? (
           <div className={`text-center py-20 ${cardBg} rounded-3xl border-2 border-dashed`}>
             <div className="text-7xl mb-4">📚</div>
             <p className={`${textPrimary} text-lg mb-2`}>{searchQuery || filterSubject !== "all" || filterTag !== "all" ? "Ничего не найдено" : isTutor ? "У вас ещё нет курсов" : "Нет доступных курсов"}</p>
             {isTutor && (
-              <button onClick={() => setShowCreateModal(true)} className="mt-4 px-8 py-3 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-2xl font-semibold shadow-lg hover:shadow-xl transition-all">+ Создать первый курс</button>
+              <button onClick={() => setShowCreateModal(true)} className="mt-4 px-8 py-3 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-2xl font-semibold shadow-lg hover:shadow-xl transition-all">+ Создать первый курс</button>
             )}
           </div>
         ) : viewMode === 'grid' ? (
@@ -566,14 +581,14 @@ function CoursesListContent() {
 
                 return (
                   <motion.div key={course.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -5 }} className={`${cardBg} rounded-3xl overflow-hidden shadow-sm border hover:shadow-xl transition-all group`}>
-                    <div className={`h-48 relative overflow-hidden ${isImageCover ? '' : `bg-gradient-to-br ${course.cover || 'from-rose-400 to-pink-600'}`}`}>
+                    <div className={`h-48 relative overflow-hidden ${isImageCover ? '' : `bg-gradient-to-br ${course.cover || 'from-violet-400 to-purple-600'}`}`}>
                       {isImageCover && <img src={course.cover} alt={course.title} className="absolute inset-0 w-full h-full object-cover" />}
                       <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-all" />
                       <div className="absolute top-4 left-4 flex flex-col gap-2">
                         <span className="px-3 py-1.5 bg-white/95 backdrop-blur rounded-full text-xs font-bold text-gray-700 shadow-sm">
                           {SUBJECTS[course.subject]?.icon} {SUBJECTS[course.subject]?.label}
                         </span>
-                        {isNew && <span className="px-3 py-1.5 bg-blue-500 text-white rounded-full text-xs font-bold shadow-sm">🆕 Новый</span>}
+                        {isNew && <span className="px-3 py-1.5 bg-blue-500 text-white rounded-full text-xs font-bold shadow-sm"> Новый</span>}
                         {course.tags && course.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {course.tags.slice(0, 2).map(tag => (
@@ -594,7 +609,7 @@ function CoursesListContent() {
                       </div>
                       {!course.published && isTutor && (
                         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
-                          <span className="px-4 py-2 bg-white/90 rounded-full text-sm font-bold text-gray-800">📝 Черновик</span>
+                          <span className="px-4 py-2 bg-white/90 rounded-full text-sm font-bold text-gray-800"> Черновик</span>
                         </div>
                       )}
                       <div className="absolute bottom-4 left-4 right-4">
@@ -608,7 +623,7 @@ function CoursesListContent() {
                       <div className={`flex items-center gap-4 text-xs ${textSecondary} mb-4`}>
                         <span className="flex items-center gap-1">📚 {totalLessons} уроков</span>
                         {course.students_count && course.students_count > 0 && (
-                          <span className="flex items-center gap-1"> {course.students_count} учеников</span>
+                          <span className="flex items-center gap-1">👥 {course.students_count} учеников</span>
                         )}
                         {course.preview_lessons && course.preview_lessons > 0 && (
                           <span className="flex items-center gap-1">👁️ {course.preview_lessons} бесплатных</span>
@@ -619,16 +634,15 @@ function CoursesListContent() {
                         <div className="mb-4">
                           <div className="flex items-center justify-between mb-2">
                             <span className={`text-xs font-semibold ${textPrimary}`}>Прогресс</span>
-                            <span className="text-xs font-bold text-rose-600">{progressPercent}%</span>
+                            <span className="text-xs font-bold text-violet-600">{progressPercent}%</span>
                           </div>
                           <div className={`w-full h-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} rounded-full overflow-hidden`}>
-                            <div className="h-full bg-gradient-to-r from-rose-500 to-pink-600 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                            <div className="h-full bg-gradient-to-r from-violet-500 to-purple-600 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
                           </div>
                         </div>
                       )}
 
                       <div className="flex gap-2 flex-wrap">
-                        {/*  ИСПРАВЛЕННАЯ ЛОГИКА КНОПОК */}
                         {isStudent && course.access_type === 'paid' && !progress ? (
                           course.preview_lessons && course.preview_lessons > 0 ? (
                             <Link 
@@ -648,7 +662,7 @@ function CoursesListContent() {
                         ) : (
                           <Link 
                             href={`/courses/${course.id}?uid=${uid}&role=${role}`} 
-                            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl text-sm font-semibold hover:scale-[1.02] transition-all text-center"
+                            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-semibold hover:scale-[1.02] transition-all text-center"
                           >
                             {progress ? "▶ Продолжить" : "📖 Открыть"}
                           </Link>
@@ -692,7 +706,7 @@ function CoursesListContent() {
                 <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className={`px-4 py-2 rounded-xl font-semibold transition-all disabled:opacity-50 ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-700'} border`}>
                   ← Назад
                 </button>
-                <span className={`px-4 py-2 rounded-xl font-semibold bg-rose-500 text-white`}>
+                <span className={`px-4 py-2 rounded-xl font-semibold bg-violet-500 text-white`}>
                   {currentPage} / {totalPages}
                 </span>
                 <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className={`px-4 py-2 rounded-xl font-semibold transition-all disabled:opacity-50 ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-gray-700'} border`}>
@@ -714,7 +728,7 @@ function CoursesListContent() {
 
               return (
                 <motion.div key={course.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} whileHover={{ x: 5 }} className={`${cardBg} rounded-2xl border shadow-sm hover:shadow-md transition-all p-5 flex items-center gap-5`}>
-                  <div className={`w-24 h-24 rounded-2xl flex-shrink-0 flex items-center justify-center text-4xl shadow-md overflow-hidden ${isImageCover ? '' : `bg-gradient-to-br ${course.cover || 'from-rose-400 to-pink-600'}`}`}>
+                  <div className={`w-24 h-24 rounded-2xl flex-shrink-0 flex items-center justify-center text-4xl shadow-md overflow-hidden ${isImageCover ? '' : `bg-gradient-to-br ${course.cover || 'from-violet-400 to-purple-600'}`}`}>
                     {isImageCover ? (
                       <img src={course.cover} alt={course.title} className="w-full h-full object-cover" />
                     ) : (
@@ -735,7 +749,7 @@ function CoursesListContent() {
                       <span>{SUBJECTS[course.subject]?.label}</span>
                       <span>📚 {totalLessons} уроков</span>
                       {course.students_count && <span>👥 {course.students_count} учеников</span>}
-                      {course.access_type === 'free' && <span className="text-emerald-600 font-semibold">🆓 Бесплатно</span>}
+                      {course.access_type === 'free' && <span className="text-emerald-600 font-semibold"> Бесплатно</span>}
                       {course.access_type === 'paid' && (
                         <span className="text-amber-600 font-semibold">
                           {hasDiscount && <span className="line-through mr-1">{course.oldPrice}₽</span>}
@@ -750,13 +764,12 @@ function CoursesListContent() {
                           <span className={`text-xs ${textSecondary}`}>{completedCount}/{totalLessons}</span>
                         </div>
                         <div className={`w-full h-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} rounded-full overflow-hidden`}>
-                          <div className="h-full bg-gradient-to-r from-rose-500 to-pink-600 rounded-full" style={{ width: `${progressPercent}%` }} />
+                          <div className="h-full bg-gradient-to-r from-violet-500 to-purple-600 rounded-full" style={{ width: `${progressPercent}%` }} />
                         </div>
                       </div>
                     )}
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
-                    {/* 🎯 ИСПРАВЛЕННАЯ ЛОГИКА КНОПОК (list view) */}
                     {isStudent && course.access_type === 'paid' && !progress ? (
                       course.preview_lessons && course.preview_lessons > 0 ? (
                         <Link 
@@ -774,7 +787,7 @@ function CoursesListContent() {
                         </button>
                       )
                     ) : (
-                      <Link href={`/courses/${course.id}?uid=${uid}&role=${role}`} className="px-4 py-2.5 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl text-sm font-semibold hover:scale-105 transition-transform shadow-md">
+                      <Link href={`/courses/${course.id}?uid=${uid}&role=${role}`} className="px-4 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl text-sm font-semibold hover:scale-105 transition-transform shadow-md">
                         {progress ? "▶" : "📖"}
                       </Link>
                     )}
@@ -804,30 +817,30 @@ function CoursesListContent() {
         {showCreateModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
             <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className={`${cardBg} rounded-3xl shadow-2xl w-full max-w-2xl border max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
-              <div className="bg-gradient-to-r from-rose-500 to-pink-600 p-5 rounded-t-3xl flex items-center justify-between">
+              <div className="bg-gradient-to-r from-violet-500 to-purple-600 p-5 rounded-t-3xl flex items-center justify-between">
                 <h2 className="font-black text-xl text-white flex items-center gap-2"><Plus className="w-6 h-6" /> Новый курс</h2>
                 <button onClick={() => setShowCreateModal(false)} className="text-white/80 hover:text-white"><X className="w-6 h-6" /></button>
               </div>
               <div className="p-6 space-y-4">
                 <div>
                   <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Название курса *</label>
-                  <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Например: ЕГЭ Химия 2025" className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                  <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Например: ЕГЭ Химия 2025" className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                 </div>
                 <div>
                   <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Описание</label>
-                  <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} rows={3} placeholder="О чём этот курс..." className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none resize-none`} />
+                  <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} rows={3} placeholder="О чём этот курс..." className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none resize-none`} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Предмет</label>
-                    <select value={newSubject} onChange={(e) => setNewSubject(e.target.value)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`}>
+                    <select value={newSubject} onChange={(e) => setNewSubject(e.target.value)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`}>
                       <option value="chemistry">🧪 Химия</option>
                       <option value="biology"> Биология</option>
                     </select>
                   </div>
                   <div>
                     <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Тип доступа</label>
-                    <select value={newAccessType} onChange={(e) => setNewAccessType(e.target.value as any)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`}>
+                    <select value={newAccessType} onChange={(e) => setNewAccessType(e.target.value as any)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`}>
                       <option value="free">🆓 Бесплатный</option>
                       <option value="paid">💰 Платный</option>
                       <option value="assigned">🔒 По назначению</option>
@@ -838,18 +851,18 @@ function CoursesListContent() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Цена (₽)</label>
-                      <input type="number" value={newPrice} onChange={(e) => setNewPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                      <input type="number" value={newPrice} onChange={(e) => setNewPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                     </div>
                     <div>
                       <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Старая цена (₽) <span className="text-gray-400">для скидки</span></label>
-                      <input type="number" value={newOldPrice} onChange={(e) => setNewOldPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                      <input type="number" value={newOldPrice} onChange={(e) => setNewOldPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                     </div>
                   </div>
                 )}
                 {(newAccessType === 'paid' || newAccessType === 'assigned') && (
                   <div>
                     <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>🎁 Бесплатных уроков для предпросмотра</label>
-                    <input type="number" value={newPreviewLessons} onChange={(e) => setNewPreviewLessons(parseInt(e.target.value) || 0)} min={0} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                    <input type="number" value={newPreviewLessons} onChange={(e) => setNewPreviewLessons(parseInt(e.target.value) || 0)} min={0} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                   </div>
                 )}
                 <div>
@@ -876,7 +889,7 @@ function CoursesListContent() {
                   <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>🎨 Обложка</label>
                   <div className="flex gap-2 flex-wrap">
                     {COVERS.map((c, i) => (
-                      <button key={i} onClick={() => setNewCover(c)} className={`w-12 h-12 rounded-lg bg-gradient-to-br ${c} transition-all ${newCover === c ? 'ring-2 ring-rose-500 ring-offset-2 scale-110 shadow-lg' : ''}`} />
+                      <button key={i} onClick={() => setNewCover(c)} className={`w-12 h-12 rounded-lg bg-gradient-to-br ${c} transition-all ${newCover === c ? 'ring-2 ring-violet-500 ring-offset-2 scale-110 shadow-lg' : ''}`} />
                     ))}
                   </div>
                 </div>
@@ -912,7 +925,7 @@ function CoursesListContent() {
                     } catch (error: any) {
                       toast.error("Ошибка: " + error.message);
                     }
-                  }} className="flex-1 bg-gradient-to-r from-rose-500 to-pink-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                  }} className="flex-1 bg-gradient-to-r from-violet-500 to-purple-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2">
                     <Save className="w-5 h-5" /> Создать курс
                   </button>
                   <button onClick={() => setShowCreateModal(false)} className={`px-6 py-3 ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'} rounded-xl font-bold`}>Отмена</button>
@@ -935,26 +948,26 @@ function CoursesListContent() {
               <div className="p-6 space-y-4">
                 <div>
                   <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Название курса *</label>
-                  <input value={courseSettingsTitle} onChange={(e) => setCourseSettingsTitle(e.target.value)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                  <input value={courseSettingsTitle} onChange={(e) => setCourseSettingsTitle(e.target.value)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                 </div>
                 <div>
                   <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Описание</label>
-                  <textarea value={courseSettingsDesc} onChange={(e) => setCourseSettingsDesc(e.target.value)} rows={3} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none resize-none`} />
+                  <textarea value={courseSettingsDesc} onChange={(e) => setCourseSettingsDesc(e.target.value)} rows={3} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none resize-none`} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Предмет</label>
-                    <select value={courseSettingsSubject} onChange={(e) => setCourseSettingsSubject(e.target.value)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`}>
+                    <select value={courseSettingsSubject} onChange={(e) => setCourseSettingsSubject(e.target.value)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`}>
                       <option value="chemistry">🧪 Химия</option>
                       <option value="biology">🧬 Биология</option>
                     </select>
                   </div>
                   <div>
                     <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Тип доступа</label>
-                    <select value={courseSettingsAccessType} onChange={(e) => setCourseSettingsAccessType(e.target.value as any)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`}>
-                      <option value="free"> Бесплатный</option>
+                    <select value={courseSettingsAccessType} onChange={(e) => setCourseSettingsAccessType(e.target.value as any)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`}>
+                      <option value="free">🆓 Бесплатный</option>
                       <option value="paid">💰 Платный</option>
-                      <option value="assigned">🔒 По назначению</option>
+                      <option value="assigned"> По назначению</option>
                     </select>
                   </div>
                 </div>
@@ -962,18 +975,18 @@ function CoursesListContent() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Цена (₽)</label>
-                      <input type="number" value={courseSettingsPrice} onChange={(e) => setCourseSettingsPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                      <input type="number" value={courseSettingsPrice} onChange={(e) => setCourseSettingsPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                     </div>
                     <div>
                       <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>Старая цена (₽)</label>
-                      <input type="number" value={courseSettingsOldPrice} onChange={(e) => setCourseSettingsOldPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                      <input type="number" value={courseSettingsOldPrice} onChange={(e) => setCourseSettingsOldPrice(parseInt(e.target.value) || 0)} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                     </div>
                   </div>
                 )}
                 {(courseSettingsAccessType === 'paid' || courseSettingsAccessType === 'assigned') && (
                   <div>
-                    <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}> Бесплатных уроков</label>
-                    <input type="number" value={courseSettingsPreviewLessons} onChange={(e) => setCourseSettingsPreviewLessons(parseInt(e.target.value) || 0)} min={0} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-rose-300 focus:outline-none`} />
+                    <label className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'} font-bold block mb-2`}>🎁 Бесплатных уроков</label>
+                    <input type="number" value={courseSettingsPreviewLessons} onChange={(e) => setCourseSettingsPreviewLessons(parseInt(e.target.value) || 0)} min={0} className={`w-full ${inputBg} border-2 rounded-xl p-3 text-sm focus:border-violet-300 focus:outline-none`} />
                   </div>
                 )}
                 <div>
@@ -999,7 +1012,7 @@ function CoursesListContent() {
                 <div className="flex gap-3 pt-4">
                   <button onClick={saveCourseSettings} disabled={savingCourseSettings} className="flex-1 bg-gradient-to-r from-violet-500 to-purple-600 text-white py-3 rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2">
                     {savingCourseSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    {savingCourseSettings ? 'Сохранение...' : ' Сохранить'}
+                    {savingCourseSettings ? 'Сохранение...' : '💾 Сохранить'}
                   </button>
                   <button onClick={() => setShowCourseSettings(null)} className={`px-6 py-3 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} ${textPrimary} rounded-xl font-bold`}>Отмена</button>
                 </div>
@@ -1055,7 +1068,7 @@ function CoursesListContent() {
                     <p className={`text-sm ${textSecondary} text-center mb-4`}>Выберите удобный способ оплаты:</p>
                     <div className="space-y-3">
                       <button onClick={() => handleCoursePayment('lava')} disabled={isPaying} className="w-full flex items-center justify-center gap-3 p-4 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold hover:opacity-90 transition disabled:opacity-50">
-                        {isPaying && paymentProvider === 'lava' ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>🌋</span>}
+                        {isPaying && paymentProvider === 'lava' ? <Loader2 className="w-5 h-5 animate-spin" /> : <span></span>}
                         Оплатить через Lava
                       </button>
                       <button onClick={() => handleCoursePayment('prodamus')} disabled={isPaying} className="w-full flex items-center justify-center gap-3 p-4 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold hover:opacity-90 transition disabled:opacity-50">
@@ -1126,10 +1139,10 @@ function CoursesListContent() {
                     <h2 className={`text-2xl font-black ${textPrimary}`}>{showSyllabusModal.title}</h2>
                     <p className={`${textSecondary} mt-2`}>{showSyllabusModal.description}</p>
                   </div>
-                  <button onClick={() => setShowSyllabusModal(null)} className={`${textSecondary} hover:text-rose-500 transition`}><X className="w-6 h-6" /></button>
+                  <button onClick={() => setShowSyllabusModal(null)} className={`${textSecondary} hover:text-violet-500 transition`}><X className="w-6 h-6" /></button>
                 </div>
                 <div className="flex gap-4 mt-4 text-sm flex-wrap">
-                  <span className="px-3 py-1 bg-rose-100 text-rose-700 rounded-full font-semibold">📚 {showSyllabusModal.lessons?.filter((l: any) => l.published).length || 0} уроков</span>
+                  <span className="px-3 py-1 bg-violet-100 text-violet-700 rounded-full font-semibold">📚 {showSyllabusModal.lessons?.filter((l: any) => l.published).length || 0} уроков</span>
                   {showSyllabusModal.access_type === 'paid' && <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full font-semibold">💰 {showSyllabusModal.price} ₽</span>}
                   {(showSyllabusModal.preview_lessons || 0) > 0 && showSyllabusModal.access_type === 'paid' && (
                     <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full font-semibold">🎁 {showSyllabusModal.preview_lessons} бесплатных</span>
@@ -1146,8 +1159,8 @@ function CoursesListContent() {
                       const isPreview = idx < (showSyllabusModal.preview_lessons || 0);
                       return (
                         <div key={lesson.id} className={`flex items-center gap-3 p-3 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} border ${darkMode ? 'border-gray-600' : 'border-gray-100'}`}>
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${isPreview ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                            {isPreview ? '' : idx + 1}
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${isPreview ? 'bg-emerald-100 text-emerald-600' : 'bg-violet-100 text-violet-600'}`}>
+                            {isPreview ? '🎁' : idx + 1}
                           </div>
                           <div className="flex-1 min-w-0">
                             <span className={`font-medium ${textPrimary} block truncate`}>{lesson.title}</span>
@@ -1221,8 +1234,8 @@ function CoursesListContent() {
 export default function CoursesPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-pink-50 flex items-center justify-center">
-        <div className="w-16 h-16 border-4 border-rose-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-violet-50 via-purple-50 to-fuchsia-50 flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <CoursesListContent />

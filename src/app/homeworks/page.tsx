@@ -1,20 +1,19 @@
 "use client";
-
 import { useState, useEffect, Suspense, useRef } from "react";
 import Link from "next/link";
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { 
-  getFirestore, doc, getDoc, updateDoc, deleteDoc, collection, addDoc, 
-  query, where, onSnapshot, getDocs, setDoc, writeBatch 
+import {
+  getFirestore, doc, getDoc, updateDoc, deleteDoc, collection, addDoc,
+  query, where, onSnapshot, getDocs, setDoc, writeBatch
 } from "firebase/firestore";
 import { onAuthStateChanged, getAuth } from "firebase/auth";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Search, Plus, Folder, Star, Clock, FileText, Edit, Copy, Trash2, 
-  CheckCircle, Target, Zap, BookOpen, Layers, X, Award, Check, 
-  Database, Users, Upload, Eye, RotateCcw, GraduationCap, Settings, 
+import {
+  Search, Plus, Folder, Star, Clock, FileText, Edit, Copy, Trash2,
+  CheckCircle, Target, Zap, BookOpen, Layers, X, Award, Check,
+  Database, Users, Upload, Eye, RotateCcw, GraduationCap, Settings,
   Save, Calculator, Timer, Download, Moon, Sun, Bell, Calendar, Tag, AlertTriangle
 } from "lucide-react";
 
@@ -26,7 +25,6 @@ const firebaseConfig = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "115123071384",
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:115123071384:web:9517a29ed1fc2c46e163ed",
 };
-
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
@@ -70,6 +68,7 @@ interface Homework {
   time_limit?: number;
   assigned_students: string[];
   assigned_courses: string[];
+  assigned_groups?: string[];
   due_date?: string;
   created_at: string;
   updated_at: string;
@@ -87,12 +86,12 @@ const DIFFICULTY_INFO = {
 
 const TASK_TYPES = [
   { value: "text", label: "Свободный ответ", icon: "📝", color: "from-blue-500 to-cyan-500" },
-  { value: "single_choice", label: "Один вариант", icon: "⚪", color: "from-purple-500 to-pink-500" },
+  { value: "single_choice", label: "Один вариант", icon: "", color: "from-purple-500 to-pink-500" },
   { value: "multi_choice", label: "Несколько", icon: "✅", color: "from-emerald-500 to-teal-500" },
-  { value: "order", label: "По порядку", icon: "📋", color: "from-orange-500 to-amber-500" },
+  { value: "order", label: "По порядку", icon: "", color: "from-orange-500 to-amber-500" },
   { value: "match", label: "Соответствие", icon: "🔗", color: "from-rose-500 to-pink-500" },
   { value: "fill_blanks", label: "Заполнить", icon: "✍️", color: "from-indigo-500 to-purple-500" },
-  { value: "assembly", label: "Из частей", icon: "", color: "from-cyan-500 to-blue-500" },
+  { value: "assembly", label: "Из частей", icon: "🧩", color: "from-cyan-500 to-blue-500" },
   { value: "drag_drop", label: "Перетащить", icon: "🎯", color: "from-amber-500 to-orange-500" },
   { value: "photo", label: "Фото-задание", icon: "📷", color: "from-pink-500 to-rose-500" },
 ];
@@ -127,24 +126,24 @@ const EGE_SCALES: Record<string, Record<number, number>> = {
 };
 
 const EGE_SCALE_LABELS: Record<string, string> = {
-  chemistry: "🧪 Химия ЕГЭ (0-56 → 0-100)",
+  chemistry: " Химия ЕГЭ (0-56 → 0-100)",
   biology: "🧬 Биология ЕГЭ (0-57 → 0-100)"
 };
 
-const SUBSCRIPTS = ['₁','₂','₃','₄','₅','₆','₇'];
-const CHARGES = ['⁵⁻','⁴⁻','³','²⁻','⁻','⁺','²⁺','³⁺','⁴⁺','⁵⁺','⁶⁺',''];
-const OXIDATION = ['⁻⁵','⁻⁴','⁻³','⁻²','⁻¹','⁰','¹','⁺²','⁺³','⁴','⁺⁵','⁺','⁺⁷'];
-const SIGNS = ['→','←','⇄','⇌','↑','↓','+','=','t°','°C'];
+const SUBSCRIPTS = ['₁','₂','₃','','₅','₆','₇'];
+const CHARGES = ['⁵⁻','','³⁻','²⁻','','','²⁺','³⁺','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
+const OXIDATION = ['⁻⁵','⁻⁴','³','⁻²','⁻¹','','⁺¹','⁺²','⁺³','⁺⁴','⁺⁵','⁺⁶','⁺⁷'];
+const SIGNS = ['→','←','⇄','','↑','↓','+','=','t°','°C'];
 
 function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = "", darkMode = false }: any) {
   const [showPopup, setShowPopup] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
-  
+
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) { 
+    function handleClickOutside(event: MouseEvent) {
       if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-        setShowPopup(false); 
+        setShowPopup(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -152,15 +151,15 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
   }, []);
 
   function insertSymbol(symbol: string) {
-    const textarea = textareaRef.current; 
+    const textarea = textareaRef.current;
     if (!textarea) return;
-    const start = textarea.selectionStart; 
+    const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const newValue = value.substring(0, start) + symbol + value.substring(end);
     onChange(newValue);
-    setTimeout(() => { 
-      textarea.focus(); 
-      textarea.setSelectionRange(start + symbol.length, start + symbol.length); 
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + symbol.length, start + symbol.length);
     }, 0);
   }
 
@@ -174,30 +173,30 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
         <label className={`block text-sm font-semibold ${textLabel} mb-2`}>{label}</label>
       )}
       <div className="flex gap-2">
-        <textarea 
-          ref={textareaRef} 
-          value={value} 
-          onChange={(e) => onChange(e.target.value)} 
-          placeholder={placeholder} 
-          rows={rows} 
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={rows}
           className={`flex-1 border rounded-xl p-3 text-base focus:border-orange-500 focus:outline-none resize-none ${bgInput}`}
           aria-label={label || "Текстовое поле"}
         />
         <div className="relative" ref={popupRef}>
-          <button 
-            type="button" 
-            onClick={() => setShowPopup(!showPopup)} 
+          <button
+            type="button"
+            onClick={() => setShowPopup(!showPopup)}
             className="h-full px-4 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl hover:from-orange-600 hover:to-pink-600 transition shadow-md text-xl"
             aria-label="Химические символы"
             title="Химические символы"
           >
-            
+            🧪
           </button>
           {showPopup && (
             <div className={`fixed right-4 bottom-4 w-80 rounded-2xl shadow-2xl border p-4 z-[100] max-h-[400px] overflow-y-auto ${bgPopup}`}>
               <div className="space-y-3">
                 <div>
-                  <p className={`text-sm font-bold ${textLabel} mb-2`}>🔢 Индексы</p>
+                  <p className={`text-sm font-bold ${textLabel} mb-2`}> Индексы</p>
                   <div className="flex flex-wrap gap-1">
                     {SUBSCRIPTS.map(s => (
                       <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border rounded-lg text-sm font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-orange-300 hover:bg-gray-600' : 'bg-orange-50 border-orange-200 text-orange-800 hover:bg-orange-100'}`}>{s}</button>
@@ -213,7 +212,7 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
                   </div>
                 </div>
                 <div>
-                  <p className={`text-sm font-bold ${textLabel} mb-2`}>🎯 Степени окисления</p>
+                  <p className={`text-sm font-bold ${textLabel} mb-2`}> Степени окисления</p>
                   <div className="flex flex-wrap gap-1">
                     {OXIDATION.map(s => (
                       <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border rounded-lg text-sm font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-red-300 hover:bg-gray-600' : 'bg-red-50 border-red-200 text-red-800 hover:bg-red-100'}`}>{s}</button>
@@ -242,11 +241,10 @@ function ImageUploader({ value, onChange, tutorId, darkMode = false }: any) {
   const [uploading, setUploading] = useState(false);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; 
+    const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) { toast.error('Выберите изображение'); return; }
     if (file.size > 5 * 1024 * 1024) { toast.error('Файл слишком большой (макс. 5MB)'); return; }
-
     setUploading(true);
     try {
       const fileName = `${tutorId}/${Date.now()}_${file.name}`;
@@ -267,7 +265,7 @@ function ImageUploader({ value, onChange, tutorId, darkMode = false }: any) {
 
   return (
     <div className="space-y-2">
-      <label className={`block text-sm font-semibold ${textLabel}`}>🖼️ Картинка задания</label>
+      <label className={`block text-sm font-semibold ${textLabel}`}>📷 Картинка задания</label>
       <div className="flex gap-3 items-start">
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} aria-label="Загрузить изображение" />
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center gap-2 disabled:opacity-50" aria-label="Загрузить фото">
@@ -308,23 +306,27 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
   };
 
   const removeScale = () => { setScaleType('none'); onChange(null); toast.success('Шкала конвертации удалена'); };
-  const addCustomRow = () => { 
-    const lastPrimary = customScale.length > 0 ? customScale[customScale.length - 1].primary : 0; 
-    setCustomScale([...customScale, { primary: lastPrimary + 1, test: 0 }]); 
+
+  const addCustomRow = () => {
+    const lastPrimary = customScale.length > 0 ? customScale[customScale.length - 1].primary : 0;
+    setCustomScale([...customScale, { primary: lastPrimary + 1, test: 0 }]);
   };
-  const updateCustomRow = (idx: number, field: 'primary' | 'test', val: number) => { 
-    const newScale = [...customScale]; 
-    newScale[idx] = { ...newScale[idx], [field]: val }; 
-    setCustomScale(newScale); 
+
+  const updateCustomRow = (idx: number, field: 'primary' | 'test', val: number) => {
+    const newScale = [...customScale];
+    newScale[idx] = { ...newScale[idx], [field]: val };
+    setCustomScale(newScale);
   };
+
   const removeCustomRow = (idx: number) => { setCustomScale(customScale.filter((_, i) => i !== idx)); };
-  const saveCustomScale = () => { 
-    const sorted = [...customScale].sort((a, b) => a.primary - b.primary); 
-    const scaleObj: Record<number, number> = {}; 
-    sorted.forEach(row => { scaleObj[row.primary] = row.test; }); 
-    setScaleType('custom'); 
-    onChange(scaleObj); 
-    toast.success('✅ Своя шкала сохранена'); 
+
+  const saveCustomScale = () => {
+    const sorted = [...customScale].sort((a, b) => a.primary - b.primary);
+    const scaleObj: Record<number, number> = {};
+    sorted.forEach(row => { scaleObj[row.primary] = row.test; });
+    setScaleType('custom');
+    onChange(scaleObj);
+    toast.success('✅ Своя шкала сохранена');
   };
 
   const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-purple-50 border-purple-200';
@@ -349,6 +351,7 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
           </button>
         )}
       </div>
+
       <div className="grid grid-cols-3 gap-2 mb-4">
         <button type="button" onClick={() => { setScaleType('none'); onChange(null); }} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'none' ? bgBtnActive : `${bgBtn} hover:border-purple-400`}`} aria-label="Без конвертации">
           <div className="text-2xl mb-1">❌</div>
@@ -363,6 +366,7 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
           <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Своя шкала</div>
         </button>
       </div>
+
       {scaleType === 'preset' && (
         <div className="space-y-2">
           <p className={`text-sm font-semibold ${textLabel}`}>Выберите предмет:</p>
@@ -376,6 +380,7 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
           </div>
         </div>
       )}
+
       {scaleType === 'custom' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -421,11 +426,11 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "settings", "global"), (snap) => {
-      if (snap.exists()) { 
-        const data = snap.data(); 
-        setTemplates(data.grading_templates || []); 
-      } else { 
-        setTemplates([]); 
+      if (snap.exists()) {
+        const data = snap.data();
+        setTemplates(data.grading_templates || []);
+      } else {
+        setTemplates([]);
       }
       setLoading(false);
     });
@@ -439,17 +444,17 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
       const currentData = currentSnap.exists() ? currentSnap.data() : {};
       const templates = currentData.grading_templates || [];
       let newTemplates;
-      if (editingTemplate.id) { 
-        newTemplates = templates.map((t: any) => t.id === editingTemplate.id ? editingTemplate : t); 
-      } else { 
-        newTemplates = [...templates, { ...editingTemplate, id: `tpl_${Date.now()}` }]; 
+      if (editingTemplate.id) {
+        newTemplates = templates.map((t: any) => t.id === editingTemplate.id ? editingTemplate : t);
+      } else {
+        newTemplates = [...templates, { ...editingTemplate, id: `tpl_${Date.now()}` }];
       }
       await setDoc(doc(db, "settings", "global"), { ...currentData, grading_templates: newTemplates, updated_at: new Date().toISOString() }, { merge: true });
       toast.success('Шаблон сохранён');
       setShowForm(false);
       setEditingTemplate(null);
-    } catch (error: any) { 
-      toast.error('Ошибка: ' + error.message); 
+    } catch (error: any) {
+      toast.error('Ошибка: ' + error.message);
     }
   };
 
@@ -460,24 +465,24 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
       const templates = (currentData.grading_templates || []).filter((t: any) => t.id !== id);
       await setDoc(doc(db, "settings", "global"), { ...currentData, grading_templates: templates, updated_at: new Date().toISOString() }, { merge: true });
       toast.success('Шаблон удалён');
-    } catch (error: any) { 
-      toast.error('Ошибка: ' + error.message); 
+    } catch (error: any) {
+      toast.error('Ошибка: ' + error.message);
     }
   };
 
-  const addCriterion = () => { 
-    setEditingTemplate({ ...editingTemplate, criteria: [...(editingTemplate.criteria || []), { condition: "", points: 0 }] }); 
+  const addCriterion = () => {
+    setEditingTemplate({ ...editingTemplate, criteria: [...(editingTemplate.criteria || []), { condition: "", points: 0 }] });
   };
-  
-  const updateCriterion = (idx: number, field: string, value: any) => { 
-    const criteria = [...editingTemplate.criteria]; 
-    criteria[idx] = { ...criteria[idx], [field]: value }; 
-    setEditingTemplate({ ...editingTemplate, criteria }); 
+
+  const updateCriterion = (idx: number, field: string, value: any) => {
+    const criteria = [...editingTemplate.criteria];
+    criteria[idx] = { ...criteria[idx], [field]: value };
+    setEditingTemplate({ ...editingTemplate, criteria });
   };
-  
-  const removeCriterion = (idx: number) => { 
-    const criteria = editingTemplate.criteria.filter((_: any, i: number) => i !== idx); 
-    setEditingTemplate({ ...editingTemplate, criteria }); 
+
+  const removeCriterion = (idx: number) => {
+    const criteria = editingTemplate.criteria.filter((_: any, i: number) => i !== idx);
+    setEditingTemplate({ ...editingTemplate, criteria });
   };
 
   const bgModal = darkMode ? 'bg-gray-900' : 'bg-white';
@@ -504,6 +509,7 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
             <X className="w-7 h-7" />
           </button>
         </div>
+
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="text-center py-12">
@@ -550,6 +556,7 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
             </div>
           )}
         </div>
+
         {showForm && editingTemplate && (
           <div className={`border-t-2 ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-orange-200 bg-gradient-to-r from-orange-50 to-pink-50'} p-6`}>
             <h3 className={`text-lg font-bold ${textPrimary} mb-4`}>{editingTemplate.id ? 'Редактировать шаблон' : 'Новый шаблон'}</h3>
@@ -607,11 +614,11 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
   useEffect(() => {
     if (tutorId) {
       const unsub = onSnapshot(doc(db, "settings", "global"), (snap) => {
-        if (snap.exists()) { 
-          const data = snap.data(); 
-          setTemplates(data.grading_templates || []); 
-        } else { 
-          setTemplates([]); 
+        if (snap.exists()) {
+          const data = snap.data();
+          setTemplates(data.grading_templates || []);
+        } else {
+          setTemplates([]);
         }
       });
       return () => unsub();
@@ -620,7 +627,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
 
   const updateSection = (field: string, value: any) => onChange({ ...section, [field]: value });
   const updateData = (field: string, value: any) => onChange({ ...section, data: { ...section.data, [field]: value } });
-  
+
   const changeType = (newType: TaskType) => {
     const cleanData: any = { task_text: section.data?.task_text || '', image_url: section.data?.image_url || '', hint: section.data?.hint || '', solution: section.data?.solution || '' };
     if (newType === 'text' || newType === 'photo') { cleanData.correct_answer = section.data?.correct_answer || ''; cleanData.alt_answers = section.data?.alt_answers || []; }
@@ -632,17 +639,20 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
     if (newType === 'drag_drop') { cleanData.drag_items = section.data?.drag_items || [{item:'',target:''}]; }
     onChange({ ...section, type: newType, data: cleanData });
   };
-  
+
   const addVariant = () => updateData("variants", [...(section.data?.variants || []), ""]);
   const updateVariant = (i: number, v: string) => { const a = [...(section.data?.variants || [])]; a[i] = v; updateData("variants", a); };
   const removeVariant = (i: number) => updateData("variants", (section.data?.variants || []).filter((_: any, idx: number) => idx !== i));
   const toggleCorrect = (i: number) => { const cur = section.data?.correct_indices || []; if (section.type === "single_choice") updateData("correct_indices", [i]); else updateData("correct_indices", cur.includes(i) ? cur.filter((x: number) => x !== i) : [...cur, i]); };
+
   const addAlt = () => { setAltAnswers([...altAnswers, ""]); updateData("alt_answers", [...altAnswers, ""]); };
   const updateAlt = (i: number, v: string) => { const a = [...altAnswers]; a[i] = v; setAltAnswers(a); updateData("alt_answers", a); };
   const removeAlt = (i: number) => { const a = altAnswers.filter((_, idx) => idx !== i); setAltAnswers(a); updateData("alt_answers", a); };
+
   const addPair = () => updateData("pairs", [...(section.data?.pairs || []), { left: "", right: "" }]);
   const updatePair = (i: number, f: string, v: string) => { const a = [...(section.data?.pairs || [])]; a[i] = { ...a[i], [f]: v }; updateData("pairs", a); };
   const removePair = (i: number) => updateData("pairs", (section.data?.pairs || []).filter((_: any, idx: number) => idx !== i));
+
   const addOrderItem = () => updateData("order_items", [...(section.data?.order_items || []), ""]);
   const updateOrderItem = (i: number, v: string) => { const a = [...(section.data?.order_items || [])]; a[i] = v; updateData("order_items", a); };
   const removeOrderItem = (i: number) => updateData("order_items", (section.data?.order_items || []).filter((_: any, idx: number) => idx !== i));
@@ -651,21 +661,26 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
     const j = i + dir; if (j < 0 || j >= a.length) return;
     [a[i], a[j]] = [a[j], a[i]]; updateData("order_items", a);
   };
+
   const addPart = () => updateData("assembly_parts", [...(section.data?.assembly_parts || []), ""]);
   const updatePart = (i: number, v: string) => { const a = [...(section.data?.assembly_parts || [])]; a[i] = v; updateData("assembly_parts", a); };
   const removePart = (i: number) => updateData("assembly_parts", (section.data?.assembly_parts || []).filter((_: any, idx: number) => idx !== i));
+
   const addDragItem = () => updateData("drag_items", [...(section.data?.drag_items || []), { item: "", target: "" }]);
   const updateDragItem = (i: number, f: string, v: string) => { const a = [...(section.data?.drag_items || [])]; a[i] = { ...a[i], [f]: v }; updateData("drag_items", a); };
   const removeDragItem = (i: number) => updateData("drag_items", (section.data?.drag_items || []).filter((_: any, idx: number) => idx !== i));
+
   const addCriterion = () => onChange({ ...section, grading_criteria: [...(section.grading_criteria || []), { condition: "", points: 0 }] });
   const updateCriterion = (i: number, f: string, v: any) => { const a = [...(section.grading_criteria || [])]; a[i] = { ...a[i], [f]: v }; onChange({ ...section, grading_criteria: a }); };
   const removeCriterion = (i: number) => onChange({ ...section, grading_criteria: (section.grading_criteria || []).filter((_: any, idx: number) => idx !== i) });
+
   const applyTemplate = (template: any) => {
     const criteria = template.criteria && template.criteria.length > 0 ? template.criteria : [];
     onChange({ ...section, grading_criteria: criteria });
     setShowTemplates(false); setShowGrading(true);
     toast.success(`Шаблон "${template.name}" применён`);
   };
+
   const typeInfo = TASK_TYPES.find(t => t.value === section.type) || TASK_TYPES[0];
 
   const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200';
@@ -676,7 +691,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
   const textMuted = darkMode ? 'text-gray-400' : 'text-gray-600';
   const textAccent = darkMode ? 'text-orange-300' : 'text-orange-700';
   const textAccent2 = darkMode ? 'text-orange-400' : 'text-orange-600';
-  
+
   return (
     <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className={`${bgCard} rounded-2xl p-6 mb-6 border-2 shadow-sm`}>
       <div className="flex items-center justify-between mb-4 gap-3">
@@ -691,6 +706,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           </motion.button>
         </div>
       </div>
+
       <div className="mb-4">
         <label className={`block text-sm font-semibold ${textSecondary} mb-3`}>Тип задания</label>
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
@@ -702,8 +718,10 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           ))}
         </div>
       </div>
+
       <div className="mb-4"><ChemistryEditor value={section.data?.task_text || ''} onChange={(v: string) => updateData("task_text", v)} placeholder="Условие задания..." rows={4} label="Условие 🧪" darkMode={darkMode} /></div>
       <div className="mb-4"><ImageUploader value={section.data?.image_url || ''} onChange={(v: string) => updateData("image_url", v)} tutorId={tutorId} darkMode={darkMode} /></div>
+
       {(section.type === "text" || section.type === "photo") && (
         <div className="mb-4 space-y-3">
           <div className="flex items-center justify-between"><label className={`text-sm font-semibold ${textSecondary}`}>✅ Правильные ответы</label><button type="button" onClick={addAlt} className="px-3 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg text-sm font-semibold">+ Ответ</button></div>
@@ -711,6 +729,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           {altAnswers.map((a, i) => (<div key={i} className="flex items-center gap-2"><ChemistryEditor value={a} onChange={(v: string) => updateAlt(i, v)} placeholder={`Альтернативный ${i + 1}`} rows={2} darkMode={darkMode} /><button type="button" onClick={() => removeAlt(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить ответ"><Trash2 className="w-4 h-4" /></button></div>))}
         </div>
       )}
+
       {(section.type === "single_choice" || section.type === "multi_choice") && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Варианты {section.type === "single_choice" ? "(один правильный)" : "(несколько)"}</label><button type="button" onClick={addVariant} className="px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+ Вариант</button></div>
@@ -725,6 +744,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           </div>
         </div>
       )}
+
       {section.type === "order" && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Элементы в правильном порядке</label><button type="button" onClick={addOrderItem} className="px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg text-sm font-semibold">+ Элемент</button></div>
@@ -741,6 +761,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           </div>
         </div>
       )}
+
       {section.type === "match" && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Пары соответствий</label><button type="button" onClick={addPair} className="px-3 py-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+ Пара</button></div>
@@ -756,12 +777,14 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           </div>
         </div>
       )}
+
       {section.type === "fill_blanks" && (
         <div className="mb-4 space-y-3">
           <ChemistryEditor value={section.data?.blanks_text || ''} onChange={(v: string) => updateData("blanks_text", v)} placeholder="Текст с ___ пропусками..." rows={4} label="Текст с пропусками" darkMode={darkMode} />
           <ChemistryEditor value={section.data?.correct_answer || ''} onChange={(v: string) => updateData("correct_answer", v)} placeholder="ответ1, ответ2, ответ3" rows={3} label="Ответы (через запятую)" darkMode={darkMode} />
         </div>
       )}
+
       {section.type === "assembly" && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Части для сборки</label><button type="button" onClick={addPart} className="px-3 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg text-sm font-semibold">+ Часть</button></div>
@@ -775,6 +798,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           </div>
         </div>
       )}
+
       {section.type === "drag_drop" && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Элементы и цели</label><button type="button" onClick={addDragItem} className="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg text-sm font-semibold">+ Элемент</button></div>
@@ -790,10 +814,12 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           </div>
         </div>
       )}
+
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <ChemistryEditor value={section.data?.hint || ''} onChange={(v: string) => updateData("hint", v)} placeholder="Подсказка..." rows={3} label="💡 Подсказка" darkMode={darkMode} />
+        <ChemistryEditor value={section.data?.hint || ''} onChange={(v: string) => updateData("hint", v)} placeholder="Подсказка..." rows={3} label=" Подсказка" darkMode={darkMode} />
         <ChemistryEditor value={section.data?.solution || ''} onChange={(v: string) => updateData("solution", v)} placeholder="Разбор..." rows={3} label="📖 Разбор" darkMode={darkMode} />
       </div>
+
       <div className={`border-t-2 ${darkMode ? 'border-gray-600' : 'border-orange-200'} pt-4`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2"><Award className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} /><span className={`text-base font-bold ${textPrimary}`}>Гибкое оценивание</span></div>
@@ -802,6 +828,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
             <button type="button" onClick={() => setShowGrading(!showGrading)} className={`px-4 py-2 rounded-xl text-sm font-semibold ${showGrading ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white' : darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300' : 'bg-white border-2 border-orange-300 text-gray-700'}`}>{showGrading ? 'Скрыть' : 'Показать'}</button>
           </div>
         </div>
+
         {showTemplates && (
           <div className={`mb-4 p-4 rounded-xl border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-purple-50 border-purple-200'}`}>
             <div className="flex items-center justify-between mb-3"><h4 className={`font-bold ${darkMode ? 'text-purple-300' : 'text-purple-900'}`}>Выберите шаблон:</h4><button onClick={() => setShowTemplatesModal(true)} className={`text-sm font-semibold flex items-center gap-1 ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}><Settings className="w-4 h-4" /> Управление</button></div>
@@ -815,6 +842,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
             )}
           </div>
         )}
+
         {showGrading && (
           <div className="space-y-3">
             <div className="flex items-center justify-between"><span className={`text-sm ${textMuted}`}>Критерии ({(section.grading_criteria || []).length})</span><button type="button" onClick={addCriterion} className="px-3 py-2 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+ Критерий</button></div>
@@ -838,6 +866,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
           </div>
         )}
       </div>
+
       {showTemplatesModal && <GradingTemplatesModal onClose={() => setShowTemplatesModal(false)} tutorId={tutorId} darkMode={darkMode} />}
     </motion.div>
   );
@@ -863,29 +892,29 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
   const [tags, setTags] = useState<string[]>(hw?.tags || []);
   const [newTag, setNewTag] = useState('');
 
-  useEffect(() => { 
-    const unsubFolders = onSnapshot(query(collection(db, "homework_folders"), where("tutor_id", "==", tutorId)), (snap) => { 
-      setFolders(snap.docs.map(d => ({ id: d.id, ...d.data() }))); 
-    }); 
-    return () => unsubFolders(); 
+  useEffect(() => {
+    const unsubFolders = onSnapshot(query(collection(db, "homework_folders"), where("tutor_id", "==", tutorId)), (snap) => {
+      setFolders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsubFolders();
   }, [tutorId]);
-  
-  useEffect(() => { 
-    if (showBank) { 
-      setLoadingBank(true); 
+
+  useEffect(() => {
+    if (showBank) {
+      setLoadingBank(true);
       getDocs(query(collection(db, "task_folders"), where("tutor_id", "==", tutorId)))
-        .then(snap => setBankFolders(snap.docs.map(d => ({ id: d.id, ...d.data() })))); 
+        .then(snap => setBankFolders(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
       getDocs(query(collection(db, "tasks_bank"), where("tutor_id", "==", tutorId)))
-        .then(snap => { 
-          setBankTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))); 
-          setLoadingBank(false); 
+        .then(snap => {
+          setBankTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setLoadingBank(false);
         })
-        .catch(() => setLoadingBank(false)); 
-    } 
+        .catch(() => setLoadingBank(false));
+    }
   }, [showBank, tutorId]);
 
   const totalPrimaryScore = sections.reduce((sum, s) => sum + (s.max_score || 0), 0);
-  
+
   const addTag = () => { if (newTag.trim() && !tags.includes(newTag.trim())) { setTags([...tags, newTag.trim()]); setNewTag(''); } };
   const removeTag = (t: string) => setTags(tags.filter(x => x !== t));
 
@@ -901,12 +930,13 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
     setSaving(true);
     try {
       const totalScore = sections.reduce((sum, s) => sum + (s.max_score || 0), 0);
-      const data: any = { 
-        tutor_id: tutorId, title: title.trim(), description: desc.trim(), max_score: totalScore, sections, 
+      const data: any = {
+        tutor_id: tutorId, title: title.trim(), description: desc.trim(), max_score: totalScore, sections,
         folder_id: folderId || null, conversion_scale: conversionScale || null,
         type: isTrialExam ? 'trial_exam' : (hw?.type || 'text'), time_limit: isTrialExam ? timeLimit : null,
         assigned_students: hw?.assigned_students || [], assigned_courses: hw?.assigned_courses || [],
-        due_date: hw?.due_date || null, scheduled_at: scheduledAt || null, tags: tags, updated_at: new Date().toISOString() 
+        assigned_groups: hw?.assigned_groups || [],
+        due_date: hw?.due_date || null, scheduled_at: scheduledAt || null, tags: tags, updated_at: new Date().toISOString()
       };
       if (hw?.id) { await updateDoc(doc(db, "homeworks", hw.id), data); toast.success('✅ ДЗ обновлено'); }
       else { data.created_at = new Date().toISOString(); data.status = scheduledAt ? 'scheduled' : 'published'; await addDoc(collection(db, "homeworks"), data); toast.success('✅ ДЗ создано'); }
@@ -917,17 +947,19 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
   const addSection = () => setSections([...sections, { id: `sec_${Date.now()}`, title: `Задание ${sections.length + 1}`, type: 'text', max_score: 1, data: {}, grading_criteria: [] }]);
   const updateSection = (idx: number, updated: any) => { const n = [...sections]; n[idx] = updated; setSections(n); };
   const removeSection = (idx: number) => setSections(sections.filter((_, i) => i !== idx));
+
   const addFromBank = () => {
     const selected = bankTasks.filter(t => selectedBankTasks.includes(t.id));
     if (selected.length === 0) { toast.error('Выберите задания'); return; }
-    const newSections = selected.map(task => ({ 
-      id: `sec_${Date.now()}_${task.id}`, title: task.title || 'Задание из банка', type: task.type || 'text', max_score: task.max_score || 1, 
-      data: { task_text: task.task_text || '', correct_answer: task.correct_answer || '', alt_answers: task.alt_answers || [], variants: task.variants || [], correct_indices: task.correct_indices || [], order_items: task.order_items || [], pairs: task.pairs || [], blanks_text: task.blanks_text || '', assembly_parts: task.assembly_parts || [], drag_items: task.drag_items || [], hint: task.hint || '', solution: task.solution || '', image_url: task.image_url || '' }, 
-      grading_criteria: task.grading_criteria || [] 
+    const newSections = selected.map(task => ({
+      id: `sec_${Date.now()}_${task.id}`, title: task.title || 'Задание из банка', type: task.type || 'text', max_score: task.max_score || 1,
+      data: { task_text: task.task_text || '', correct_answer: task.correct_answer || '', alt_answers: task.alt_answers || [], variants: task.variants || [], correct_indices: task.correct_indices || [], order_items: task.order_items || [], pairs: task.pairs || [], blanks_text: task.blanks_text || '', assembly_parts: task.assembly_parts || [], drag_items: task.drag_items || [], hint: task.hint || '', solution: task.solution || '', image_url: task.image_url || '' },
+      grading_criteria: task.grading_criteria || []
     }));
     setSections([...sections, ...newSections]); setShowBank(false); setSelectedBankTasks([]);
     toast.success(`✅ Добавлено ${newSections.length} заданий`);
   };
+
   const filteredBankTasks = selectedBankFolder === 'all' ? bankTasks : bankTasks.filter(t => t.folder_id === selectedBankFolder);
 
   const bgModal = darkMode ? 'bg-gray-900' : 'bg-white';
@@ -949,6 +981,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
           </div>
           <motion.button whileHover={{ rotate: 90 }} onClick={onClose} className="text-white/80 hover:text-white" aria-label="Закрыть"><X className="w-7 h-7" /></motion.button>
         </div>
+
         <div className="flex-1 overflow-y-auto p-8">
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="col-span-2">
@@ -962,14 +995,14 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
             <div>
               <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>📁 Папка</label>
               <select value={folderId} onChange={(e) => setFolderId(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${bgInput}`}>
-                <option value="">📋 Без папки</option>
+                <option value=""> Без папки</option>
                 {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </div>
             <div>
-              <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>📝 Тип ДЗ</label>
+              <label className={`block text-sm font-semibold ${textSecondary} mb-2`}> Тип ДЗ</label>
               <select value={isTrialExam ? 'trial_exam' : 'regular'} onChange={(e) => setIsTrialExam(e.target.value === 'trial_exam')} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${bgInput}`}>
-                <option value="regular">📚 Обычное ДЗ</option>
+                <option value="regular"> Обычное ДЗ</option>
                 <option value="trial_exam">⏱️ Пробный экзамен</option>
               </select>
             </div>
@@ -1002,7 +1035,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>⏱️ Время (минуты)</label>
+                  <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>️ Время (минуты)</label>
                   <input type="number" min={5} max={300} value={timeLimit} onChange={(e) => setTimeLimit(parseInt(e.target.value) || 180)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-rose-500 focus:outline-none text-base font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-rose-300' : 'bg-white border-rose-200 text-rose-700'}`} />
                 </div>
                 <div>
@@ -1012,7 +1045,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
               </div>
             </div>
           )}
-          
+
           <div className="mb-6"><ConversionScaleEditor value={conversionScale} onChange={setConversionScale} maxPrimaryScore={totalPrimaryScore} darkMode={darkMode} /></div>
 
           <div className={`border-t-2 ${darkMode ? 'border-gray-600' : 'border-orange-200'} pt-6`}>
@@ -1023,14 +1056,14 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
                 <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={addSection} className="px-4 py-2 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-lg text-sm font-semibold shadow flex items-center gap-2"><Plus className="w-4 h-4" /> Добавить</motion.button>
               </div>
             </div>
-            
+
             {sections.map((section, idx) => (
               <TaskEditor key={section.id} section={section} idx={idx} onChange={(updated: any) => updateSection(idx, updated)} onRemove={() => removeSection(idx)} tutorId={tutorId} darkMode={darkMode} />
             ))}
-            
+
             {sections.length === 0 && (
               <div className={`text-center py-16 rounded-2xl border-2 border-dashed ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-gradient-to-br from-orange-50 via-amber-50 to-pink-50 border-orange-200'}`}>
-                <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-amber-500 rounded-full flex items-center justify-center text-white text-4xl mx-auto mb-4 shadow-lg">📝</div>
+                <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-amber-500 rounded-full flex items-center justify-center text-white text-4xl mx-auto mb-4 shadow-lg"></div>
                 <p className={`mb-6 font-semibold text-lg ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Нет заданий</p>
                 <div className="flex gap-3 justify-center">
                   <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowBank(true)} className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2"><Database className="w-4 h-4" /> Из банка</motion.button>
@@ -1040,7 +1073,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
             )}
           </div>
         </div>
-        
+
         <div className={`${bgFooter} px-8 py-5 border-t-2 flex gap-4`}>
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSave} disabled={saving} className="flex-1 px-8 py-4 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-base">
             {saving ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Сохранение...</>) : (<><CheckCircle className="w-5 h-5" /> Сохранить</>)}
@@ -1048,7 +1081,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onClose} className={`px-8 py-4 ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-white border-2 border-orange-300 text-gray-700'} rounded-xl font-semibold hover:bg-orange-50 transition text-base`}>Отмена</motion.button>
         </div>
       </motion.div>
-      
+
       {showBank && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={() => setShowBank(false)}>
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`${bgModal} rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col`} onClick={e => e.stopPropagation()}>
@@ -1062,6 +1095,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
               </div>
               <button onClick={() => setShowBank(false)} className="text-white/80 hover:text-white text-2xl" aria-label="Закрыть">✕</button>
             </div>
+
             <div className="flex-1 overflow-hidden flex">
               <div className={`w-64 border-r-2 p-4 overflow-y-auto ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-b from-purple-50 to-pink-50 border-purple-200'}`}>
                 <h3 className={`font-bold mb-3 flex items-center gap-2 text-base ${darkMode ? 'text-purple-300' : 'text-purple-900'}`}><Folder className="w-5 h-5" />Папки</h3>
@@ -1070,11 +1104,12 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
                   <button key={folder.id} onClick={() => setSelectedBankFolder(folder.id)} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold mb-2 transition ${selectedBankFolder === folder.id ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow' : darkMode ? 'bg-gray-700 text-purple-300 hover:bg-gray-600' : 'bg-white text-purple-700 hover:bg-purple-100'}`}>📁 {folder.name}</button>
                 ))}
               </div>
+
               <div className="flex-1 overflow-y-auto p-6">
                 {loadingBank ? (
                   <div className="text-center py-12"><div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto"></div></div>
                 ) : filteredBankTasks.length === 0 ? (
-                  <div className="text-center py-12"><div className="text-6xl mb-4">📭</div><p className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Нет заданий</p></div>
+                  <div className="text-center py-12"><div className="text-6xl mb-4"></div><p className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Нет заданий</p></div>
                 ) : (
                   <div className="space-y-3">
                     <div className={`flex items-center justify-between mb-4 rounded-xl p-3 ${darkMode ? 'bg-gray-800' : 'bg-purple-50'}`}>
@@ -1104,6 +1139,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
                 )}
               </div>
             </div>
+
             <div className={`${bgFooter} px-6 py-4 border-t-2 flex gap-3`}>
               <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={addFromBank} disabled={selectedBankTasks.length === 0} className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-base"><Plus className="w-5 h-5" /> Добавить {selectedBankTasks.length > 0 ? `(${selectedBankTasks.length})` : ''}</motion.button>
               <button onClick={() => setShowBank(false)} className={`px-6 py-3 rounded-xl font-semibold transition text-base ${darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-white border-2 border-gray-300 text-gray-700 hover:bg-gray-50'}`}>Отмена</button>
@@ -1115,11 +1151,33 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
   );
 }
 
+// ✅ НОВАЯ ФУНКЦИЯ: Отправка Telegram-уведомления ученику
+const sendTelegramNotification = async (studentId: string, message: string) => {
+  try {
+    const studentSnap = await getDoc(doc(db, "profiles", studentId));
+    if (studentSnap.exists()) {
+      const chatId = studentSnap.data().telegram_chat_id;
+      if (chatId) {
+        await fetch('/api/telegram/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, targetChatId: chatId }),
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Ошибка отправки уведомления:", error);
+  }
+};
+
+// ✅ ОБНОВЛЁННЫЙ AssignModal с поддержкой групп и Telegram-уведомлениями
 function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
   const [students, setStudents] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]); // ✅ НОВОЕ
   const [selectedStudents, setSelectedStudents] = useState<string[]>(hw?.assigned_students || []);
   const [selectedCourses, setSelectedCourses] = useState<string[]>(hw?.assigned_courses || []);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>(hw?.assigned_groups || []); // ✅ НОВОЕ
   const [dueDate, setDueDate] = useState(hw?.due_date || '');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1131,29 +1189,60 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
         setStudents(studentsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         const coursesSnap = await getDocs(query(collection(db, "courses"), where("tutor_id", "==", tutorId)));
         setCourses(coursesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // ✅ Загрузка групп
+        const groupsSnap = await getDocs(query(collection(db, "groups"), where("tutor_id", "==", tutorId)));
+        setGroups(groupsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         setLoading(false);
       } catch (error: any) { toast.error("Ошибка: " + error.message); setLoading(false); }
     };
     loadData();
   }, [tutorId]);
 
-  const toggleStudent = (studentId: string) => { 
-    setSelectedStudents(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]); 
+  const toggleStudent = (studentId: string) => {
+    setSelectedStudents(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
   };
-  const toggleCourse = (courseId: string) => { 
-    setSelectedCourses(prev => prev.includes(courseId) ? prev.filter(id => id !== courseId) : [...prev, courseId]); 
+
+  const toggleCourse = (courseId: string) => {
+    setSelectedCourses(prev => prev.includes(courseId) ? prev.filter(id => id !== courseId) : [...prev, courseId]);
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setSelectedGroups(prev => prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]);
   };
 
   const saveAssignment = async () => {
     setSaving(true);
     try {
-      await updateDoc(doc(db, "homeworks", hw.id), { 
-        assigned_students: selectedStudents, assigned_courses: selectedCourses, 
-        due_date: dueDate || null, updated_at: new Date().toISOString() 
+      // ✅ Собираем всех учеников из выбранных групп
+      const studentsFromGroups: string[] = [];
+      for (const groupId of selectedGroups) {
+        const group = groups.find(g => g.id === groupId);
+        if (group?.student_ids) {
+          studentsFromGroups.push(...group.student_ids);
+        }
+      }
+      // Объединяем вручную выбранных + из групп (без дубликатов)
+      const allStudents = [...new Set([...selectedStudents, ...studentsFromGroups])];
+
+      await updateDoc(doc(db, "homeworks", hw.id), {
+        assigned_students: allStudents,
+        assigned_courses: selectedCourses,
+        assigned_groups: selectedGroups, // ✅ Сохраняем ID групп
+        due_date: dueDate || null,
+        updated_at: new Date().toISOString()
       });
-      toast.success("✅ ДЗ назначено!");
+
+      // ✅ Отправляем Telegram-уведомления всем ученикам
+      const dueDateStr = dueDate ? `\n Дедлайн: ${new Date(dueDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` : '';
+      const notificationMessage = `📚 Новое домашнее задание!\n\n"${hw.title}"\n\n${hw.description || ''}${dueDateStr}\n\nЗайди в личный кабинет, чтобы начать 👉`;
+      
+      for (const studentId of allStudents) {
+        await sendTelegramNotification(studentId, notificationMessage);
+      }
+
+      toast.success(`✅ ДЗ назначено! (${allStudents.length} учеников, ${selectedGroups.length} групп)\n Уведомления отправлены в Telegram`);
       onClose();
-    } catch (error: any) { toast.error("Ошибка: " + error.message); } 
+    } catch (error: any) { toast.error("Ошибка: " + error.message); }
     finally { setSaving(false); }
   };
 
@@ -1185,14 +1274,59 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
               <p className="text-white/80 text-sm">{hw.title}</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl" aria-label="Закрыть">✕</button>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl" aria-label="Закрыть"></button>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* ✅ НОВАЯ СЕКЦИЯ: ГРУППЫ (первая по порядку) */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className={`font-bold text-lg ${textPrimary}`}>👥 Ученики</h3>
-              <button onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>{selectedStudents.length === students.length ? 'Снять все' : 'Выбрать всех'}</button>
+              <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>
+                <Users className="w-5 h-5 text-purple-500" />
+                👥 Группы
+              </h3>
+              <button onClick={() => setSelectedGroups(selectedGroups.length === groups.length ? [] : groups.map(g => g.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>
+                {selectedGroups.length === groups.length ? 'Снять все' : 'Выбрать все'}
+              </button>
+            </div>
+            <div className={`max-h-48 overflow-y-auto space-y-2 rounded-xl p-3 border-2 ${bgInput}`}>
+              {groups.length === 0 ? (
+                <p className={`text-center py-4 ${textSecondary}`}>
+                  Нет групп. Создайте группы в разделе "Группы".
+                </p>
+              ) : (
+                groups.map(group => {
+                  const studentCount = group.student_ids?.length || 0;
+                  return (
+                    <label key={group.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-white'}`}>
+                      <input type="checkbox" checked={selectedGroups.includes(group.id)} onChange={() => toggleGroup(group.id)} className="w-5 h-5 accent-purple-500" />
+                      <div className="flex-1">
+                        <p className={`font-semibold ${textPrimary}`}>{group.name}</p>
+                        <p className={`text-xs ${textSecondary}`}>
+                          {group.subject === 'chemistry' ? ' Химия' : '🧬 Биология'} • {studentCount} ученик(ов)
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            {selectedGroups.length > 0 && (
+              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>
+                Выбрано: {selectedGroups.length} групп(ы)
+              </p>
+            )}
+          </div>
+
+          {/* СЕКЦИЯ: УЧЕНИКИ */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>
+                👤 Ученики (дополнительно)
+              </h3>
+              <button onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>
+                {selectedStudents.length === students.length ? 'Снять все' : 'Выбрать всех'}
+              </button>
             </div>
             <div className={`max-h-48 overflow-y-auto space-y-2 rounded-xl p-3 border-2 ${bgInput}`}>
               {students.length === 0 ? (
@@ -1209,13 +1343,22 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
                 ))
               )}
             </div>
-            {selectedStudents.length > 0 && (<p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>Выбрано: {selectedStudents.length} ученик(ов)</p>)}
+            {selectedStudents.length > 0 && (
+              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>
+                Выбрано: {selectedStudents.length} ученик(ов)
+              </p>
+            )}
           </div>
-          
+
+          {/* СЕКЦИЯ: КУРСЫ */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className={`font-bold text-lg ${textPrimary}`}>📚 Курсы</h3>
-              <button onClick={() => setSelectedCourses(selectedCourses.length === courses.length ? [] : courses.map(c => c.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>{selectedCourses.length === courses.length ? 'Снять все' : 'Выбрать все'}</button>
+              <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>
+                📚 Курсы
+              </h3>
+              <button onClick={() => setSelectedCourses(selectedCourses.length === courses.length ? [] : courses.map(c => c.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>
+                {selectedCourses.length === courses.length ? 'Снять все' : 'Выбрать все'}
+              </button>
             </div>
             <div className={`max-h-48 overflow-y-auto space-y-2 rounded-xl p-3 border-2 ${bgInput}`}>
               {courses.length === 0 ? (
@@ -1232,21 +1375,25 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
                 ))
               )}
             </div>
-            {selectedCourses.length > 0 && (<p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>Выбрано: {selectedCourses.length} курс(ов)</p>)}
+            {selectedCourses.length > 0 && (
+              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>
+                Выбрано: {selectedCourses.length} курс(ов)
+              </p>
+            )}
           </div>
-          
+
           <div>
             <label className={`block text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-stone-700'} mb-2`}>📅 Дедлайн (необязательно)</label>
             <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900'}`} />
           </div>
-          
-          {selectedStudents.length === 0 && selectedCourses.length === 0 && (
+
+          {selectedStudents.length === 0 && selectedCourses.length === 0 && selectedGroups.length === 0 && (
             <div className={`rounded-xl p-4 ${darkMode ? 'bg-amber-900/20 border-amber-700' : 'bg-amber-50 border-amber-200'} border-2`}>
-              <p className={`text-sm ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>⚠️ Если не выбрать учеников или курсы, <b>ДЗ не будет доступно никому</b>.</p>
+              <p className={`text-sm ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>⚠️ Если не выбрать учеников, курсы или группы, <b>ДЗ не будет доступно никому</b>.</p>
             </div>
           )}
         </div>
-        
+
         <div className={`${bgFooter} px-6 py-4 border-t-2 flex gap-3`}>
           <button onClick={saveAssignment} disabled={saving} className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Сохранение...</>) : (<><CheckCircle className="w-5 h-5" /> Сохранить</>)}
@@ -1274,13 +1421,13 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
     const q = query(collection(db, "submissions"), where("homework_id", "==", hw.id));
     const unsub = onSnapshot(q, (snap) => {
       const userSub = snap.docs.find(doc => doc.data().student_id === uid);
-      if (userSub) { 
-        const subData = userSub.data(); 
-        setSubmissionStatus(subData.status); 
-        setSubmissionScore(subData.score); 
-      } else { 
-        setSubmissionStatus(null); 
-        setSubmissionScore(null); 
+      if (userSub) {
+        const subData = userSub.data();
+        setSubmissionStatus(subData.status);
+        setSubmissionScore(subData.score);
+      } else {
+        setSubmissionStatus(null);
+        setSubmissionScore(null);
       }
     });
     return () => unsub();
@@ -1331,8 +1478,8 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
 
   const getButtonConfig = () => {
     if (isTutor) return null;
-    if (!mounted || !submissionStatus) { 
-      return { text: "Начать", icon: Zap, gradient: "from-orange-500 via-amber-500 to-pink-500" }; 
+    if (!mounted || !submissionStatus) {
+      return { text: "Начать", icon: Zap, gradient: "from-orange-500 via-amber-500 to-pink-500" };
     }
     switch (submissionStatus) {
       case "submitted": return { text: "На проверке", icon: Clock, gradient: "from-blue-500 to-cyan-500" };
@@ -1376,11 +1523,11 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
     if (diff <= 0) return { text: '🔴 Просрочено', color: darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700', urgent: true };
     const hours = Math.floor(diff / (1000 * 60 * 60)); const days = Math.floor(hours / 24);
     if (days > 0) return { text: `⏰ ${days} дн.`, color: darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700', urgent: false };
-    if (hours > 0) return { text: `⏰ ${hours} ч.`, color: darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700', urgent: true };
+    if (hours > 0) return { text: ` ${hours} ч.`, color: darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700', urgent: true };
     const minutes = Math.floor(diff / (1000 * 60));
     return { text: `⏰ ${minutes} мин.`, color: darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700', urgent: true };
   };
-  
+
   const deadlineInfo = getDeadlineInfo();
 
   const bgCard = darkMode ? 'bg-gray-800' : 'bg-white';
@@ -1392,20 +1539,20 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ y: -4, boxShadow: "0 20px 40px rgba(0,0,0,0.08)" }} className={`${bgCard} rounded-2xl overflow-hidden transition-all duration-300 ${hwStatus?.color || (darkMode ? 'border border-gray-700' : 'border border-gray-200')}`}>
       {!isTutor && hwStatus?.label && (
         <div className={`px-4 py-2 text-xs font-bold text-center ${
-          hwStatus.urgent ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white' 
-            : submissionStatus === 'approved' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white' 
-            : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
+          hwStatus.urgent ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white'
+          : submissionStatus === 'approved' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+          : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
         }`}>
           {hwStatus.label}
         </div>
       )}
-      
+
       <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 h-1.5"></div>
-      
+
       <div className="p-5">
         <div className="flex items-start gap-3 mb-4">
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${darkMode ? 'bg-gray-700' : 'bg-gradient-to-br from-orange-100 to-pink-100'}`}>
-            {isTrialExam ? '⏱️' : '📚'}
+            {isTrialExam ? '⏱️' : ''}
           </div>
           <div className="flex-1 min-w-0">
             <h4 className={`font-bold text-lg mb-1 truncate ${textPrimary}`}>{hw.title}</h4>
@@ -1419,7 +1566,7 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
             )}
           </div>
         </div>
-        
+
         <div className="flex flex-wrap gap-2 mb-4">
           {isTrialExam && (
             <span className="px-3 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1"><Timer className="w-3 h-3" /> Пробник • {hw.time_limit} мин</span>
@@ -1429,13 +1576,19 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
           )}
           {hw.difficulty && (
             <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${
-              hw.difficulty === 'easy' ? (darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700') 
-              : hw.difficulty === 'medium' ? (darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700') 
+              hw.difficulty === 'easy' ? (darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
+              : hw.difficulty === 'medium' ? (darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700')
               : (darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700')
             }`}>{diffInfo.label}</span>
           )}
           {hw.assigned_students?.length > 0 && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>👥 {hw.assigned_students.length}</span>
+            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-100 text-purple-700'}`}> {hw.assigned_students.length}</span>
+          )}
+          {/* ✅ НОВОЕ: Отображение групп */}
+          {hw.assigned_groups?.length > 0 && (
+            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
+              👥 {hw.assigned_groups.length} групп(ы)
+            </span>
           )}
           {hw.conversion_scale && (
             <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-pink-900/30 text-pink-300' : 'bg-pink-100 text-pink-700'}`} title="Есть шкала конвертации баллов">🎯 Конвертация</span>
@@ -1450,7 +1603,7 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
             <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700'}`}><Calendar className="w-3 h-3" /> {new Date(hw.scheduled_at).toLocaleDateString('ru-RU')}</span>
           )}
         </div>
-        
+
         <div className="flex items-center gap-4 mb-4 text-sm">
           <div className={`flex items-center gap-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
             <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
@@ -1464,7 +1617,7 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
             <span className={`text-xs ${textMuted}`}>зад.</span>
           </div>
         </div>
-        
+
         {isTutor && studentStats && (
           <div className={`mb-4 p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200'}`}>
             <p className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>📊 Статус учеников:</p>
@@ -1478,15 +1631,15 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
               <div className={`mt-3 pt-3 border-t space-y-1.5 max-h-32 overflow-y-auto ${darkMode ? 'border-gray-600' : 'border-orange-200'}`}>
                 {studentSubmissions.map((sub) => {
                   const name = studentNames[sub.student_id] || sub.student_id;
-                  const statusColors: any = { 
-                    approved: darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700', 
-                    submitted: darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700', 
-                    needs_revision: darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700' 
+                  const statusColors: any = {
+                    approved: darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700',
+                    submitted: darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700',
+                    needs_revision: darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700'
                   };
-                  const statusLabels: any = { 
-                    approved: `✓ ${sub.score}/${hw.max_score}`, 
-                    submitted: '⏳ На проверке', 
-                    needs_revision: '⟳ На доработке' 
+                  const statusLabels: any = {
+                    approved: `✓ ${sub.score}/${hw.max_score}`,
+                    submitted: '⏳ На проверке',
+                    needs_revision: '⟳ На доработке'
                   };
                   return (
                     <div key={sub.id} className="flex items-center justify-between text-xs">
@@ -1499,7 +1652,7 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
             )}
           </div>
         )}
-        
+
         {isTutor ? (
           <div className="space-y-2">
             <button onClick={() => onEdit(hw)} className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl text-sm font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"><Edit className="w-4 h-4" /> Редактировать</button>
@@ -1516,15 +1669,15 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
           </div>
         ) : buttonConfig && (
           <button onClick={handleStart} className={`w-full px-4 py-3 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
-            submissionStatus === 'approved' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:shadow-lg' 
-            : submissionStatus === 'needs_revision' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white hover:shadow-lg animate-pulse' 
-            : submissionStatus === 'submitted' ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:shadow-lg' 
+            submissionStatus === 'approved' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:shadow-lg'
+            : submissionStatus === 'needs_revision' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white hover:shadow-lg animate-pulse'
+            : submissionStatus === 'submitted' ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:shadow-lg'
             : 'bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white hover:shadow-lg'
           }`}>
-            {submissionStatus === 'approved' ? (<><CheckCircle className="w-4 h-4" /> Результат: {submissionScore}/{hw.max_score}</>) 
-              : submissionStatus === 'needs_revision' ? (<><RotateCcw className="w-4 h-4" /> Исправить</>) 
-              : submissionStatus === 'submitted' ? (<><Clock className="w-4 h-4" /> На проверке</>) 
-              : (<><Zap className="w-4 h-4" /> Начать</>)}
+            {submissionStatus === 'approved' ? (<><CheckCircle className="w-4 h-4" /> Результат: {submissionScore}/{hw.max_score}</>)
+            : submissionStatus === 'needs_revision' ? (<><RotateCcw className="w-4 h-4" /> Исправить</>)
+            : submissionStatus === 'submitted' ? (<><Clock className="w-4 h-4" /> На проверке</>)
+            : (<><Zap className="w-4 h-4" /> Начать</>)}
           </button>
         )}
       </div>
@@ -1554,26 +1707,24 @@ function HomeworksContent() {
   const [editFolderName, setEditFolderName] = useState('');
   const [coursesLoaded, setCoursesLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  
-  // ✅ Тема как в courses
   const [darkMode, setDarkMode] = useState(false);
+  const [studentCourses, setStudentCourses] = useState<string[]>([]);
 
   useEffect(() => {
     const saved = localStorage.getItem("darkMode");
     if (saved === "true") setDarkMode(true);
   }, []);
-  
-  useEffect(() => { 
-    localStorage.setItem("darkMode", String(darkMode)); 
+
+  useEffect(() => {
+    localStorage.setItem("darkMode", String(darkMode));
   }, [darkMode]);
-  
+
   const uid = user?.uid || "";
   const role = profile?.role || "student";
   const isTutor = role === "tutor";
 
-  // Переменные для темы
-  const bg = darkMode ? 'bg-gray-900' : 'bg-gray-50';
-  const bgHeader = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
+  const bg = darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-orange-50 via-amber-50 to-pink-50';
+  const bgHeader = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 backdrop-blur border-orange-200';
   const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-orange-200';
   const bgInput = darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900';
   const bgEmpty = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-orange-200';
@@ -1581,16 +1732,16 @@ function HomeworksContent() {
   const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
   const textMuted = darkMode ? 'text-gray-500' : 'text-gray-400';
 
-  useEffect(() => { 
-    const unsub = onAuthStateChanged(auth, async (u: any) => { 
-      setUser(u); 
-      if (u) { 
-        const snap = await getDoc(doc(db, "profiles", u.uid)); 
-        if (snap.exists()) setProfile({ id: snap.id, ...snap.data() }); 
-      } 
-      setLoadingAuth(false); 
-    }); 
-    return () => unsub(); 
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u: any) => {
+      setUser(u);
+      if (u) {
+        const snap = await getDoc(doc(db, "profiles", u.uid));
+        if (snap.exists()) setProfile({ id: snap.id, ...snap.data() });
+      }
+      setLoadingAuth(false);
+    });
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -1599,34 +1750,31 @@ function HomeworksContent() {
       try {
         const progressSnap = await getDocs(query(collection(db, "course_progress"), where("student_id", "==", user.uid)));
         setStudentCourses(progressSnap.docs.map(d => d.data().course_id).filter(Boolean));
-      } catch (e) { console.error("Ошибка загрузки курсов:", e); } 
+      } catch (e) { console.error("Ошибка загрузки курсов:", e); }
       finally { setCoursesLoaded(true); }
     };
     loadStudentCourses();
   }, [user, profile, isTutor]);
-
-  const [studentCourses, setStudentCourses] = useState<string[]>([]);
 
   useEffect(() => {
     if (!user || !profile || !coursesLoaded) return;
     let q;
     if (isTutor) q = query(collection(db, "homeworks"), where("tutor_id", "==", user.uid));
     else q = query(collection(db, "homeworks"));
-    
     const unsubHomeworks = onSnapshot(q, (snap) => {
       let allHomeworks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (!isTutor) { 
-        allHomeworks = allHomeworks.filter(hw => { 
+      if (!isTutor) {
+        allHomeworks = allHomeworks.filter(hw => {
           const hasStudents = hw.assigned_students && hw.assigned_students.length > 0;
           const hasCourses = hw.assigned_courses && hw.assigned_courses.length > 0;
           if (!hasStudents && !hasCourses) return false;
           if (hasStudents && hw.assigned_students.includes(user.uid)) return true;
-          if (hasCourses) { 
-            const hasMatchingCourse = hw.assigned_courses.some((courseId: string) => studentCourses.includes(courseId)); 
-            if (hasMatchingCourse) return true; 
+          if (hasCourses) {
+            const hasMatchingCourse = hw.assigned_courses.some((courseId: string) => studentCourses.includes(courseId));
+            if (hasMatchingCourse) return true;
           }
           return false;
-        }); 
+        });
       }
       setHomeworks(allHomeworks);
       setLoading(false);
@@ -1636,94 +1784,92 @@ function HomeworksContent() {
       setLoadError(true);
       setLoading(false);
     });
-    
-    const unsubFolders = onSnapshot(query(collection(db, "homework_folders"), where("tutor_id", "==", user.uid)), (snap) => { 
-      setFolders(snap.docs.map(d => ({ id: d.id, ...d.data() }))); 
+    const unsubFolders = onSnapshot(query(collection(db, "homework_folders"), where("tutor_id", "==", user.uid)), (snap) => {
+      setFolders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    
     return () => { unsubHomeworks(); unsubFolders(); };
   }, [user, isTutor, profile, studentCourses, coursesLoaded]);
 
-  const createFolder = async (e: React.FormEvent) => { 
-    e.preventDefault(); 
-    if (!newFolderName.trim()) return; 
-    try { 
-      await addDoc(collection(db, "homework_folders"), { 
-        tutor_id: user.uid, name: newFolderName.trim(), created_at: new Date().toISOString() 
-      }); 
-      toast.success('📁 Папка создана'); 
-      setNewFolderName(''); 
-      setShowFolderForm(false); 
-    } catch (error: any) { toast.error('Ошибка: ' + error.message); } 
+  const createFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFolderName.trim()) return;
+    try {
+      await addDoc(collection(db, "homework_folders"), {
+        tutor_id: user.uid, name: newFolderName.trim(), created_at: new Date().toISOString()
+      });
+      toast.success('📁 Папка создана');
+      setNewFolderName('');
+      setShowFolderForm(false);
+    } catch (error: any) { toast.error('Ошибка: ' + error.message); }
   };
-  
-  const updateFolder = async (e: React.FormEvent) => { 
-    e.preventDefault(); 
-    if (!editFolderName.trim() || !editingFolder) return; 
-    try { 
-      await updateDoc(doc(db, "homework_folders", editingFolder.id), { 
-        name: editFolderName.trim(), updated_at: new Date().toISOString() 
-      }); 
-      toast.success('📁 Папка переименована'); 
-      setEditingFolder(null); 
-      setEditFolderName(''); 
-    } catch (error: any) { toast.error('Ошибка: ' + error.message); } 
+
+  const updateFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editFolderName.trim() || !editingFolder) return;
+    try {
+      await updateDoc(doc(db, "homework_folders", editingFolder.id), {
+        name: editFolderName.trim(), updated_at: new Date().toISOString()
+      });
+      toast.success('📁 Папка переименована');
+      setEditingFolder(null);
+      setEditFolderName('');
+    } catch (error: any) { toast.error('Ошибка: ' + error.message); }
   };
-  
-  const deleteFolder = async () => { 
-    if (!deletingFolder) return; 
-    try { 
-      await deleteDoc(doc(db, "homework_folders", deletingFolder.id)); 
-      const hwQuery = query(collection(db, "homeworks"), where("folder_id", "==", deletingFolder.id)); 
-      const hwSnap = await getDocs(hwQuery); 
+
+  const deleteFolder = async () => {
+    if (!deletingFolder) return;
+    try {
+      await deleteDoc(doc(db, "homework_folders", deletingFolder.id));
+      const hwQuery = query(collection(db, "homeworks"), where("folder_id", "==", deletingFolder.id));
+      const hwSnap = await getDocs(hwQuery);
       if (hwSnap.docs.length > 0) {
         const batch = writeBatch(db);
         hwSnap.docs.forEach(doc => batch.update(doc.ref, { folder_id: null }));
         await batch.commit();
       }
-      toast.success('🗑️ Папка удалена'); 
-      setDeletingFolder(null); 
-      if (folderFilter === deletingFolder.id) setFolderFilter('all'); 
-    } catch (error: any) { toast.error('Ошибка: ' + error.message); } 
+      toast.success('️ Папка удалена');
+      setDeletingFolder(null);
+      if (folderFilter === deletingFolder.id) setFolderFilter('all');
+    } catch (error: any) { toast.error('Ошибка: ' + error.message); }
   };
-  
+
   const filtered = (() => {
     let result = [...homeworks];
-    if (search.trim()) { 
-      const q = search.toLowerCase(); 
-      result = result.filter(h => h.title.toLowerCase().includes(q) || h.description?.toLowerCase().includes(q)); 
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(h => h.title.toLowerCase().includes(q) || h.description?.toLowerCase().includes(q));
     }
     if (folderFilter !== 'all') result = result.filter(h => h.folder_id === folderFilter);
     if (typeFilter !== 'all') result = result.filter(h => h.type === typeFilter);
     if (diffFilter !== 'all') result = result.filter(h => h.difficulty === diffFilter);
-    if (!isTutor) { 
-      result.sort((a, b) => { 
-        const aActive = !a.submissionStatus || a.submissionStatus === 'needs_revision'; 
-        const bActive = !b.submissionStatus || b.submissionStatus === 'needs_revision'; 
-        if (aActive && !bActive) return -1; 
-        if (!aActive && bActive) return 1; 
-        return b.created_at.localeCompare(a.created_at); 
-      }); 
-    } else { 
-      result.sort((a, b) => b.created_at.localeCompare(a.created_at)); 
+    if (!isTutor) {
+      result.sort((a, b) => {
+        const aActive = !a.submissionStatus || a.submissionStatus === 'needs_revision';
+        const bActive = !b.submissionStatus || b.submissionStatus === 'needs_revision';
+        if (aActive && !bActive) return -1;
+        if (!aActive && bActive) return 1;
+        return b.created_at.localeCompare(a.created_at);
+      });
+    } else {
+      result.sort((a, b) => b.created_at.localeCompare(a.created_at));
     }
     return result;
   })();
 
-  async function deleteHomework(hw: any) { 
-    try { await deleteDoc(doc(db, "homeworks", hw.id)); toast.success('🗑️ Удалено'); setDeletingHw(null); } 
-    catch (e: any) { toast.error('Ошибка: ' + e.message); } 
+  async function deleteHomework(hw: any) {
+    try { await deleteDoc(doc(db, "homeworks", hw.id)); toast.success('🗑️ Удалено'); setDeletingHw(null); }
+    catch (e: any) { toast.error('Ошибка: ' + e.message); }
   }
-  
-  async function duplicateHomework(hw: any) { 
-    try { 
-      const { id, created_at, updated_at, ...rest } = hw; 
-      await addDoc(collection(db, "homeworks"), { 
-        ...rest, title: `${hw.title} (копия)`, 
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString() 
-      }); 
-      toast.success('✅ Скопировано'); 
-    } catch (e: any) { toast.error('Ошибка: ' + e.message); } 
+
+  async function duplicateHomework(hw: any) {
+    try {
+      const { id, created_at, updated_at, ...rest } = hw;
+      await addDoc(collection(db, "homeworks"), {
+        ...rest, title: `${hw.title} (копия)`,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+      });
+      toast.success('✅ Скопировано');
+    } catch (e: any) { toast.error('Ошибка: ' + e.message); }
   }
 
   if (loadingAuth || loading) {
@@ -1733,7 +1879,7 @@ function HomeworksContent() {
       </div>
     );
   }
-  
+
   if (!user || !profile) {
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center p-4`}>
@@ -1747,46 +1893,57 @@ function HomeworksContent() {
   }
 
   return (
-    <div className={`min-h-screen ${bg} transition-colors duration-300`}>
+    <div className={`min-h-screen ${bg} transition-colors duration-300 relative overflow-hidden`}>
       <Toaster position="top-right" />
-      
-      <header className={`${bgHeader} border-b sticky top-0 z-30 shadow-sm`}>
-        <div className="max-w-7xl mx-auto px-6 py-5">
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-orange-500 via-amber-500 to-pink-500 rounded-2xl flex items-center justify-center text-white shadow-lg">
-                <GraduationCap className="w-7 h-7" />
-              </div>
-              <div>
-                <h1 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'bg-gradient-to-r from-orange-600 via-amber-600 to-pink-600 bg-clip-text text-transparent'}`}>
-                  Домашние задания
-                </h1>
-              </div>
-            </div>
-            
-            <div className="flex gap-3 items-center">
-              {/* ✅ Кнопка темы как в courses */}
-              <button 
-                onClick={() => setDarkMode(!darkMode)} 
-                className={`p-2.5 rounded-2xl border shadow-sm transition ${darkMode ? 'bg-gray-800 text-yellow-400 border-gray-700' : 'bg-white text-gray-600 border-orange-200'}`}
-                aria-label="Переключить тему"
-              >
-                {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-              </button>
-              
-              {isTutor && (
-                <>
-                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowFolderForm(true)} className={`px-5 py-3 rounded-xl font-semibold transition flex items-center gap-2 text-base ${darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-white border-2 border-orange-200 text-gray-700 hover:border-orange-400 hover:shadow-md'}`}>
-                    <Folder className="w-5 h-5" /> Папка
-                  </motion.button>
-                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)} className="px-5 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2 text-base">
-                    <Plus className="w-5 h-5" /> Новое ДЗ
-                  </motion.button>
-                </>
-              )}
-            </div>
+      {/* Фоновые элементы */}
+      <div className="fixed inset-0 pointer-events-none opacity-10">
+        <div className="absolute top-10 left-10 text-8xl"></div>
+        <div className="absolute bottom-20 right-10 text-7xl">📚</div>
+        <div className="absolute top-1/3 right-1/4 text-6xl">✏️</div>
+        <div className="absolute bottom-1/3 left-1/4 text-6xl">📖</div>
+      </div>
+
+      <div className="max-w-7xl mx-auto p-6 relative z-10">
+        {/* ШАПКА ПО ЦЕНТРУ */}
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <span className="text-4xl">📝</span>
+            <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-orange-600 via-amber-600 to-pink-600 drop-shadow-sm">
+              ДОМАШНИЕ ЗАДАНИЯ
+            </h1>
+            <span className="text-4xl">📚</span>
           </div>
-          
+          <p className="text-orange-600/70 font-serif italic text-sm">
+            "I can see you, but I can't reach you"
+          </p>
+        </motion.div>
+
+        {/* Кнопки управления */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-6 flex-wrap gap-4">
+          <div className="flex-1"></div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-2.5 rounded-2xl border shadow-sm transition ${darkMode ? 'bg-gray-800 text-yellow-400 border-gray-700' : 'bg-white text-gray-600 border-orange-200'}`}
+              aria-label="Переключить тему"
+            >
+              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            {isTutor && (
+              <>
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowFolderForm(true)} className={`px-5 py-3 rounded-xl font-semibold transition flex items-center gap-2 text-base ${darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-white border-2 border-orange-200 text-gray-700 hover:border-orange-400 hover:shadow-md'}`}>
+                  <Folder className="w-5 h-5" /> Папка
+                </motion.button>
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)} className="px-5 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2 text-base">
+                  <Plus className="w-5 h-5" /> Новое ДЗ
+                </motion.button>
+              </>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Фильтры */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`${bgHeader} rounded-3xl p-4 shadow-sm border mb-8`}>
           <div className="flex flex-wrap gap-3 items-center">
             <div className="flex-1 min-w-[250px] relative">
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Поиск заданий..." className={`w-full px-5 py-3 pl-12 border-2 rounded-xl focus:border-orange-400 focus:outline-none focus:ring-4 focus:ring-orange-500/10 text-base shadow-sm ${bgInput}`} aria-label="Поиск" />
@@ -1807,10 +1964,8 @@ function HomeworksContent() {
               <option value="hard">🔴 Сложные</option>
             </select>
           </div>
-        </div>
-      </header>
+        </motion.div>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
         {loadError && (
           <div className={`mb-6 rounded-2xl p-6 text-center ${darkMode ? 'bg-rose-900/20 border-rose-700' : 'bg-rose-50 border-rose-200'} border-2`}>
             <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
@@ -1818,7 +1973,7 @@ function HomeworksContent() {
             <button onClick={() => window.location.reload()} className="px-6 py-2 bg-rose-500 text-white rounded-xl font-semibold hover:bg-rose-600 transition flex items-center gap-2 mx-auto"><RotateCcw className="w-4 h-4" /> Повторить попытку</button>
           </div>
         )}
-        
+
         {folders.length > 0 && (
           <div className="mb-6">
             <h3 className={`text-sm font-bold mb-3 flex items-center gap-2 ${textSecondary}`}><Folder className="w-4 h-4 text-orange-500" />Папки</h3>
@@ -1835,7 +1990,7 @@ function HomeworksContent() {
                   <div key={folder.id} className={`group relative flex flex-col items-center rounded-2xl border-2 transition-all shadow-md ${isActive ? `bg-gradient-to-br ${color} text-white border-transparent shadow-lg` : `${bgCard} hover:border-orange-400 hover:shadow-lg`}`}>
                     <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                       <button onClick={(e) => { e.stopPropagation(); setEditingFolder(folder); setEditFolderName(folder.name); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-gray-700 border-gray-600 hover:bg-blue-900/30' : 'bg-white border-gray-200 hover:bg-blue-50'}`} title="Редактировать" aria-label="Редактировать папку">✏️</button>
-                      <button onClick={(e) => { e.stopPropagation(); setDeletingFolder(folder); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-gray-700 border-gray-600 hover:bg-rose-900/30' : 'bg-white border-gray-200 hover:bg-rose-50'}`} title="Удалить" aria-label="Удалить папку">🗑️</button>
+                      <button onClick={(e) => { e.stopPropagation(); setDeletingFolder(folder); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-gray-700 border-gray-600 hover:bg-rose-900/30' : 'bg-white border-gray-200 hover:bg-rose-50'}`} title="Удалить" aria-label="Удалить папку">️</button>
                     </div>
                     <button onClick={() => setFolderFilter(folder.id)} className="flex flex-col items-center gap-2 px-5 py-4">
                       <span className="text-2xl">📁</span>
@@ -1865,7 +2020,7 @@ function HomeworksContent() {
             ))}
           </div>
         )}
-      </main>
+      </div>
 
       {showFolderForm && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowFolderForm(false)}>
@@ -1910,7 +2065,6 @@ function HomeworksContent() {
             </motion.div>
           </motion.div>
         )}
-        
         {deletingHw && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setDeletingHw(null)}>
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className={`${bgCard} rounded-xl p-5 max-w-md border-2 shadow-2xl ${darkMode ? 'border-rose-700' : 'border-rose-200'}`} onClick={e => e.stopPropagation()}>
@@ -1927,7 +2081,7 @@ function HomeworksContent() {
       {(showCreate || editingHw) && (
         <HomeworkEditor hw={editingHw} onClose={() => { setShowCreate(false); setEditingHw(null); }} onSave={() => {}} tutorId={user.uid} darkMode={darkMode} />
       )}
-      
+
       {assigningHw && (
         <AssignModal hw={assigningHw} onClose={() => setAssigningHw(null)} tutorId={user.uid} darkMode={darkMode} />
       )}
@@ -1935,7 +2089,7 @@ function HomeworksContent() {
   );
 }
 
-export default function HomeworksPage() { 
+export default function HomeworksPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -1944,5 +2098,5 @@ export default function HomeworksPage() {
     }>
       <HomeworksContent />
     </Suspense>
-  ); 
+  );
 }

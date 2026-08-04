@@ -5,25 +5,15 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getApps, getApp, initializeApp } from "firebase/app";
 import {
-  getFirestore,
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  updateDoc,
-  arrayUnion,
-  arrayRemove,
-  onSnapshot,
-  deleteDoc,
-  addDoc,
+  getFirestore, collection, query, where, getDocs, doc,
+  updateDoc, arrayUnion, arrayRemove, onSnapshot, deleteDoc, addDoc,
 } from "firebase/firestore";
 import toast from "react-hot-toast";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Users, UserPlus, GraduationCap, Calendar,
-  BookOpen, Award, Star,
-  ChevronLeft, Search, Lock, Unlock, Trash2,
-  Activity, BarChart3
+  Users, UserPlus, GraduationCap, Calendar, BookOpen, Award,
+  ChevronLeft, Search, Shield, ShieldOff, Trash2, Activity,
+  Sun, Moon, X, Check, BookMarked
 } from "lucide-react";
 
 // Firebase
@@ -39,7 +29,6 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-// Типы
 type User = {
   id: string;
   email: string;
@@ -62,43 +51,14 @@ type Course = {
   students: string[];
 };
 
-// Форматирование даты
 function formatDate(dateValue: any): string {
   if (!dateValue) return "—";
   let date: Date;
-  if (typeof dateValue === "string" || typeof dateValue === "number") {
-    date = new Date(dateValue);
-  } else if (dateValue?.toDate) {
-    date = dateValue.toDate();
-  } else {
-    return "—";
-  }
+  if (typeof dateValue === "string" || typeof dateValue === "number") date = new Date(dateValue);
+  else if (dateValue?.toDate) date = dateValue.toDate();
+  else return "—";
   if (isNaN(date.getTime())) return "—";
   return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-}
-
-// Компонент трофея (фиксированного размера)
-function Trophy({ size = 18, className = "" }: { size?: number; className?: string }) {
-  return (
-    <svg 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-      <path d="M4 22h16" />
-      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
-    </svg>
-  );
 }
 
 function UsersContent() {
@@ -114,189 +74,124 @@ function UsersContent() {
   const [showAccessModal, setShowAccessModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", full_name: "", role: "student" as "student" | "tutor" });
+  const [darkMode, setDarkMode] = useState(false);
 
-  // Статистика
-  const [stats, setStats] = useState({
-    totalStudents: 0,
-    totalTutors: 0,
-    activeToday: 0,
-    avgProgress: 0,
-    totalXP: 0,
-    topStudents: [] as User[],
-  });
+  const [stats, setStats] = useState({ totalStudents: 0, totalTutors: 0, activeToday: 0, avgProgress: 0, totalXP: 0, topStudents: [] as User[] });
 
   useEffect(() => {
     setUid(localStorage.getItem("uid") || "");
     setRole(localStorage.getItem("role") || "");
+    const saved = localStorage.getItem("darkMode");
+    if (saved === "true") setDarkMode(true);
   }, []);
 
-  // Загрузка пользователей
+  useEffect(() => { localStorage.setItem("darkMode", String(darkMode)); }, [darkMode]);
+
   useEffect(() => {
     if (!uid || role !== "tutor") return;
-
     const q = query(collection(db, "profiles"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const usersData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as User[];
+      const usersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as User[];
       setUsers(usersData);
       
-      // Подсчёт статистики
       const students = usersData.filter(u => u.role === "student");
       const tutors = usersData.filter(u => u.role === "tutor");
       const activeToday = usersData.filter(u => {
         if (!u.last_login) return false;
-        const lastLogin = new Date(u.last_login);
-        const today = new Date();
-        return lastLogin.toDateString() === today.toDateString();
+        return new Date(u.last_login).toDateString() === new Date().toDateString();
       }).length;
       
       const totalXP = students.reduce((sum, s) => sum + (s.xp || 0), 0);
-      const avgProgress = students.length > 0 
-        ? Math.round(students.reduce((sum, s) => sum + (s.level || 0), 0) / students.length * 10)
-        : 0;
+      const avgProgress = students.length > 0 ? Math.round(students.reduce((sum, s) => sum + (s.level || 0), 0) / students.length * 10) : 0;
       const topStudents = [...students].sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 5);
       
-      setStats({
-        totalStudents: students.length,
-        totalTutors: tutors.length,
-        activeToday,
-        avgProgress,
-        totalXP,
-        topStudents,
-      });
-      
-      setLoading(false);
-    }, (error) => {
-      console.error("Ошибка загрузки:", error);
-      toast.error("Ошибка загрузки пользователей");
+      setStats({ totalStudents: students.length, totalTutors: tutors.length, activeToday, avgProgress, totalXP, topStudents });
       setLoading(false);
     });
-    
     return () => unsubscribe();
   }, [uid, role]);
 
-  // Загрузка курсов
   useEffect(() => {
     if (!uid || role !== "tutor") return;
-    
     const fetchCourses = async () => {
       try {
-        const q = query(collection(db, "courses"), where("tutor_id", "==", uid));
-        const snap = await getDocs(q);
+        const snap = await getDocs(query(collection(db, "courses"), where("tutor_id", "==", uid)));
         setCourses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Course)));
-      } catch (error) {
-        console.error("Ошибка загрузки курсов:", error);
-      }
+      } catch (error) { console.error("Ошибка загрузки курсов:", error); }
     };
     fetchCourses();
   }, [uid, role]);
 
-  // Добавление пользователя
   const addUser = async () => {
-    if (!newUser.email) {
-      toast.error("Введите email");
-      return;
-    }
-    
+    if (!newUser.email) { toast.error("Введите email"); return; }
     try {
       await addDoc(collection(db, "profiles"), {
-        email: newUser.email,
-        full_name: newUser.full_name || newUser.email.split("@")[0],
-        role: newUser.role,
-        created_at: new Date().toISOString(),
-        is_active: true,
-        enrolled_courses: [],
-        completed_lessons: [],
-        xp: 0,
-        level: 1,
+        email: newUser.email, full_name: newUser.full_name || newUser.email.split("@")[0],
+        role: newUser.role, created_at: new Date().toISOString(), is_active: true,
+        enrolled_courses: [], completed_lessons: [], xp: 0, level: 1,
       });
-      
       toast.success("Пользователь добавлен!");
       setShowAddModal(false);
       setNewUser({ email: "", full_name: "", role: "student" });
-    } catch (error: any) {
-      console.error("Ошибка добавления:", error);
-      toast.error(`Ошибка: ${error.message}`);
-    }
+    } catch (error: any) { toast.error(`Ошибка: ${error.message}`); }
   };
 
-  // Блокировка/разблокировка пользователя
   const toggleUserStatus = async (user: User) => {
     try {
-      await updateDoc(doc(db, "profiles", user.id), {
-        is_active: !user.is_active,
-      });
+      await updateDoc(doc(db, "profiles", user.id), { is_active: !user.is_active });
       toast.success(user.is_active ? "Пользователь заблокирован" : "Пользователь разблокирован");
-    } catch (error: any) {
-      toast.error(`Ошибка: ${error.message}`);
-    }
+    } catch (error: any) { toast.error(`Ошибка: ${error.message}`); }
   };
 
-  // Удаление пользователя
   const deleteUser = async (user: User) => {
-    if (!confirm(`Удалить пользователя ${user.full_name || user.email}? Это действие нельзя отменить.`)) return;
-    
+    if (!confirm(`Удалить пользователя ${user.full_name || user.email}?`)) return;
     try {
       await deleteDoc(doc(db, "profiles", user.id));
       toast.success("Пользователь удалён");
-    } catch (error: any) {
-      toast.error(`Ошибка: ${error.message}`);
-    }
+    } catch (error: any) { toast.error(`Ошибка: ${error.message}`); }
   };
 
-  // Предоставление доступа к курсу
   const grantCourseAccess = async (userId: string, courseId: string) => {
     try {
-      await updateDoc(doc(db, "profiles", userId), {
-        enrolled_courses: arrayUnion(courseId),
-      });
-      await updateDoc(doc(db, "courses", courseId), {
-        students: arrayUnion(userId),
-      });
+      await updateDoc(doc(db, "profiles", userId), { enrolled_courses: arrayUnion(courseId) });
+      await updateDoc(doc(db, "courses", courseId), { students: arrayUnion(userId) });
       toast.success("Доступ предоставлен");
-    } catch (error: any) {
-      toast.error(`Ошибка: ${error.message}`);
-    }
+    } catch (error: any) { toast.error(`Ошибка: ${error.message}`); }
   };
 
-  // Отзыв доступа к курсу
   const revokeCourseAccess = async (userId: string, courseId: string) => {
     try {
-      await updateDoc(doc(db, "profiles", userId), {
-        enrolled_courses: arrayRemove(courseId),
-      });
-      await updateDoc(doc(db, "courses", courseId), {
-        students: arrayRemove(userId),
-      });
+      await updateDoc(doc(db, "profiles", userId), { enrolled_courses: arrayRemove(courseId) });
+      await updateDoc(doc(db, "courses", courseId), { students: arrayRemove(userId) });
       toast.success("Доступ отозван");
-    } catch (error: any) {
-      toast.error(`Ошибка: ${error.message}`);
-    }
+    } catch (error: any) { toast.error(`Ошибка: ${error.message}`); }
   };
 
-  // Фильтрация пользователей (с защитой от undefined)
   const filteredUsers = users.filter(user => {
-    const email = user?.email || "";
-    const fullName = user?.full_name || "";
     const searchLower = searchTerm.toLowerCase();
-    
-    const matchesSearch = email.toLowerCase().includes(searchLower) ||
-                          fullName.toLowerCase().includes(searchLower);
-    const matchesRole = roleFilter === "all" || user?.role === roleFilter;
+    const matchesSearch = (user.email || "").toLowerCase().includes(searchLower) || (user.full_name || "").toLowerCase().includes(searchLower);
+    const matchesRole = roleFilter === "all" || user.role === roleFilter;
     return matchesSearch && matchesRole;
   });
 
   const isTutor = role === "tutor";
 
+  // 🎨 Folklore Aesthetic Variables
+  const bgMain = darkMode ? "bg-stone-950" : "bg-stone-50";
+  const bgCard = darkMode ? "bg-stone-900 border-stone-800" : "bg-white border-stone-200";
+  const bgInput = darkMode ? "bg-stone-800 border-stone-700 text-stone-100 placeholder-stone-500" : "bg-stone-50 border-stone-200 text-stone-900 placeholder-stone-400";
+  const textPrimary = darkMode ? "text-stone-100" : "text-stone-900";
+  const textSecondary = darkMode ? "text-stone-400" : "text-stone-500";
+  const accentColor = "text-emerald-700 dark:text-emerald-400";
+  const accentBg = "bg-emerald-50 dark:bg-emerald-900/20";
+
   if (!isTutor) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 flex items-center justify-center">
-        <div className="text-center">
+      <div className={`min-h-screen ${bgMain} flex items-center justify-center`}>
+        <div className="text-center p-8">
           <div className="text-6xl mb-4">🔒</div>
-          <p className="text-gray-400">Доступ только для преподавателей</p>
-          <Link href={`/dashboard?uid=${uid}&role=${role}`} className="text-indigo-400 underline mt-4 inline-block">
+          <p className={`${textSecondary} font-serif text-lg`}>Доступ только для преподавателей</p>
+          <Link href={`/dashboard?uid=${uid}&role=${role}`} className={`inline-block mt-4 font-medium underline underline-offset-4 ${accentColor}`}>
             Вернуться в дашборд
           </Link>
         </div>
@@ -306,316 +201,244 @@ function UsersContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 flex items-center justify-center">
+      <div className={`min-h-screen ${bgMain} flex items-center justify-center`}>
         <div className="relative w-16 h-16">
-          <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20"></div>
-          <div className="absolute inset-0 rounded-full border-4 border-t-indigo-500 animate-spin"></div>
+          <div className={`absolute inset-0 rounded-full border-4 ${darkMode ? 'border-stone-800' : 'border-stone-200'}`}></div>
+          <div className="absolute inset-0 rounded-full border-4 border-t-emerald-600 animate-spin"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950">
-      <div className="max-w-7xl mx-auto p-4 sm:p-6">
+    <div className={`min-h-screen ${bgMain} transition-colors duration-500`}>
+      <div className="max-w-7xl mx-auto p-6 sm:p-8">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <Link href={`/dashboard?uid=${uid}&role=${role}`} className="flex items-center gap-2 text-gray-400 hover:text-white transition group">
-            <ChevronLeft size={18} className="group-hover:-translate-x-0.5 transition" />
-            <span className="text-sm">Назад в дашборд</span>
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-10">
+          <Link href={`/dashboard?uid=${uid}&role=${role}`} className={`flex items-center gap-2 ${textSecondary} hover:text-emerald-600 transition group`}>
+            <ChevronLeft size={18} className="group-hover:-translate-x-1 transition" />
+            <span className="text-sm font-medium">Назад</span>
           </Link>
-          <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            👥 Пользователи
-          </h1>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-5 py-2.5 rounded-xl font-medium hover:from-indigo-600 hover:to-purple-600 transition"
-          >
-            <UserPlus size={18} />
-            Добавить
-          </button>
-        </div>
+          
+          <div className="text-center flex-1">
+            <h1 className={`text-3xl sm:text-4xl font-serif font-bold ${textPrimary}`}>
+              Управление учениками
+            </h1>
+            <p className={`text-sm font-serif italic mt-1 ${textSecondary}`}>
+              "Take the words for what they are" 🌲
+            </p>
+          </div>
 
-        {/* Статистика */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center">
-                <GraduationCap size={18} className="text-indigo-400" />
-              </div>
-              <div>
-                <p className="text-gray-400 text-xs">Студентов</p>
-                <p className="text-2xl font-bold text-white">{stats.totalStudents}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center">
-                <Users size={18} className="text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-gray-400 text-xs">Преподавателей</p>
-                <p className="text-2xl font-bold text-white">{stats.totalTutors}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center">
-                <Activity size={18} className="text-amber-400" />
-              </div>
-              <div>
-                <p className="text-gray-400 text-xs">Активны сегодня</p>
-                <p className="text-2xl font-bold text-white">{stats.activeToday}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-4 border border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
-                <Award size={18} className="text-purple-400" />
-              </div>
-              <div>
-                <p className="text-gray-400 text-xs">Ср. прогресс</p>
-                <p className="text-2xl font-bold text-white">{stats.avgProgress}%</p>
-              </div>
-            </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setDarkMode(!darkMode)} className={`p-2.5 rounded-full border transition ${darkMode ? 'bg-stone-800 border-stone-700 text-amber-400' : 'bg-white border-stone-200 text-stone-600'}`}>
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <motion.button
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 rounded-full font-medium transition shadow-sm"
+            >
+              <UserPlus size={18} /> Добавить
+            </motion.button>
           </div>
         </div>
 
-        {/* Топ студентов - ИСПРАВЛЕННЫЙ (кубок маленький) */}
+        {/* Stats Grid */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
+          {[
+            { label: "Студентов", value: stats.totalStudents, icon: GraduationCap, color: "emerald" },
+            { label: "Преподавателей", value: stats.totalTutors, icon: Users, color: "stone" },
+            { label: "Активны сегодня", value: stats.activeToday, icon: Activity, color: "amber" },
+            { label: "Ср. прогресс", value: `${stats.avgProgress}%`, icon: Award, color: "emerald" },
+          ].map((stat, idx) => (
+            <motion.div key={idx} whileHover={{ y: -4 }} className={`${bgCard} rounded-2xl p-5 border shadow-sm transition-all`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.color === 'emerald' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : stat.color === 'amber' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400'}`}>
+                  <stat.icon size={20} />
+                </div>
+                <div>
+                  <p className={`${textSecondary} text-xs font-medium uppercase tracking-wider`}>{stat.label}</p>
+                  <p className={`text-2xl font-serif font-bold ${textPrimary}`}>{stat.value}</p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* Top Students */}
         {stats.topStudents.length > 0 && (
-          <div className="bg-white/5 backdrop-blur rounded-2xl p-5 mb-8 border border-white/10">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center">
-                <Trophy size={18} className="text-yellow-400" />
-              </div>
-              <h2 className="font-semibold text-white">Топ студентов</h2>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`${bgCard} rounded-2xl p-6 mb-10 border shadow-sm`}>
+            <div className="flex items-center gap-2 mb-5">
+              <BookMarked className={`w-5 h-5 ${accentColor}`} />
+              <h2 className={`font-serif font-bold text-lg ${textPrimary}`}>Лучшие ученики</h2>
             </div>
             <div className="flex flex-wrap gap-3">
               {stats.topStudents.map((student, idx) => (
-                <div key={student.id} className="flex items-center gap-2 bg-white/10 rounded-xl px-3 py-2">
-                  {idx === 0 && <span className="text-yellow-400 text-lg">🥇</span>}
-                  {idx === 1 && <span className="text-gray-400 text-lg">🥈</span>}
-                  {idx === 2 && <span className="text-amber-600 text-lg">🥉</span>}
-                  {idx > 2 && <span className="text-gray-500 text-sm font-bold">#{idx + 1}</span>}
-                  <span className="text-white text-sm">{student.full_name || student.email?.split("@")[0] || "Без имени"}</span>
-                  <span className="text-indigo-400 text-xs">{student.xp || 0} XP</span>
+                <div key={student.id} className={`flex items-center gap-3 ${bgInput} rounded-xl px-4 py-2.5 border`}>
+                  <span className="text-lg">{idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`}</span>
+                  <div>
+                    <span className={`text-sm font-medium ${textPrimary}`}>{student.full_name || student.email?.split("@")[0] || "Без имени"}</span>
+                    <span className={`text-xs ml-2 ${accentColor}`}>{student.xp || 0} XP</span>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
 
-        {/* Поиск и фильтры */}
-        <div className="bg-white/5 backdrop-blur rounded-2xl p-4 mb-6 border border-white/10">
+        {/* Filters */}
+        <div className={`${bgCard} rounded-2xl p-4 mb-6 border shadow-sm`}>
           <div className="flex flex-wrap gap-3">
-            <div className="flex-1 min-w-[200px] relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <div className="flex-1 min-w-[250px] relative">
+              <Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${textSecondary}`} />
               <input
-                type="text"
-                placeholder="Поиск по email или имени..."
-                value={searchTerm}
+                type="text" placeholder="Поиск по имени или email..." value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white/10 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm"
+                className={`w-full rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition ${bgInput}`}
               />
             </div>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as any)}
-              className="bg-white/10 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm"
-            >
-              <option value="all">Все</option>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as any)} className={`rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition ${bgInput}`}>
+              <option value="all">Все роли</option>
               <option value="student">Студенты</option>
               <option value="tutor">Преподаватели</option>
             </select>
           </div>
         </div>
 
-        {/* Список пользователей */}
+        {/* User List */}
         <div className="space-y-3">
           {filteredUsers.length === 0 ? (
-            <div className="text-center py-16 bg-white/5 rounded-3xl border border-white/10">
-              <p className="text-gray-400">Пользователи не найдены</p>
+            <div className={`text-center py-16 ${bgCard} rounded-2xl border`}>
+              <p className={`${textSecondary} font-serif italic`}>Пользователи не найдены</p>
             </div>
           ) : (
             filteredUsers.map((user) => (
-              <div key={user.id} className="bg-white/5 backdrop-blur rounded-2xl p-4 border border-white/10 hover:border-indigo-500/50 transition">
+              <motion.div 
+                key={user.id} 
+                initial={{ opacity: 0, y: 10 }} 
+                animate={{ opacity: 1, y: 0 }}
+                className={`${bgCard} rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all group`}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                      user.role === "student" ? "bg-indigo-500/20" : "bg-purple-500/20"
-                    }`}>
-                      {user.role === "student" ? (
-                        <GraduationCap size={22} className="text-indigo-400" />
-                      ) : (
-                        <Users size={22} className="text-purple-400" />
-                      )}
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-serif font-bold text-lg ${user.role === "student" ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400" : "bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300"}`}>
+                      {(user.full_name || user.email || "?")[0].toUpperCase()}
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-white">{user.full_name || user.email?.split("@")[0] || "Без имени"}</p>
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${
-                          user.role === "student" 
-                            ? "bg-indigo-500/20 text-indigo-300" 
-                            : "bg-purple-500/20 text-purple-300"
-                        }`}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={`font-semibold ${textPrimary}`}>{user.full_name || user.email?.split("@")[0] || "Без имени"}</p>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${user.role === "student" ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400" : "bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300"}`}>
                           {user.role === "student" ? "Студент" : "Преподаватель"}
                         </span>
-                        {!user.is_active && (
-                          <span className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded-full text-xs">Заблокирован</span>
-                        )}
+                        {!user.is_active && <span className="px-2 py-0.5 bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 rounded-full text-xs font-medium">Заблокирован</span>}
                       </div>
-                      <p className="text-sm text-gray-400">{user.email || "Нет email"}</p>
-                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                      <p className={`text-sm ${textSecondary} mt-0.5`}>{user.email || "Нет email"}</p>
+                      <p className={`text-xs ${textSecondary} flex items-center gap-1 mt-1`}>
                         <Calendar size={10} /> Регистрация: {formatDate(user.created_at)}
                       </p>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     {user.role === "student" && (
-                      <button
-                        onClick={() => { setSelectedUser(user); setShowAccessModal(true); }}
-                        className="p-2 bg-indigo-500/20 rounded-xl text-indigo-400 hover:bg-indigo-500/30 transition"
-                        title="Управление доступом к курсам"
-                      >
+                      <button onClick={() => { setSelectedUser(user); setShowAccessModal(true); }} className={`p-2.5 rounded-xl transition ${accentBg} ${accentColor} hover:brightness-95`} title="Курсы">
                         <BookOpen size={16} />
                       </button>
                     )}
-                    <button
-                      onClick={() => toggleUserStatus(user)}
-                      className={`p-2 rounded-xl transition ${
-                        user.is_active 
-                          ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30" 
-                          : "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
-                      }`}
-                      title={user.is_active ? "Заблокировать" : "Разблокировать"}
-                    >
-                      {user.is_active ? <Lock size={16} /> : <Unlock size={16} />}
+                    <button onClick={() => toggleUserStatus(user)} className={`p-2.5 rounded-xl transition ${user.is_active ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100'}`} title={user.is_active ? "Заблокировать" : "Разблокировать"}>
+                      {user.is_active ? <ShieldOff size={16} /> : <Shield size={16} />}
                     </button>
-                    <button
-                      onClick={() => deleteUser(user)}
-                      className="p-2 bg-red-500/20 rounded-xl text-red-400 hover:bg-red-500/30 transition"
-                      title="Удалить"
-                    >
+                    <button onClick={() => deleteUser(user)} className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition" title="Удалить">
                       <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
                 
-                {/* Доп. информация для студентов */}
                 {user.role === "student" && (
-                  <div className="mt-3 pt-3 border-t border-white/10 flex flex-wrap gap-4 text-xs text-gray-400">
-                    <span className="flex items-center gap-1"><Award size={12} /> Уровень: {user.level || 1}</span>
-                    <span className="flex items-center gap-1"><Star size={12} /> {user.xp || 0} XP</span>
-                    <span className="flex items-center gap-1"><BookOpen size={12} /> Курсов: {user.enrolled_courses?.length || 0}</span>
+                  <div className={`mt-4 pt-4 border-t ${darkMode ? 'border-stone-800' : 'border-stone-100'} flex flex-wrap gap-6 text-xs ${textSecondary}`}>
+                    <span className="flex items-center gap-1.5"><Award size={12} className={accentColor} /> Уровень: <b className={textPrimary}>{user.level || 1}</b></span>
+                    <span className="flex items-center gap-1.5"><Activity size={12} className={accentColor} /> <b className={textPrimary}>{user.xp || 0}</b> XP</span>
+                    <span className="flex items-center gap-1.5"><BookOpen size={12} className={accentColor} /> Курсов: <b className={textPrimary}>{user.enrolled_courses?.length || 0}</b></span>
                   </div>
                 )}
-              </div>
+              </motion.div>
             ))
           )}
         </div>
 
-        {/* Модальное окно управления доступом к курсам */}
-        {showAccessModal && selectedUser && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-            <div className="bg-[#1a1a2e] rounded-3xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto border border-white/10">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-white">
-                  Доступ к курсам: {selectedUser.full_name || selectedUser.email}
-                </h2>
-                <button onClick={() => setShowAccessModal(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
-              </div>
-              
-              <div className="space-y-3">
-                {courses.length === 0 ? (
-                  <p className="text-gray-400 text-center py-8">У вас пока нет созданных курсов</p>
-                ) : (
-                  courses.map((course) => {
-                    const hasAccess = selectedUser.enrolled_courses?.includes(course.id);
-                    return (
-                      <div key={course.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
-                        <div>
-                          <p className="font-medium text-white">{course.title}</p>
-                          <p className="text-xs text-gray-400">{course.lessons?.length || 0} уроков • {course.price} ₽</p>
+        {/* Access Modal */}
+        <AnimatePresence>
+          {showAccessModal && selectedUser && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAccessModal(false)}>
+              <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`${bgCard} rounded-3xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto border shadow-2xl`} onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className={`text-xl font-serif font-bold ${textPrimary}`}>Доступ к курсам: <span className={accentColor}>{selectedUser.full_name || selectedUser.email}</span></h2>
+                  <button onClick={() => setShowAccessModal(false)} className={`${textSecondary} hover:text-rose-500 transition`}><X size={24} /></button>
+                </div>
+                <div className="space-y-3">
+                  {courses.length === 0 ? (
+                    <p className={`text-center py-8 ${textSecondary} font-serif italic`}>У вас пока нет созданных курсов</p>
+                  ) : (
+                    courses.map((course) => {
+                      const hasAccess = selectedUser.enrolled_courses?.includes(course.id);
+                      return (
+                        <div key={course.id} className={`flex items-center justify-between p-4 rounded-xl border transition ${hasAccess ? (darkMode ? 'bg-emerald-900/10 border-emerald-800' : 'bg-emerald-50 border-emerald-200') : (darkMode ? 'bg-stone-800 border-stone-700' : 'bg-white border-stone-200')}`}>
+                          <div>
+                            <p className={`font-medium ${textPrimary}`}>{course.title}</p>
+                            <p className={`text-xs ${textSecondary} mt-1`}>{course.lessons?.length || 0} уроков • {course.price} ₽</p>
+                          </div>
+                          {hasAccess ? (
+                            <button onClick={() => revokeCourseAccess(selectedUser.id, course.id)} className="px-4 py-2 bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 rounded-xl text-sm font-medium hover:bg-rose-200 dark:hover:bg-rose-900/50 transition flex items-center gap-1">
+                              <X size={14} /> Отозвать
+                            </button>
+                          ) : (
+                            <button onClick={() => grantCourseAccess(selectedUser.id, course.id)} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 transition flex items-center gap-1">
+                              <Check size={14} /> Дать доступ
+                            </button>
+                          )}
                         </div>
-                        {hasAccess ? (
-                          <button
-                            onClick={() => revokeCourseAccess(selectedUser.id, course.id)}
-                            className="px-4 py-2 bg-red-500/20 text-red-400 rounded-xl text-sm hover:bg-red-500/30 transition"
-                          >
-                            Отозвать доступ
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => grantCourseAccess(selectedUser.id, course.id)}
-                            className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm hover:bg-indigo-600 transition"
-                          >
-                            Предоставить доступ
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+                      );
+                    })
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Модальное окно добавления пользователя */}
-        {showAddModal && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-            <div className="bg-[#1a1a2e] rounded-3xl p-6 max-w-md w-full border border-white/10">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-white">Добавить пользователя</h2>
-                <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm text-gray-400 block mb-1">Email *</label>
-                  <input
-                    type="email"
-                    value={newUser.email}
-                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                    className="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white"
-                    placeholder="student@example.com"
-                  />
+        {/* Add User Modal */}
+        <AnimatePresence>
+          {showAddModal && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+              <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className={`${bgCard} rounded-3xl p-6 max-w-md w-full border shadow-2xl`} onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className={`text-xl font-serif font-bold ${textPrimary}`}>Добавить пользователя</h2>
+                  <button onClick={() => setShowAddModal(false)} className={`${textSecondary} hover:text-rose-500 transition`}><X size={24} /></button>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-400 block mb-1">Имя (опционально)</label>
-                  <input
-                    type="text"
-                    value={newUser.full_name}
-                    onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
-                    className="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white"
-                    placeholder="Иван Иванов"
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <label className={`text-sm font-medium ${textSecondary} block mb-1.5`}>Email *</label>
+                    <input type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className={`w-full rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition ${bgInput}`} placeholder="student@example.com" />
+                  </div>
+                  <div>
+                    <label className={`text-sm font-medium ${textSecondary} block mb-1.5`}>Имя (опционально)</label>
+                    <input type="text" value={newUser.full_name} onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })} className={`w-full rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition ${bgInput}`} placeholder="Иван Иванов" />
+                  </div>
+                  <div>
+                    <label className={`text-sm font-medium ${textSecondary} block mb-1.5`}>Роль</label>
+                    <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as "student" | "tutor" })} className={`w-full rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition ${bgInput}`}>
+                      <option value="student">Студент</option>
+                      <option value="tutor">Преподаватель</option>
+                    </select>
+                  </div>
+                  <button onClick={addUser} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 rounded-xl font-medium transition shadow-sm mt-2">
+                    Добавить
+                  </button>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-400 block mb-1">Роль</label>
-                  <select
-                    value={newUser.role}
-                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value as "student" | "tutor" })}
-                    className="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white"
-                  >
-                    <option value="student">Студент</option>
-                    <option value="tutor">Преподаватель</option>
-                  </select>
-                </div>
-                <button
-                  onClick={addUser}
-                  className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3 rounded-xl font-medium hover:from-indigo-600 hover:to-purple-600 transition"
-                >
-                  Добавить
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -623,14 +446,7 @@ function UsersContent() {
 
 export default function UsersPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 flex items-center justify-center">
-        <div className="relative w-16 h-16">
-          <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20"></div>
-          <div className="absolute inset-0 rounded-full border-4 border-t-indigo-500 animate-spin"></div>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex items-center justify-center"><div className="w-12 h-12 border-4 border-stone-200 dark:border-stone-800 border-t-emerald-600 rounded-full animate-spin"></div></div>}>
       <UsersContent />
     </Suspense>
   );

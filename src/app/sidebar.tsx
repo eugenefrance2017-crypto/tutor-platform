@@ -1,565 +1,326 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation"; // ✅ Добавлен usePathname
+import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
+import { 
+  Home, Calendar, MessageCircle, BookOpen, Target, FileText, Flame, 
+  TrendingUp, Trophy, FlaskConical, Users, Crown, Library, GraduationCap, 
+  Bot, DollarSign, Settings, LayoutDashboard, LogOut, ChevronRight,
+  BarChart3, FileCheck, Menu, X
+} from "lucide-react";
+import { getAuth, signOut } from "firebase/auth";
+import toast, { Toaster } from "react-hot-toast";
 
-// 🎨 Цвета для каждой эры
-const eraColors = {
-  dashboard: {
-    bg: "bg-gradient-to-br from-emerald-500/20 to-teal-500/20",
-    border: "border-emerald-400",
-    text: "text-emerald-300",
-    icon: "text-emerald-400",
-    hover: "hover:bg-emerald-500/10",
-    active: "bg-emerald-500/20 border-l-4 border-emerald-400",
+const NAVIGATION = [
+  {
+    category: "Основное",
+    items: [
+      { label: "Главная", href: "/dashboard", roles: ["tutor", "student", "parent"], icon: Home },
+      { label: "Расписание", href: "/schedule", roles: ["tutor", "student", "parent"], icon: Calendar },
+      { label: "Чат", href: "/chat", roles: ["tutor", "student", "parent"], icon: MessageCircle },
+    ]
   },
-  schedule: {
-    bg: "bg-gradient-to-br from-red-500/20 to-rose-500/20",
-    border: "border-red-400",
-    text: "text-red-300",
-    icon: "text-red-400",
-    hover: "hover:bg-red-500/10",
-    active: "bg-red-500/20 border-l-4 border-red-400",
+  {
+    category: "Обучение",
+    items: [
+      { label: "Домашние задания", href: "/homeworks", roles: ["tutor", "student", "parent"], icon: BookOpen },
+      { label: "Тренажёры", href: "/trainers", roles: ["tutor", "student"], icon: Target },
+      { label: "Пробники ЕГЭ", href: "/exam-trials", roles: ["student"], icon: FileText },
+      { label: "Ежедневное задание", href: "/daily", roles: ["student"], icon: Flame },
+      { label: "Прогресс", href: "/progress", roles: ["student", "parent"], icon: TrendingUp },
+      { label: "Рейтинг", href: "/leaderboard", roles: ["student"], icon: Trophy },
+      { label: "Таблица Менделеева", href: "/periodic-table", roles: ["student", "tutor"], icon: FlaskConical },
+    ]
   },
-  students: {
-    bg: "bg-gradient-to-br from-sky-500/20 to-blue-500/20",
-    border: "border-sky-400",
-    text: "text-sky-300",
-    icon: "text-sky-400",
-    hover: "hover:bg-sky-500/10",
-    active: "bg-sky-500/20 border-l-4 border-sky-400",
+  {
+    category: "Управление",
+    items: [
+      { label: "Ученики", href: "/students", roles: ["tutor"], icon: Users },
+      { label: "Группы", href: "/groups", roles: ["tutor"], icon: Crown },
+      { label: "Банк заданий", href: "/library", roles: ["tutor"], icon: Library },
+      { label: "Курсы", href: "/courses", roles: ["tutor"], icon: GraduationCap },
+      { label: "AI Генератор", href: "/ai-generator", roles: ["tutor"], icon: Bot },
+      { label: "Финансы", href: "/payments", roles: ["tutor"], icon: DollarSign },
+      { label: "Пользователи", href: "/users", roles: ["tutor"], icon: Users },
+      { label: "Настройки", href: "/settings", roles: ["tutor"], icon: Settings },
+    ]
   },
-  homeworks: {
-    bg: "bg-gradient-to-br from-amber-700/20 to-stone-700/20",
-    border: "border-amber-600",
-    text: "text-amber-300",
-    icon: "text-amber-500",
-    hover: "hover:bg-amber-700/10",
-    active: "bg-amber-700/20 border-l-4 border-amber-600",
-  },
-  library: {
-    bg: "bg-gradient-to-br from-orange-600/20 to-red-700/20",
-    border: "border-orange-500",
-    text: "text-orange-300",
-    icon: "text-orange-500",
-    hover: "hover:bg-orange-600/10",
-    active: "bg-orange-600/20 border-l-4 border-orange-500",
-  },
-  trainers: {
-    bg: "bg-gradient-to-br from-purple-500/20 to-pink-500/20",
-    border: "border-purple-400",
-    text: "text-purple-300",
-    icon: "text-purple-400",
-    hover: "hover:bg-purple-500/10",
-    active: "bg-purple-500/20 border-l-4 border-purple-400",
-  },
-  chat: {
-    bg: "bg-gradient-to-br from-pink-500/20 to-rose-500/20",
-    border: "border-pink-400",
-    text: "text-pink-300",
-    icon: "text-pink-400",
-    hover: "hover:bg-pink-500/10",
-    active: "bg-pink-500/20 border-l-4 border-pink-400",
-  },
-  courses: {
-    bg: "bg-gradient-to-br from-blue-500/20 to-indigo-500/20",
-    border: "border-blue-400",
-    text: "text-blue-300",
-    icon: "text-blue-400",
-    hover: "hover:bg-blue-500/10",
-    active: "bg-blue-500/20 border-l-4 border-blue-400",
-  },
-  payments: {
-    bg: "bg-gradient-to-br from-yellow-500/20 to-amber-500/20",
-    border: "border-yellow-400",
-    text: "text-yellow-300",
-    icon: "text-yellow-400",
-    hover: "hover:bg-yellow-500/10",
-    active: "bg-yellow-500/20 border-l-4 border-yellow-400",
-  },
-  settings: {
-    bg: "bg-gradient-to-br from-stone-500/20 to-emerald-700/20",
-    border: "border-stone-400",
-    text: "text-stone-300",
-    icon: "text-stone-400",
-    hover: "hover:bg-stone-500/10",
-    active: "bg-stone-500/20 border-l-4 border-stone-400",
-  },
-  profile: {
-    bg: "bg-gradient-to-br from-pink-400/20 to-rose-400/20",
-    border: "border-pink-300",
-    text: "text-pink-200",
-    icon: "text-pink-300",
-    hover: "hover:bg-pink-400/10",
-    active: "bg-pink-400/20 border-l-4 border-pink-300",
-  },
-  progress: {
-    bg: "bg-gradient-to-br from-pink-500/20 to-orange-500/20",
-    border: "border-pink-400",
-    text: "text-pink-300",
-    icon: "text-pink-400",
-    hover: "hover:bg-pink-500/10",
-    active: "bg-pink-500/20 border-l-4 border-pink-400",
-  },
-  trials: {
-    bg: "bg-gradient-to-br from-amber-500/20 to-yellow-500/20",
-    border: "border-amber-400",
-    text: "text-amber-300",
-    icon: "text-amber-400",
-    hover: "hover:bg-amber-500/10",
-    active: "bg-amber-500/20 border-l-4 border-amber-400",
-  },
-  leaderboard: {
-    bg: "bg-gradient-to-br from-yellow-600/20 to-amber-700/20",
-    border: "border-yellow-500",
-    text: "text-yellow-200",
-    icon: "text-yellow-400",
-    hover: "hover:bg-yellow-600/10",
-    active: "bg-yellow-600/20 border-l-4 border-yellow-500",
-  },
-  analytics: {
-    bg: "bg-gradient-to-br from-indigo-600/20 to-purple-700/20",
-    border: "border-indigo-400",
-    text: "text-indigo-300",
-    icon: "text-indigo-400",
-    hover: "hover:bg-indigo-600/10",
-    active: "bg-indigo-600/20 border-l-4 border-indigo-400",
-  },
-  pricing: {
-    bg: "bg-gradient-to-br from-rose-400/20 to-amber-400/20",
-    border: "border-rose-300",
-    text: "text-rose-200",
-    icon: "text-rose-300",
-    hover: "hover:bg-rose-400/10",
-    active: "bg-rose-400/20 border-l-4 border-rose-300",
-  },
-  default: {
-    bg: "bg-white/5",
-    border: "border-white/10",
-    text: "text-gray-300",
-    icon: "text-gray-400",
-    hover: "hover:bg-white/5",
-    active: "bg-white/10 border-l-4 border-white/30",
-  },
-};
-
-function getColorKey(href: string): string {
-  if (href.includes("schedule")) return "schedule";
-  if (href.includes("students")) return "students";
-  if (href.includes("homeworks")) return "homeworks";
-  if (href.includes("library")) return "library";
-  if (href.includes("trainers")) return "trainers";
-  if (href.includes("chat")) return "chat";
-  if (href.includes("courses")) return "courses";
-  if (href.includes("payments")) return "payments";
-  if (href.includes("settings")) return "settings";
-  if (href.includes("profile")) return "profile";
-  if (href.includes("progress")) return "progress";
-  if (href.includes("trials")) return "trials";
-  if (href.includes("leaderboard")) return "leaderboard";
-  if (href.includes("analytics")) return "analytics";
-  if (href.includes("pricing")) return "pricing";
-  return "default";
-}
-
-const menuByRole = {
-  tutor: [
-    { group: "Основное", items: [
-      { href: "/dashboard", icon: "🏠", label: "Главная" },
-      { href: "/schedule", icon: "📅", label: "Расписание" },
-      { href: "/students", icon: "", label: "Ученики" },
-    ]},
-    { group: "Обучение", items: [
-      { href: "/homeworks", icon: "📚", label: "Задания" },
-      { href: "/library", icon: "📦", label: "Банк заданий" },
-      { href: "/courses", icon: "📖", label: "Курсы" },
-    ]},
-    { group: "Аналитика", items: [
-      { href: "/analytics", icon: "📊", label: "Статистика" },
-    ]},
-    { group: "Финансы и связь", items: [
-      { href: "/payments", icon: "💳", label: "Платежи" },
-      { href: "/chat", icon: "💬", label: "Чат" },
-      { href: "/settings", icon: "⚙️", label: "Настройки" },
-    ]},
-  ],
-  student: [
-    { group: "Основное", items: [
-      { href: "/dashboard", icon: "", label: "Главная" },
-      { href: "/schedule", icon: "📅", label: "Расписание" },
-    ]},
-    { group: "Обучение", items: [
-      { href: "/homeworks", icon: "📚", label: "Задания" },
-      { href: "/courses", icon: "📖", label: "Курсы" },
-    ]},
-    { group: "Прогресс", items: [
-      { href: "/progress", icon: "📈", label: "Прогресс" },
-      { href: "/trials", icon: "🎓", label: "Пробники" },
-      { href: "/leaderboard", icon: "🏆", label: "Рейтинг" },
-    ]},
-    { group: "Связь", items: [
-      { href: "/chat", icon: "", label: "Чат" },
-      { href: "/pricing", icon: "💰", label: "Тарифы" },
-    ]},
-  ],
-  parent: [
-    { group: "Основное", items: [
-      { href: "/dashboard", icon: "🏠", label: "Главная" },
-      { href: "/schedule", icon: "📅", label: "Расписание" },
-    ]},
-    { group: "Контроль", items: [
-      { href: "/progress", icon: "📈", label: "Прогресс" },
-      { href: "/homeworks", icon: "", label: "Задания" },
-    ]},
-    { group: "Финансы и связь", items: [
-      { href: "/payments", icon: "💳", label: "Платежи" },
-      { href: "/chat", icon: "💬", label: "Чат" },
-      { href: "/pricing", icon: "💰", label: "Тарифы" },
-    ]},
-  ],
-  admin: [
-    { group: "Управление", items: [
-      { href: "/dashboard", icon: "🏠", label: "Главная" },
-      { href: "/analytics", icon: "", label: "Аналитика" },
-    ]},
-    { group: "Пользователи", items: [
-      { href: "/students", icon: "👥", label: "Ученики" },
-      { href: "/trainers", icon: "👨‍🏫", label: "Репетиторы" },
-    ]},
-    { group: "Финансы", items: [
-      { href: "/payments", icon: "💰", label: "Платежи" },
-    ]},
-    { group: "Система", items: [
-      { href: "/settings", icon: "⚙️", label: "Настройки" },
-    ]},
-  ],
-};
-
-const PUBLIC_PATHS = ["/", "/pricing", "/auth/login", "/auth/register", "/auth/signout"];
-
-function handleLogout() {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem("uid");
-    localStorage.removeItem("role");
-    localStorage.removeItem("theme");
-    window.location.href = "/auth/login";
+  {
+    category: "Кабинет родителя",
+    items: [
+      { label: "Обзор", href: "/parent-dashboard", roles: ["parent"], icon: LayoutDashboard },
+      { label: "Задания ребёнка", href: "/parent-homeworks", roles: ["parent"], icon: FileCheck },
+      { label: "Отчёты", href: "/parent-reports", roles: ["parent"], icon: BarChart3 },
+    ]
   }
-}
+];
 
-interface SidebarProps {
-  theme?: "dark" | "light";
-}
-
-export default function Sidebar({ theme = "dark" }: SidebarProps) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const uid = searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "";
-  const role = searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "student";
-  
-  const [isOpen, setIsOpen] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [isTablet, setIsTablet] = useState(false);
-  const [userName, setUserName] = useState("");
-  const [userAvatar, setUserAvatar] = useState("");
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const isDark = theme === "dark";
-  const menuGroups = menuByRole[role as keyof typeof menuByRole] || menuByRole.student;
+export default function Sidebar() {
+  const pathname = usePathname(); // ✅ Теперь определён
+  const router = useRouter();
+  const [role, setRole] = useState<string>("student");
+  const [userName, setUserName] = useState<string>("Пользователь");
+  const [userAvatar, setUserAvatar] = useState<string>("");
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (!uid) return;
-    const name = localStorage.getItem("userName") || "";
-    const avatar = localStorage.getItem("userAvatar") || "";
-    setUserName(name);
-    setUserAvatar(avatar);
-  }, [uid]);
+    if (typeof window !== "undefined") {
+      const storedTheme = localStorage.getItem("theme") as 'dark' | 'light';
+      if (storedTheme) {
+        setTheme(storedTheme);
+      }
+      
+      const storedRole = localStorage.getItem("role");
+      const storedName = localStorage.getItem("userName");
+      const storedAvatar = localStorage.getItem("userAvatar");
+      
+      if (storedRole) setRole(storedRole);
+      if (storedName) setUserName(storedName);
+      if (storedAvatar) setUserAvatar(storedAvatar);
+      
+      setMounted(true);
+    }
 
-  useEffect(() => {
-    const checkSize = () => {
-      setIsTablet(window.innerWidth < 1024 && window.innerWidth >= 768);
+    const handleThemeChange = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setTheme(customEvent.detail as 'dark' | 'light');
+      }
     };
-    checkSize();
-    window.addEventListener("resize", checkSize);
-    return () => window.removeEventListener("resize", checkSize);
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'theme' && e.newValue) {
+        setTheme(e.newValue as 'dark' | 'light');
+      }
+    };
+
+    window.addEventListener('themechange', handleThemeChange);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('themechange', handleThemeChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   useEffect(() => {
-    if (isTablet) return;
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      if (e.clientX <= 20 && !isOpen) {
-        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-        hoverTimeoutRef.current = setTimeout(() => setIsOpen(true), 300);
-      } else if (e.clientX > 280 && isOpen) {
-        setIsOpen(false);
-      }
-    };
-    
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-    };
-  }, [isOpen, isTablet]);
+    setIsMobileOpen(false);
+  }, [pathname]);
 
-  if (PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/auth/")) return null;
-  if (!uid) return null;
+  if (!mounted) return null;
 
-  const roleInfo = {
-    tutor: { label: "Репетитор", icon: "‍🏫", color: "from-emerald-400 to-teal-500" },
-    student: { label: "Ученик", icon: "🎓", color: "from-sky-400 to-blue-500" },
-    parent: { label: "Родитель", icon: "👨‍👩‍👧", color: "from-pink-400 to-rose-500" },
-    admin: { label: "Админ", icon: "🛡️", color: "from-red-400 to-orange-500" },
-  }[role] || { label: "Гость", icon: "👤", color: "from-gray-400 to-gray-500" };
+  const filteredNavigation = NAVIGATION.map(group => ({
+    ...group,
+    items: group.items.filter(item => item.roles.includes(role))
+  })).filter(group => group.items.length > 0);
 
-  // 🎨 Цвета сайдбара для каждой темы
-  const sidebarBg = isDark 
-    ? "bg-gradient-to-br from-black via-gray-900 to-black border-yellow-500/30"
-    : "bg-gradient-to-br from-pink-50 via-rose-50 to-pink-100 border-pink-300";
+  const publicPaths = ["/", "/pricing", "/auth"];
+  const isPublic = publicPaths.includes(pathname) || pathname?.startsWith("/parent-shared/");
   
-  const borderColor = isDark ? "border-yellow-500/30" : "border-pink-200";
-  const groupLabelColor = isDark ? "text-yellow-500/70" : "text-pink-500/80";
-  const menuItemHover = isDark ? "hover:bg-yellow-500/10" : "hover:bg-pink-100";
-  const logoutHover = isDark ? "hover:bg-red-500/10" : "hover:bg-red-50";
+  if (isPublic) return null;
+
+  const getRoleInfo = () => {
+    switch (role) {
+      case "tutor": return { icon: "👨‍🏫", label: "Репетитор", color: "from-emerald-500 to-teal-600" };
+      case "parent": return { icon: "👨‍👩‍👧", label: "Родитель", color: "from-purple-500 to-pink-600" };
+      default: return { icon: "🎓", label: "Ученик", color: "from-indigo-500 to-blue-600" };
+    }
+  };
+
+  const roleInfo = getRoleInfo();
+  const isDark = theme === 'dark';
+
+  const handleLogout = async () => {
+    try {
+      const auth = getAuth();
+      await signOut(auth);
+      
+      localStorage.removeItem("uid");
+      localStorage.removeItem("role");
+      localStorage.removeItem("userName");
+      localStorage.removeItem("userAvatar");
+      
+      toast.success("Вы вышли из аккаунта");
+      router.push("/auth");
+    } catch (error) {
+      toast.error("Ошибка при выходе");
+    }
+  };
+
+  const SidebarContent = () => (
+    <aside 
+      className={`fixed top-0 left-0 h-full w-[280px] flex flex-col z-50 shadow-2xl overflow-hidden transition-all duration-300 border-r ${
+        isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      } ${
+        isDark 
+          ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 text-slate-100 border-slate-700/50' 
+          : 'bg-gradient-to-br from-white via-slate-50 to-slate-100 text-slate-900 border-slate-200'
+      }`}
+    >
+      <Toaster position="top-center" />
+      
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className={`absolute -top-20 -right-20 w-40 h-40 rounded-full blur-3xl ${
+          isDark ? 'bg-indigo-500/10' : 'bg-indigo-300/20'
+        }`}></div>
+        <div className={`absolute -bottom-20 -left-20 w-40 h-40 rounded-full blur-3xl ${
+          isDark ? 'bg-purple-500/10' : 'bg-purple-300/20'
+        }`}></div>
+      </div>
+
+      <div className={`relative p-6 border-b backdrop-blur-sm ${isDark ? 'border-slate-700/50' : 'border-slate-200'}`}>
+        <Link href="/dashboard" className="flex items-center gap-3 mb-6 group" onClick={() => setIsMobileOpen(false)}>
+          <div className="relative w-10 h-10 flex-shrink-0">
+            <Image
+              src="/logo/logo.png"
+              alt="Jenyawisch"
+              width={40}
+              height={40}
+              className="w-10 h-10 object-contain group-hover:scale-110 transition-transform duration-300"
+              priority
+            />
+          </div>
+          <span className="font-black text-xl bg-gradient-to-r from-indigo-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent group-hover:from-indigo-300 group-hover:via-purple-300 group-hover:to-emerald-300 transition-all duration-300">
+            Jenyawisch
+          </span>
+        </Link>
+        
+        <Link href="/profile" onClick={() => setIsMobileOpen(false)}>
+          <motion.div 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className={`flex items-center gap-3 p-3 rounded-xl border backdrop-blur-sm shadow-lg cursor-pointer transition-all duration-200 group ${
+              isDark 
+                ? 'bg-gradient-to-br from-slate-800/80 to-slate-700/50 border-slate-600/30 hover:border-indigo-500/50 hover:shadow-indigo-500/20' 
+                : 'bg-gradient-to-br from-white to-slate-50 border-slate-200 hover:border-indigo-400 hover:shadow-indigo-200'
+            }`}
+          >
+            <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${roleInfo.color} flex items-center justify-center text-xl font-bold text-white shadow-lg ring-2 ring-white/10 group-hover:scale-110 transition-transform`}>
+              {userAvatar ? (
+                <img src={userAvatar} alt={userName} className="w-full h-full rounded-full object-cover" />
+              ) : (
+                userName.charAt(0).toUpperCase()
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{userName}</p>
+              <p className={`text-xs flex items-center gap-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                <span>{roleInfo.icon}</span>
+                <span>{roleInfo.label}</span>
+              </p>
+            </div>
+            <ChevronRight className={`w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+          </motion.div>
+        </Link>
+      </div>
+
+      <nav className="relative flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+        {filteredNavigation.map((group, groupIdx) => (
+          <motion.div key={groupIdx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: groupIdx * 0.1 }}>
+            <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 px-3 flex items-center gap-2 ${
+              isDark ? 'text-slate-500' : 'text-slate-500'
+            }`}>
+              <span className={`w-8 h-px ${isDark ? 'bg-gradient-to-r from-slate-600 to-transparent' : 'bg-gradient-to-r from-slate-300 to-transparent'}`}></span>
+              {group.category}
+            </h3>
+            <ul className="space-y-1">
+              {group.items.map((item) => {
+                const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
+                const Icon = item.icon;
+                return (
+                  <motion.li key={item.href} whileHover={{ x: 4 }} transition={{ type: "spring", stiffness: 300 }}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setIsMobileOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${
+                        isActive
+                          ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30 ring-1 ring-white/10"
+                          : isDark
+                            ? "text-slate-400 hover:bg-slate-800/50 hover:text-white hover:shadow-md"
+                            : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900 hover:shadow-md"
+                      }`}
+                    >
+                      <Icon className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      <span className="flex-1">{item.label}</span>
+                      {isActive && <motion.div layoutId="activeIndicator" className="w-1.5 h-1.5 bg-white rounded-full" />}
+                    </Link>
+                  </motion.li>
+                );
+              })}
+            </ul>
+          </motion.div>
+        ))}
+      </nav>
+
+      <div className={`relative p-4 border-t backdrop-blur-sm ${isDark ? 'border-slate-700/50' : 'border-slate-200'}`}>
+        <button
+          onClick={handleLogout}
+          className={`flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 border shadow-lg group ${
+            isDark
+              ? 'bg-gradient-to-br from-slate-800 to-slate-700 hover:from-red-500/20 hover:to-red-600/20 hover:text-red-400 text-slate-400 border-slate-600/30 hover:border-red-500/30 shadow-lg hover:shadow-red-500/10'
+              : 'bg-gradient-to-br from-slate-100 to-slate-200 hover:from-red-50 hover:to-red-100 hover:text-red-600 text-slate-600 border-slate-300 hover:border-red-300'
+          }`}
+        >
+          <LogOut className="w-4 h-4 group-hover:rotate-180 transition-transform duration-300" />
+          <span className="group-hover:font-bold transition-all">Выйти из аккаунта</span>
+        </button>
+      </div>
+
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: ${isDark ? 'linear-gradient(to bottom, #475569, #334155)' : 'linear-gradient(to bottom, #cbd5e1, #94a3b8)'}; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${isDark ? 'linear-gradient(to bottom, #64748b, #475569)' : 'linear-gradient(to bottom, #94a3b8, #64748b)'}; }
+      `}</style>
+    </aside>
+  );
 
   return (
     <>
-      {/* Десктопный сайдбар */}
-      <div
-        className={`hidden lg:flex flex-col fixed left-0 top-0 h-screen ${sidebarBg} border-r ${borderColor} z-40 transition-all duration-300 shadow-2xl`}
-        style={{
-          width: isOpen ? "280px" : "0px",
-          opacity: isOpen ? 1 : 0,
-          overflow: "hidden",
-        }}
-      >
-        {/* Шапка */}
-        <div className={`p-4 ${borderColor} border-b flex items-center justify-between h-16`}>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🧪</span>
-            <span className={`font-black text-sm bg-gradient-to-r ${isDark ? 'from-yellow-400 to-amber-400' : 'from-pink-600 to-rose-600'} bg-clip-text text-transparent whitespace-nowrap`}>
-              Jenyawisch
-            </span>
-          </div>
-          <button
-            onClick={() => setIsOpen(false)}
-            className={`${isDark ? 'text-yellow-400/60 hover:text-yellow-300' : 'text-pink-600 hover:text-pink-700'} transition text-xl`}
-            title="Закрыть"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Профиль */}
-        <div className={`p-4 ${borderColor} border-b`}>
-          <Link href={`/profile?uid=${uid}&role=${role}`} className="flex items-center gap-3 group">
-            <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${roleInfo.color} flex items-center justify-center text-white font-bold text-lg shadow-lg group-hover:scale-110 transition`}>
-              {userAvatar || userName[0]?.toUpperCase() || roleInfo.icon}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'} text-sm truncate`}>{userName || "Пользователь"}</p>
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className="text-xs">{roleInfo.icon}</span>
-                <span className={`text-xs bg-gradient-to-r ${roleInfo.color} bg-clip-text text-transparent font-medium`}>
-                  {roleInfo.label}
-                </span>
-              </div>
-            </div>
-          </Link>
-        </div>
-
-        {/* Меню */}
-        <nav className="flex-1 py-4 overflow-y-auto sidebar-nav">
-          {menuGroups.map((group, gi) => (
-            <div key={gi} className="mb-4">
-              <p className={`px-4 mb-2 text-xs font-bold ${groupLabelColor} uppercase tracking-wider`}>
-                {group.group}
-              </p>
-              <div className="space-y-1 px-2">
-                {group.items.map((item) => {
-                  const fullHref = `${item.href}?uid=${uid}&role=${role}`;
-                  const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
-                  const colorKey = getColorKey(item.href);
-                  const colors = eraColors[colorKey as keyof typeof eraColors] || eraColors.default;
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={fullHref}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${
-                        isActive
-                          ? `${colors.active} ${isDark ? 'text-black' : colors.text} font-bold shadow-lg`
-                          : `${menuItemHover} text-gray-400`
-                      }`}
-                    >
-                      <span className={`text-xl flex-shrink-0 w-8 text-center transition-transform group-hover:scale-110 ${
-                        isActive ? (isDark ? 'text-black' : colors.icon) : colors.icon
-                      }`}>
-                        {item.icon}
-                      </span>
-                      <span className={`text-sm whitespace-nowrap transition-colors ${
-                        isActive 
-                          ? (isDark ? 'text-black font-bold' : colors.text) 
-                          : (isDark ? 'text-gray-300' : 'text-gray-700')
-                      }`}>
-                        {item.label}
-                      </span>
-                      {isActive && (
-                        <div className={`absolute right-2 w-1.5 h-1.5 rounded-full animate-pulse ${
-                          isDark ? 'bg-black' : 'bg-current'
-                        }`}></div>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        {/* Нижняя панель — БЕЗ колокольчика */}
-        <div className={`p-4 ${borderColor} border-t`}>
-          <button
-            onClick={handleLogout}
-            className={`w-full flex items-center gap-3 ${logoutHover} rounded-xl p-2 transition text-left group`}
-          >
-            <span className="text-xl flex-shrink-0 w-8 text-center group-hover:scale-110 transition">🚪</span>
-            <span className={`text-sm ${isDark ? 'text-red-400 group-hover:text-red-300' : 'text-red-600 group-hover:text-red-700'}`}>
-              Выйти
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* Кнопка открытия */}
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className={`hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-30 w-6 h-16 ${isDark ? 'bg-gradient-to-r from-yellow-600 to-amber-600' : 'bg-gradient-to-r from-pink-500 to-rose-500'} rounded-r-xl items-center justify-center text-white shadow-lg hover:w-8 transition-all`}
-          title="Открыть меню"
-        >
-          <span className="text-sm">›</span>
-        </button>
-      )}
-
-      {/* Мобильная кнопка */}
       <button
-        onClick={() => setMobileOpen(!mobileOpen)}
-        className={`fixed top-4 left-4 z-50 w-10 h-10 ${isDark ? 'bg-gradient-to-br from-yellow-600 to-amber-600' : 'bg-gradient-to-br from-pink-500 to-rose-500'} rounded-xl shadow-lg flex items-center justify-center lg:hidden`}
+        onClick={() => setIsMobileOpen(!isMobileOpen)}
+        className={`lg:hidden fixed top-4 left-4 z-[60] p-3 rounded-xl shadow-lg border transition-all duration-200 ${
+          isDark 
+            ? 'bg-slate-900/90 backdrop-blur-sm text-white border-slate-700/50 hover:bg-slate-800' 
+            : 'bg-white/90 backdrop-blur-sm text-slate-900 border-slate-200 hover:bg-slate-50'
+        }`}
+        aria-label="Toggle menu"
       >
-        <div className="space-y-1.5">
-          <span className={`block w-5 h-0.5 bg-white transition-transform ${mobileOpen ? "rotate-45 translate-y-2" : ""}`} />
-          <span className={`block w-5 h-0.5 bg-white transition-opacity ${mobileOpen ? "opacity-0" : ""}`} />
-          <span className={`block w-5 h-0.5 bg-white transition-transform ${mobileOpen ? "-rotate-45 -translate-y-2" : ""}`} />
-        </div>
+        <motion.div animate={{ rotate: isMobileOpen ? 90 : 0 }} transition={{ duration: 0.2 }}>
+          {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </motion.div>
       </button>
 
-      {/* Мобильное меню */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 flex lg:hidden">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <div className={`relative w-80 h-full shadow-2xl overflow-y-auto animate-slide-in ${sidebarBg} border-r ${borderColor}`}>
-            {/* Шапка */}
-            <div className={`p-4 ${borderColor} border-b flex items-center justify-between`}>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🧪</span>
-                <span className={`font-black text-sm bg-gradient-to-r ${isDark ? 'from-yellow-400 to-amber-400' : 'from-pink-600 to-rose-600'} bg-clip-text text-transparent`}>
-                  Jenyawisch
-                </span>
-              </div>
-              <button onClick={() => setMobileOpen(false)} className={`${isDark ? 'text-yellow-400/60 hover:text-yellow-300' : 'text-pink-600 hover:text-pink-700'} text-xl`}>✕</button>
-            </div>
+      <AnimatePresence>
+        {isMobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsMobileOpen(false)}
+            className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+          />
+        )}
+      </AnimatePresence>
 
-            {/* Профиль */}
-            <div className={`p-4 ${borderColor} border-b`}>
-              <Link href={`/profile?uid=${uid}&role=${role}`} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 group">
-                <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${roleInfo.color} flex items-center justify-center text-white font-bold text-lg shadow-lg group-hover:scale-110 transition`}>
-                  {userAvatar || userName[0]?.toUpperCase() || roleInfo.icon}
-                </div>
-                <div>
-                  <p className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'} text-sm`}>{userName || "Пользователь"}</p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <span className="text-xs">{roleInfo.icon}</span>
-                    <span className={`text-xs bg-gradient-to-r ${roleInfo.color} bg-clip-text text-transparent font-medium`}>
-                      {roleInfo.label}
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            </div>
-
-            {/* Меню */}
-            <nav className="py-4">
-              {menuGroups.map((group, gi) => (
-                <div key={gi} className="mb-4">
-                  <p className={`px-4 mb-2 text-xs font-bold ${groupLabelColor} uppercase tracking-wider`}>
-                    {group.group}
-                  </p>
-                  <div className="space-y-1 px-2">
-                    {group.items.map((item) => {
-                      const fullHref = `${item.href}?uid=${uid}&role=${role}`;
-                      const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
-                      const colorKey = getColorKey(item.href);
-                      const colors = eraColors[colorKey as keyof typeof eraColors] || eraColors.default;
-
-                      return (
-                        <Link
-                          key={item.href}
-                          href={fullHref}
-                          onClick={() => setMobileOpen(false)}
-                          className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${
-                            isActive
-                              ? `${colors.active} ${isDark ? 'text-black' : colors.text} font-bold shadow-lg`
-                              : `${menuItemHover} text-gray-400`
-                          }`}
-                        >
-                          <span className={`text-xl w-8 text-center ${
-                            isActive ? (isDark ? 'text-black' : colors.icon) : colors.icon
-                          }`}>{item.icon}</span>
-                          <span className={`text-sm ${
-                            isActive 
-                              ? (isDark ? 'text-black font-bold' : colors.text) 
-                              : (isDark ? 'text-gray-300' : 'text-gray-700')
-                          }`}>{item.label}</span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </nav>
-
-            {/* Нижняя панель — БЕЗ колокольчика */}
-            <div className={`p-4 ${borderColor} border-t`}>
-              <button
-                onClick={() => { setMobileOpen(false); handleLogout(); }}
-                className={`w-full flex items-center gap-3 ${logoutHover} rounded-xl p-3 transition text-left`}
-              >
-                <span className="text-xl w-8 text-center">🚪</span>
-                <span className={`text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>Выйти</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        .sidebar-nav {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        .sidebar-nav::-webkit-scrollbar {
-          display: none;
-        }
-        @keyframes slideIn {
-          from { transform: translateX(-100%); }
-          to { transform: translateX(0); }
-        }
-        .animate-slide-in {
-          animation: slideIn 0.3s ease-out;
-        }
-      `}</style>
+      <SidebarContent />
     </>
   );
+}
+
+export function MainContent({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const publicPaths = ["/", "/pricing", "/auth"];
+  const isPublic = publicPaths.includes(pathname) || pathname?.startsWith("/parent-shared/");
+
+  if (isPublic) {
+    return <>{children}</>;
+  }
+
+  return <div className="lg:ml-[280px] min-h-screen">{children}</div>;
 }

@@ -9,6 +9,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, deleteDoc, updateDoc, query, where, onSnapshot, doc, getDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
 import ChemicalInput from "@/components/ChemicalInput";
+import AuthGuard from "@/components/AuthGuard";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -78,11 +79,14 @@ function RedoxContent() {
     let unsubscribe: () => void;
     if (role === "student") {
       getDoc(doc(db, "profiles", uid)).then((snap) => {
-        let tid = uid;
-        if (snap.exists()) { const data = snap.data(); tid = data.tutor_id || uid; }
-        setTutorId(tid);
-        if (!snap.exists() || !snap.data().tutor_id) { unsubscribe = loadAllReactions(); }
-        else { unsubscribe = loadReactions(tid); }
+        if (snap.exists() && snap.data().tutor_id) {
+          const tid = snap.data().tutor_id;
+          setTutorId(tid);
+          unsubscribe = loadReactions(tid);
+        } else {
+          // ✅ Если нет tutor_id, загружаем все реакции
+          unsubscribe = loadAllReactions();
+        }
       });
     } else {
       setTutorId(uid);
@@ -92,7 +96,7 @@ function RedoxContent() {
   }, [uid, role]);
 
   useEffect(() => {
-    if (!blitzMode || blitzGameOver || blitzTime <= 0) return;
+    if (!blitzMode || blitzGameOver) return;
     const timer = setInterval(() => {
       setBlitzTime((prev) => {
         if (prev <= 1) { setBlitzGameOver(true); return 0; }
@@ -100,7 +104,7 @@ function RedoxContent() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [blitzMode, blitzGameOver, blitzTime]);
+  }, [blitzMode, blitzGameOver]);
 
   function loadAllReactions() {
     return onSnapshot(query(collection(db, "redox_reactions")), (snap) => {
@@ -149,7 +153,7 @@ function RedoxContent() {
     if (mode === "ege29" && substancesArray.length === 0) { toast.error("Укажите список веществ для ЕГЭ-29!"); return; }
     const data = {
       tutor_id: uid, mode, reactants: reactantsList, products: productsList,
-      substances: mode === "ege29" ? substancesArray : [],
+      substances: mode === "ege29" ? substancesArray : reactantsList, // ✅ В basic тоже сохраняем список веществ
       condition: mode === "ege29" ? condition : "",
       balance_text: balanceText, nok, oxidizer, reducer, medium, difficulty,
       tags: tags.filter(t => t.trim()), updated_at: new Date().toISOString(),
@@ -160,7 +164,7 @@ function RedoxContent() {
         toast.success("✨ Реакция обновлена!");
       } else {
         await addDoc(collection(db, "redox_reactions"), { ...data, created_at: new Date().toISOString() });
-        toast.success("🪄 Реакция добавлена!");
+        toast.success(" Реакция добавлена!");
       }
       resetForm(); setShowAddForm(false);
     } catch (e: any) { toast.error(`Ошибка: ${e.message}`); }
@@ -198,7 +202,14 @@ function RedoxContent() {
   }
 
   function normalizeFormula(formula: string): string {
-    return formula.replace(/\s+/g, "").replace(/^\d+/, "").toLowerCase().replace(/[⁺⁻⁰]+/g, "");
+    return formula
+      .replace(/\s+/g, "")
+      .replace(/^\d+/, "")
+      .toLowerCase()
+      .replace(/[⁺⁰]+/g, "")
+      .replace(/₀/g, "0").replace(/₁/g, "1").replace(/₂/g, "2").replace(/₃/g, "3")
+      .replace(/₄/g, "4").replace(/₅/g, "5").replace(/₆/g, "6").replace(/₇/g, "7")
+      .replace(/₈/g, "8").replace(/₉/g, "9");
   }
 
   function checkUserAnswer() {
@@ -260,7 +271,7 @@ function RedoxContent() {
       const newLives = blitzLives - 1;
       setBlitzLives(newLives);
       setBlitzCombo(0);
-      if (newLives <= 0) { setBlitzGameOver(true); toast.error("💔 Жизни закончились!"); }
+      if (newLives <= 0) { setBlitzGameOver(true); toast.error(" Жизни закончились!"); }
       else { toast.error(`✨ Ошибка! Осталось ${newLives} ❤️`); setTimeout(() => nextBlitzReaction(), 800); }
     }
   }
@@ -276,7 +287,7 @@ function RedoxContent() {
 
   function nextBlitzReaction() {
     const nextIndex = blitzIndex + 1;
-    if (nextIndex >= blitzReactions.length) { setBlitzGameOver(true); toast.success("🎉 Все реакции пройдены!"); return; }
+    if (nextIndex >= blitzReactions.length) { setBlitzGameOver(true); toast.success(" Все реакции пройдены!"); return; }
     setBlitzIndex(nextIndex);
     setSelectedReaction(blitzReactions[nextIndex]);
     resetCheck();
@@ -290,6 +301,155 @@ function RedoxContent() {
   }
 
   if (loading) return <div className="min-h-screen bg-gradient-to-br from-purple-100 via-violet-50 to-fuchsia-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div></div>;
+
+  // ✅ УНИВЕРСАЛЬНАЯ КАРТОЧКА РЕАКЦИИ
+  const ReactionCard = () => {
+    if (!selectedReaction) return null;
+    
+    const isEge29 = selectedReaction.mode === "ege29";
+    const substances = selectedReaction.substances || selectedReaction.reactants || [];
+    const correctProducts = selectedReaction.products || [];
+    
+    return (
+      <div className={`bg-white/90 backdrop-blur rounded-2xl shadow-lg p-6 border border-purple-200 ${role === 'student' ? 'max-w-2xl mx-auto' : ''}`}>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="font-bold text-xl text-gray-900">⚡ {isEge29 ? "Задание 29 (ЕГЭ)" : "ОВР реакция"}</h2>
+            <span className={`text-xs px-2 py-1 rounded-full ${isEge29 ? "bg-violet-100 text-violet-800" : "bg-purple-100 text-purple-800"}`}>
+              {isEge29 ? "🔴 ЕГЭ-29" : "🟢 Базовый"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-3 py-1 rounded-full ${selectedReaction.medium === "acidic" ? "bg-red-100 text-red-800" : selectedReaction.medium === "alkaline" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
+              {selectedReaction.medium === "acidic" ? "🧪 Кислая" : selectedReaction.medium === "alkaline" ? "🧼 Щелочная" : "💧 Нейтральная"}
+            </span>
+            {role === "tutor" && (
+              <div className="flex gap-1 ml-2">
+                <button onClick={() => editReaction(selectedReaction)} className="text-purple-500 hover:text-purple-700 text-xs">✏️</button>
+                <button onClick={() => { if (window.confirm("Удалить?")) { deleteReaction(selectedReaction.id); setSelectedReaction(null); } }} className="text-red-500 hover:text-red-700 text-xs">🗑️</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {isEge29 && selectedReaction.condition && (
+          <div className="bg-purple-50 rounded-xl p-4 mb-4 border border-purple-200">
+            <p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedReaction.condition}</p>
+          </div>
+        )}
+
+        {/* Выбор реагентов (для обоих режимов) */}
+        <div className="bg-violet-50 rounded-2xl p-4 mb-4 border border-violet-200">
+          <p className="text-xs text-violet-700 font-medium mb-2"> Даны вещества:</p>
+          <div className="flex flex-wrap gap-2">
+            {substances.map((sub: string, idx: number) => {
+              const isSelected = Object.values(userReactants).some(v => normalizeFormula(v || "") === normalizeFormula(sub));
+              return (
+                <button key={idx} onClick={() => {
+                  if (isSelected) {
+                    const nr = { ...userReactants };
+                    Object.keys(nr).forEach(key => { if (normalizeFormula(nr[key] || "") === normalizeFormula(sub)) delete nr[key]; });
+                    setUserReactants(nr);
+                  } else {
+                    const nextSlot = correctProducts.length || 3;
+                    for (let i = 0; i < nextSlot; i++) {
+                      if (!userReactants[i]) { setUserReactants({ ...userReactants, [i]: sub }); break; }
+                    }
+                  }
+                }} className={`px-3 py-2 rounded-lg text-sm font-mono font-medium transition border-2 ${isSelected ? 'bg-purple-600 text-white border-purple-600 shadow-lg scale-105' : 'bg-white text-gray-800 border-violet-200 hover:border-violet-400 hover:bg-violet-50'}`}>
+                  {sub}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Выбранные реагенты */}
+        <div className="bg-purple-50 rounded-xl p-4 mb-4 border border-purple-200">
+          <p className="text-xs text-purple-700 font-medium mb-2">Выбранные реагенты:</p>
+          <div className="flex flex-wrap gap-2 min-h-[40px] items-center">
+            {Array.from({ length: correctProducts.length || 3 }).map((_, idx) => (
+              <div key={idx} className={`px-4 py-2 rounded-lg text-sm font-mono font-bold border-2 ${userReactants[idx] ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-400 border-dashed border-gray-300'}`}>
+                {userReactants[idx] || `?`}
+                {userReactants[idx] && <button onClick={() => { const nr = { ...userReactants }; delete nr[idx]; setUserReactants(nr); }} className="ml-2 text-white hover:text-red-200">×</button>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Ввод продуктов */}
+        {!checked && (
+          <div className="mb-6 space-y-4">
+            <div>
+              <p className="text-sm text-gray-700 mb-2">📝 Запишите продукты реакции:</p>
+              <div className="space-y-2">
+                {correctProducts.map((_: string, idx: number) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <span className="text-lg font-bold text-gray-500">{idx + 1}.</span>
+                    <div className="flex-1">
+                      <ChemicalInput value={userProducts[idx] || ""} onChange={(v) => setUserProducts({ ...userProducts, [idx]: v })} placeholder={`Продукт ${idx + 1}...`} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button onClick={checkUserAnswer} className="w-full bg-gradient-to-r from-purple-600 to-violet-700 text-white py-3.5 rounded-xl font-bold hover:from-purple-700 hover:to-violet-800 transition text-lg shadow-md shadow-purple-300">
+              ✅ Проверить
+            </button>
+          </div>
+        )}
+
+        {/* Результат */}
+        {checked && score !== null && (
+          <div className={`p-6 rounded-2xl mb-6 text-center ${score === 100 ? "bg-emerald-50 border-2 border-emerald-300" : score >= 70 ? "bg-purple-50 border-2 border-purple-300" : "bg-red-50 border-2 border-red-300"}`}>
+            <p className="text-4xl mb-2">{score === 100 ? "⭐" : score >= 70 ? "" : "✨"}</p>
+            <p className="text-2xl font-black mb-1 text-gray-900">{score}%</p>
+            <p className="text-sm text-gray-700">{score === 100 ? "Идеально!" : score >= 70 ? "Хорошо!" : "Попробуйте ещё!"}</p>
+            {isEge29 && reactantScore !== null && (
+              <div className="flex justify-center gap-4 mt-2 text-xs">
+                <span className="text-red-700">Реагенты: {reactantScore}%</span>
+                <span className="text-gray-400">|</span>
+                <span className="text-purple-700">Продукты: {Math.round((score - Math.round(reactantScore * 0.5)) * 2)}%</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Правильный ответ */}
+        {checked && (
+          <div className="bg-purple-50 rounded-2xl p-6 mb-4 border border-purple-200">
+            <p className="text-sm text-purple-700 font-medium mb-2">✅ Правильная реакция:</p>
+            <p className="text-xl font-bold font-mono text-gray-900">{selectedReaction.reactants?.join(" + ")} → {selectedReaction.products?.join(" + ")}</p>
+            {selectedReaction.balance_text && (
+              <div className="mt-4 bg-violet-50 rounded-xl p-4 border border-violet-200">
+                <p className="text-sm text-violet-700 font-medium mb-2">⚡ Электронный баланс:</p>
+                <pre className="text-sm font-mono text-gray-900 whitespace-pre-wrap">{selectedReaction.balance_text}</pre>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {selectedReaction.oxidizer && <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full"> {selectedReaction.oxidizer}</span>}
+                  {selectedReaction.reducer && <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full"> {selectedReaction.reducer}</span>}
+                </div>
+                <p className="text-xs text-gray-600 mt-2">НОК = {selectedReaction.nok}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Кнопки навигации */}
+        <div className="flex gap-2">
+          {checked && (
+            <button onClick={role === "tutor" ? resetCheck : nextRandomReaction} className="flex-1 bg-gradient-to-r from-purple-600 to-violet-700 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-violet-800 transition shadow-md shadow-purple-300">
+              {role === "tutor" ? "🔄 Попробовать ещё раз" : reactions.length > 1 ? "Следующая →" : "🔄 Ещё раз"}
+            </button>
+          )}
+          {!checked && reactions.length > 1 && (
+            <button onClick={nextRandomReaction} className="px-4 py-3 bg-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-300 transition font-medium">
+              Пропустить →
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 via-violet-50 to-fuchsia-50">
@@ -321,7 +481,15 @@ function RedoxContent() {
           </div>
         </div>
 
-        {role === "student" && !blitzMode && (
+        {role === "student" && reactions.length === 0 && !selectedReaction && (
+          <div className="text-center py-16 bg-white/80 rounded-2xl border-2 border-dashed border-purple-200">
+            <p className="text-5xl mb-3">📚</p>
+            <p className="text-purple-800 font-bold text-lg">Здесь пока пусто</p>
+            <p className="text-sm text-purple-600 mt-1">Попросите репетитора добавить задания в этот тренажёр</p>
+          </div>
+        )}
+
+        {role === "student" && !blitzMode && reactions.length > 0 && (
           <div className="bg-white/90 backdrop-blur rounded-2xl shadow-lg p-4 mb-6 border border-purple-200">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center"><p className="text-3xl font-black text-purple-700">{stats.solved}</p><p className="text-xs text-gray-700 font-medium">Решено</p></div>
@@ -402,7 +570,7 @@ function RedoxContent() {
               <ChemicalInput value={reactants} onChange={setReactants} label="🧪 Реагенты (через +)" placeholder="KMnO₄ + HCl + KI" />
               <ChemicalInput value={products} onChange={setProducts} label="📦 Продукты (через +)" placeholder="MnCl₂ + KCl + I₂ + H₂O" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ChemicalInput value={oxidizer} onChange={setOxidizer} label="🔴 Окислитель" placeholder="Mn⁺⁷" />
+                <ChemicalInput value={oxidizer} onChange={setOxidizer} label="🔴 Окислитель" placeholder="Mn⁺" />
                 <ChemicalInput value={reducer} onChange={setReducer} label="🟢 Восстановитель" placeholder="I⁻" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -410,13 +578,13 @@ function RedoxContent() {
                 <div>
                   <label className="text-xs text-purple-700 font-medium">🧫 Среда</label>
                   <select value={medium} onChange={(e) => setMedium(e.target.value as any)} className="w-full border border-purple-200 rounded-lg p-2.5 text-sm mt-1 text-gray-900">
-                    <option value="acidic">🧪 Кислая (H⁺)</option>
+                    <option value="acidic">🧪 Кислая (H)</option>
                     <option value="neutral">💧 Нейтральная (H₂O)</option>
-                    <option value="alkaline">🧼 Щелочная (OH⁻)</option>
+                    <option value="alkaline"> Щелочная (OH⁻)</option>
                   </select>
                 </div>
               </div>
-              <ChemicalInput value={balanceText} onChange={setBalanceText} label="📝 Электронный баланс" placeholder={"Mn⁺⁷ + 5e⁻ → Mn⁺² | 2\n2I⁻ - 2e⁻ → I₂⁰ | 5"} multiline rows={4} />
+              <ChemicalInput value={balanceText} onChange={setBalanceText} label=" Электронный баланс" placeholder={"Mn⁺⁷ + 5e⁻ → Mn⁺² | 2\n2I⁻ - 2e⁻ → I₂⁰ | 5"} multiline rows={4} />
               <div className="flex gap-2">
                 <button onClick={addReaction} className="flex-1 bg-gradient-to-r from-purple-600 to-violet-700 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-violet-800 transition shadow-md shadow-purple-300">{editingId ? "💾 Обновить" : "💾 Сохранить"}</button>
                 <button onClick={() => { setShowAddForm(false); resetForm(); }} className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl font-medium hover:bg-gray-300 transition">Отмена</button>
@@ -425,115 +593,10 @@ function RedoxContent() {
           </div>
         )}
 
-        {role === "student" && (
+        {role === "student" && reactions.length > 0 && (
           <div>
             {selectedReaction ? (
-              <div className="bg-white/90 backdrop-blur rounded-2xl shadow-lg p-6 border border-purple-200 max-w-2xl mx-auto">
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-bold text-xl text-gray-900">⚡ {selectedReaction.mode === "ege29" ? "Задание 29 (ЕГЭ)" : "ОВР реакция"}</h2>
-                    <span className={`text-xs px-2 py-1 rounded-full ${selectedReaction.mode === "ege29" ? "bg-violet-100 text-violet-800" : "bg-purple-100 text-purple-800"}`}>{selectedReaction.mode === "ege29" ? "🔴 ЕГЭ-29" : "🟢 Базовый"}</span>
-                  </div>
-                  <span className={`text-xs px-3 py-1 rounded-full ${selectedReaction.medium === "acidic" ? "bg-red-100 text-red-800" : selectedReaction.medium === "alkaline" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>{selectedReaction.medium === "acidic" ? "🧪 Кислая" : selectedReaction.medium === "alkaline" ? "🧼 Щелочная" : "💧 Нейтральная"}</span>
-                </div>
-                {selectedReaction.mode === "ege29" && (
-                  <>
-                    {selectedReaction.condition && <div className="bg-purple-50 rounded-xl p-4 mb-4 border border-purple-200"><p className="text-sm text-gray-800 whitespace-pre-wrap">{selectedReaction.condition}</p></div>}
-                    <div className="bg-violet-50 rounded-2xl p-4 mb-4 border border-violet-200">
-                      <p className="text-xs text-violet-700 font-medium mb-2">📋 Даны вещества:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedReaction.substances?.map((sub: string, idx: number) => {
-                          const isSelected = Object.values(userReactants).some(v => normalizeFormula(v || "") === normalizeFormula(sub));
-                          return (
-                            <button key={idx} onClick={() => {
-                              if (isSelected) {
-                                const nr = { ...userReactants };
-                                Object.keys(nr).forEach(key => { if (normalizeFormula(nr[key] || "") === normalizeFormula(sub)) delete nr[key]; });
-                                setUserReactants(nr);
-                              } else {
-                                const nextSlot = selectedReaction.reactants?.length || 3;
-                                for (let i = 0; i < nextSlot; i++) {
-                                  if (!userReactants[i]) { setUserReactants({ ...userReactants, [i]: sub }); break; }
-                                }
-                              }
-                            }} className={`px-3 py-2 rounded-lg text-sm font-mono font-medium transition border-2 ${isSelected ? 'bg-purple-600 text-white border-purple-600 shadow-lg scale-105' : 'bg-white text-gray-800 border-violet-200 hover:border-violet-400 hover:bg-violet-50'}`}>{sub}</button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="bg-purple-50 rounded-xl p-4 mb-4 border border-purple-200">
-                      <p className="text-xs text-purple-700 font-medium mb-2">Выбранные реагенты:</p>
-                      <div className="flex flex-wrap gap-2 min-h-[40px] items-center">
-                        {Array.from({ length: selectedReaction.reactants?.length || 3 }).map((_, idx) => (
-                          <div key={idx} className={`px-4 py-2 rounded-lg text-sm font-mono font-bold border-2 ${userReactants[idx] ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-400 border-dashed border-gray-300'}`}>
-                            {userReactants[idx] || `?`}
-                            {userReactants[idx] && <button onClick={() => { const nr = { ...userReactants }; delete nr[idx]; setUserReactants(nr); }} className="ml-2 text-white hover:text-red-200">×</button>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-                {selectedReaction.mode === "basic" && (
-                  <div className="bg-purple-50 rounded-2xl p-6 mb-6 text-center border border-purple-200">
-                    <p className="text-sm text-purple-700 font-medium mb-2">🧪 Даны реагенты:</p>
-                    <p className="text-2xl font-bold font-mono text-gray-900">{selectedReaction.reactants?.join(" + ")}</p>
-                  </div>
-                )}
-                {!checked && (
-                  <div className="mb-6 space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-700 mb-2">📝 Запишите продукты реакции:</p>
-                      <div className="space-y-2">
-                        {selectedReaction.products?.map((_: string, idx: number) => (
-                          <div key={idx} className="flex items-center gap-3">
-                            <span className="text-lg font-bold text-gray-500">{idx + 1}.</span>
-                            <div className="flex-1">
-                              <ChemicalInput value={userProducts[idx] || ""} onChange={(v) => setUserProducts({ ...userProducts, [idx]: v })} placeholder={`Продукт ${idx + 1}...`} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <button onClick={checkUserAnswer} className="w-full bg-gradient-to-r from-purple-600 to-violet-700 text-white py-3.5 rounded-xl font-bold hover:from-purple-700 hover:to-violet-800 transition text-lg shadow-md shadow-purple-300">✅ Проверить</button>
-                  </div>
-                )}
-                {checked && score !== null && (
-                  <div className={`p-6 rounded-2xl mb-6 text-center ${score === 100 ? "bg-emerald-50 border-2 border-emerald-300" : score >= 70 ? "bg-purple-50 border-2 border-purple-300" : "bg-red-50 border-2 border-red-300"}`}>
-                    <p className="text-4xl mb-2">{score === 100 ? "⭐" : score >= 70 ? "🌟" : "✨"}</p>
-                    <p className="text-2xl font-black mb-1 text-gray-900">{score}%</p>
-                    <p className="text-sm text-gray-700">{score === 100 ? "Идеально!" : score >= 70 ? "Хорошо!" : "Попробуйте ещё!"}</p>
-                    {selectedReaction.mode === "ege29" && reactantScore !== null && (
-                      <div className="flex justify-center gap-4 mt-2 text-xs">
-                        <span className="text-red-700">Реагенты: {reactantScore}%</span>
-                        <span className="text-gray-400">|</span>
-                        <span className="text-purple-700">Продукты: {Math.round((score - Math.round(reactantScore * 0.5)) * 2)}%</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {checked && (
-                  <div className="bg-purple-50 rounded-2xl p-6 mb-4 border border-purple-200">
-                    <p className="text-sm text-purple-700 font-medium mb-2">✅ Правильная реакция:</p>
-                    <p className="text-xl font-bold font-mono text-gray-900">{selectedReaction.reactants?.join(" + ")} → {selectedReaction.products?.join(" + ")}</p>
-                    {selectedReaction.balance_text && (
-                      <div className="mt-4 bg-violet-50 rounded-xl p-4 border border-violet-200">
-                        <p className="text-sm text-violet-700 font-medium mb-2">⚡ Электронный баланс:</p>
-                        <pre className="text-sm font-mono text-gray-900 whitespace-pre-wrap">{selectedReaction.balance_text}</pre>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {selectedReaction.oxidizer && <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">🔴 {selectedReaction.oxidizer}</span>}
-                          {selectedReaction.reducer && <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">🟢 {selectedReaction.reducer}</span>}
-                        </div>
-                        <p className="text-xs text-gray-600 mt-2">НОК = {selectedReaction.nok}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  {checked && <button onClick={nextRandomReaction} className="flex-1 bg-gradient-to-r from-purple-600 to-violet-700 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-violet-800 transition shadow-md shadow-purple-300">{reactions.length > 1 ? "Следующая →" : "🔄 Ещё раз"}</button>}
-                  {!checked && reactions.length > 1 && <button onClick={nextRandomReaction} className="px-4 py-3 bg-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-300 transition font-medium">Пропустить →</button>}
-                </div>
-              </div>
+              <ReactionCard />
             ) : (
               <div className="text-center py-16">
                 <p className="text-6xl mb-4">⚡</p>
@@ -549,7 +612,7 @@ function RedoxContent() {
             <div className="lg:col-span-1">
               <div className="bg-white/90 backdrop-blur rounded-2xl shadow-lg p-4 border border-purple-200">
                 <h2 className="font-semibold text-purple-800 mb-3">📋 Реакции ({reactions.length})</h2>
-                {reactions.length === 0 ? <p className="text-gray-600 text-center py-4 text-sm">Нет реакций</p> : (
+                {reactions.length === 0 ? <p className="text-gray-600 text-center py-4 text-sm">Нет реакций. Добавьте первую!</p> : (
                   <div className="space-y-2 max-h-[600px] overflow-y-auto">
                     {reactions.map((rxn: any) => (
                       <button key={rxn.id} onClick={() => { setSelectedReaction(rxn); resetCheck(); }} className={`w-full text-left p-3 rounded-xl transition border-2 ${selectedReaction?.id === rxn.id ? "bg-purple-50 border-purple-400 shadow-md" : "bg-gray-50 border-transparent hover:border-purple-200"}`}>
@@ -562,7 +625,7 @@ function RedoxContent() {
                         {rxn.tags && rxn.tags.length > 0 && <div className="flex gap-1 mt-1 flex-wrap">{rxn.tags.slice(0, 2).map((tag: string, i: number) => (<span key={i} className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">#{tag}</span>))}</div>}
                         <div className="flex gap-2 mt-1">
                           <button onClick={(e) => { e.stopPropagation(); editReaction(rxn); }} className="text-purple-500 hover:text-purple-700 text-xs">✏️</button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteReaction(rxn.id); }} className="text-red-500 hover:text-red-700 text-xs">🗑️</button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteReaction(rxn.id); }} className="text-red-500 hover:text-red-700 text-xs">️</button>
                         </div>
                       </button>
                     ))}
@@ -571,64 +634,10 @@ function RedoxContent() {
               </div>
             </div>
             <div className="lg:col-span-2">
-              {selectedReaction ? (
-                <div className="bg-white/90 backdrop-blur rounded-2xl shadow-lg p-6 border border-purple-200">
-                  <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                    <h2 className="font-bold text-xl text-gray-900">⚡ {selectedReaction.mode === "ege29" ? "Задание 29 (ЕГЭ)" : "ОВР реакция"}</h2>
-                    <span className={`text-xs px-3 py-1 rounded-full ${selectedReaction.medium === "acidic" ? "bg-red-100 text-red-800" : selectedReaction.medium === "alkaline" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>{selectedReaction.medium === "acidic" ? "🧪 Кислая" : selectedReaction.medium === "alkaline" ? "🧼 Щелочная" : "💧 Нейтральная"}</span>
-                  </div>
-                  <div className="bg-purple-50 rounded-2xl p-6 mb-6 text-center border border-purple-200">
-                    <p className="text-sm text-purple-700 font-medium mb-2">🧪 Даны реагенты:</p>
-                    <p className="text-2xl font-bold font-mono text-gray-900">{selectedReaction.reactants?.join(" + ")}</p>
-                  </div>
-                  {!checked && (
-                    <div className="mb-6 space-y-4">
-                      <div>
-                        <p className="text-sm text-gray-700 mb-2">📝 Запишите продукты реакции:</p>
-                        <div className="space-y-2">
-                          {selectedReaction.products?.map((_: string, idx: number) => (
-                            <div key={idx} className="flex items-center gap-3">
-                              <span className="text-lg font-bold text-gray-500">{idx + 1}.</span>
-                              <div className="flex-1">
-                                <ChemicalInput value={userProducts[idx] || ""} onChange={(v) => setUserProducts({ ...userProducts, [idx]: v })} placeholder={`Продукт ${idx + 1}...`} />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <button onClick={checkUserAnswer} className="w-full bg-gradient-to-r from-purple-600 to-violet-700 text-white py-3.5 rounded-xl font-bold hover:from-purple-700 hover:to-violet-800 transition text-lg shadow-md shadow-purple-300">✅ Проверить</button>
-                    </div>
-                  )}
-                  {checked && score !== null && (
-                    <div className={`p-6 rounded-2xl mb-6 text-center ${score === 100 ? "bg-emerald-50 border-2 border-emerald-300" : score >= 70 ? "bg-purple-50 border-2 border-purple-300" : "bg-red-50 border-2 border-red-300"}`}>
-                      <p className="text-4xl mb-2">{score === 100 ? "⭐" : score >= 70 ? "🌟" : "✨"}</p>
-                      <p className="text-2xl font-black mb-1 text-gray-900">{score}%</p>
-                    </div>
-                  )}
-                  {checked && (
-                    <>
-                      <div className="bg-emerald-50 rounded-2xl p-6 mb-4">
-                        <p className="text-sm text-emerald-700 font-medium mb-2">✅ Правильная реакция:</p>
-                        <p className="text-xl font-bold font-mono text-gray-900">{selectedReaction.reactants?.join(" + ")} → {selectedReaction.products?.join(" + ")}</p>
-                      </div>
-                      {selectedReaction.balance_text && (
-                        <div className="bg-violet-50 rounded-2xl p-4 border border-violet-200">
-                          <p className="text-sm text-violet-700 font-medium mb-2">⚡ Электронный баланс:</p>
-                          <pre className="text-sm font-mono text-gray-900 whitespace-pre-wrap">{selectedReaction.balance_text}</pre>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {selectedReaction.oxidizer && <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">🔴 {selectedReaction.oxidizer}</span>}
-                            {selectedReaction.reducer && <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">🟢 {selectedReaction.reducer}</span>}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {checked && <button onClick={resetCheck} className="w-full bg-gradient-to-r from-purple-600 to-violet-700 text-white py-3 rounded-xl font-bold hover:from-purple-700 hover:to-violet-800 transition shadow-md shadow-purple-300">🔄 Попробовать ещё раз</button>}
-                </div>
-              ) : (
+              {selectedReaction ? <ReactionCard /> : (
                 <div className="bg-white/90 backdrop-blur rounded-2xl shadow-lg p-12 border border-purple-200 text-center">
                   <p className="text-6xl mb-4">⚡</p>
-                  <p className="text-gray-700 text-lg">Выберите реакцию слева</p>
+                  <p className="text-gray-700 text-lg">Выберите реакцию слева или создайте новую</p>
                 </div>
               )}
             </div>
@@ -642,8 +651,10 @@ function RedoxContent() {
 
 export default function RedoxTrainerPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-purple-100 via-violet-50 to-fuchsia-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div></div>}>
-      <RedoxContent />
-    </Suspense>
+    <AuthGuard>
+      <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-purple-100 via-violet-50 to-fuchsia-50 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div></div>}>
+        <RedoxContent />
+      </Suspense>
+    </AuthGuard>
   );
 }

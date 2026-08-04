@@ -1,25 +1,20 @@
 "use client";
 
-export const dynamic = 'force-dynamic';
-
-import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { initializeApp } from "firebase/app";
 import { 
   getFirestore, collection, addDoc, deleteDoc, query, where, 
-  onSnapshot, doc, getDoc, updateDoc, setDoc, serverTimestamp 
+  onSnapshot, doc, getDoc, updateDoc, serverTimestamp, setDoc, getDocs 
 } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { getAuth } from "firebase/auth";
 import toast from "react-hot-toast";
 import { 
-  ChevronLeft, Wallet, Calendar, BookOpen, Receipt, Plus, Trash2, 
-  Sparkles, Crown, TrendingUp, Shield, Download, Filter, AlertCircle, 
-  CheckCircle, Clock, Edit2, Search, X, Save, Check, AlertTriangle,
-  Settings, Upload, Eye, Loader2, ExternalLink, CreditCard
+  ChevronLeft, Wallet, Receipt, Plus, Trash2, 
+  TrendingUp, CheckCircle, Search, Save, AlertTriangle, Settings,
+  Eye, Loader2, Users, User, GraduationCap
 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import AuthGuard from "@/components/AuthGuard";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -32,27 +27,18 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);
-const auth = getAuth(app);
 
-// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 function formatDate(timestamp: any): string {
   if (!timestamp) return "—";
   const date = timestamp.seconds ? new Date(timestamp.seconds * 1000) : new Date(timestamp);
   return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function formatFullDate(timestamp: any): string {
-  if (!timestamp) return "—";
-  const date = timestamp.seconds ? new Date(timestamp.seconds * 1000) : new Date(timestamp);
-  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-}
-
 function getAutoStatus(payment: any): "paid" | "pending" | "overdue" {
   if (payment.confirmed) return "paid";
   if (payment.deadline) {
     const deadlineDate = payment.deadline?.seconds ? new Date(payment.deadline.seconds * 1000) : new Date(payment.deadline);
-    if (deadlineDate < new Date()) return "overdue";
+    if (deadlineDate && !isNaN(deadlineDate.getTime()) && deadlineDate < new Date()) return "overdue";
     return "pending";
   }
   return "pending";
@@ -64,15 +50,6 @@ function getStatusColor(status: string) {
     case "pending": return "bg-yellow-100 text-yellow-700";
     case "overdue": return "bg-red-100 text-red-700";
     default: return "bg-gray-100 text-gray-700";
-  }
-}
-
-function getStatusIcon(status: string) {
-  switch (status) {
-    case "paid": return <CheckCircle size={12} className="inline mr-1" />;
-    case "pending": return <Clock size={12} className="inline mr-1" />;
-    case "overdue": return <AlertTriangle size={12} className="inline mr-1" />;
-    default: return null;
   }
 }
 
@@ -91,139 +68,249 @@ function getPaymentDate(payment: any): Date {
   return new Date(0);
 }
 
-function escapeCSV(value: any): string {
-  const str = String(value || "");
-  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
-// --- ОСНОВНОЙ КОМПОНЕНТ ---
 function FinanceContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const uid = searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "";
   const role = searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "tutor";
   
-  const [activeTab, setActiveTab] = useState<"stats" | "requests" | "settings">("stats");
+  const tutorTabs = [
+    { id: "stats", label: "📊 Статистика и Учет", icon: TrendingUp },
+    { id: "requests", label: "📥 Заявки с чеками", icon: Receipt },
+    { id: "settings", label: "⚙️ Настройки", icon: Settings },
+  ];
+  const studentTabs = [
+    { id: "overview", label: "💳 Мой абонемент", icon: Wallet },
+    { id: "history", label: "📜 История платежей", icon: Receipt },
+  ];
+  const parentTabs = [
+    { id: "child_select", label: "👦 Выбор ученика", icon: User },
+    { id: "overview", label: "💳 Абонемент", icon: Wallet },
+    { id: "history", label: "📜 История", icon: Receipt },
+  ];
+
+  const availableTabs = role === "tutor" ? tutorTabs : role === "parent" ? parentTabs : studentTabs;
+  const [activeTab, setActiveTab] = useState<string>(availableTabs[0].id);
 
   const [payments, setPayments] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
-  const [loadingLedger, setLoadingLedger] = useState(true);
+  const [groups, setGroups] = useState<any[]>([]); // ✅ НОВОЕ: список групп
+  const [children, setChildren] = useState<any[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState<string>("");
+  
+  const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [filterPeriod, setFilterPeriod] = useState<"all" | "week" | "month" | "year">("all");
   const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending" | "overdue">("all");
   const [searchQuery, setSearchQuery] = useState("");
   
+  const [paymentType, setPaymentType] = useState<"individual" | "group">("individual");
   const [selectedStudent, setSelectedStudent] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState(""); // ✅ НОВОЕ: выбранная группа
   const [amount, setAmount] = useState(0);
   const [lessons, setLessons] = useState(4);
-  const [tariff, setTariff] = useState("Старт");
+  const [tariff, setTariff] = useState("start");
   const [comment, setComment] = useState("");
   const [deadline, setDeadline] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
-  const [editingPayment, setEditingPayment] = useState<any>(null);
 
   const [paymentRequests, setPaymentRequests] = useState<any[]>([]);
-  const [loadingRequests, setLoadingRequests] = useState(true);
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [selectedReceiptImage, setSelectedReceiptImage] = useState<string | null>(null);
   
-  const [paymentEnabled, setPaymentEnabled] = useState(false);
-  const [primaryProvider, setPrimaryProvider] = useState<"enot" | "prodamus" | "manual">("manual");
-  
-  // ЗАМЕНЕНО: Lava на Enot
-  const [enotShopId, setEnotShopId] = useState("");
-  const [enotSecretKey, setEnotSecretKey] = useState("");
-  const [enotSuccessUrl, setEnotSuccessUrl] = useState("");
-  const [enotFailUrl, setEnotFailUrl] = useState("");
-  
-  const [prodamusShopId, setProdamusShopId] = useState("");
-  const [prodamusSecretKey, setProdamusSecretKey] = useState("");
-  const [prodamusSuccessUrl, setProdamusSuccessUrl] = useState("");
-  const [prodamusFailUrl, setProdamusFailUrl] = useState("");
-  const [manualPaymentInstructions, setManualPaymentInstructions] = useState("Переведите сумму через Золотую Корону на номер +374 XX XXX XX. Прикрепите скриншот чека.");
+  const [financeSettings, setFinanceSettings] = useState<any>({
+    price_individual: 2000,
+    price_group: 1500,
+    price_trial: 0,
+    lesson_expiration_days: 60,
+    enot_shop_id: "",
+    enot_secret_key: "",
+    prodamus_shop_id: "",
+    prodamus_secret_key: "",
+    manual_instructions: "Переведите сумму через Золотую Корону на номер +374 XX XXX XX. Прикрепите скриншот чека.",
+    auto_renewal_enabled: true,
+    notify_parents_overdue: true,
+    auto_confirm_receipts: false,
+  });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentFile, setPaymentFile] = useState<File | null>(null);
-  const [paymentUploading, setPaymentUploading] = useState(false);
-  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
-  const [paymentLoading, setPaymentLoading] = useState<string | null>(null);
-
+  // ✅ ЗАГРУЗКА ЦЕН ИЗ НАСТРОЕК + ГРУПП
   useEffect(() => {
     if (!uid) return;
-    const unsubPayments = onSnapshot(query(collection(db, "payments"), where("tutor_id", "==", uid)), (snap) => {
+    
+    let paymentsQuery;
+    if (role === "tutor") {
+      paymentsQuery = query(collection(db, "payments"), where("tutor_id", "==", uid));
+    } else if (role === "parent" && selectedChildId) {
+      paymentsQuery = query(collection(db, "payments"), where("student_id", "==", selectedChildId));
+    } else {
+      paymentsQuery = query(collection(db, "payments"), where("student_id", "==", uid));
+    }
+
+    const unsubPayments = onSnapshot(paymentsQuery, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       list.sort((a: any, b: any) => getPaymentDate(b).getTime() - getPaymentDate(a).getTime());
       setPayments(list);
-      setLoadingLedger(false);
+      setLoading(false);
     });
-    const unsubStudents = onSnapshot(query(collection(db, "profiles"), where("role", "==", "student")), (snap) => {
-      setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => { unsubPayments(); unsubStudents(); };
-  }, [uid]);
+
+    if (role === "tutor") {
+      const unsubStudents = onSnapshot(query(collection(db, "profiles"), where("role", "==", "student")), (snap) => {
+        setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+      
+      // ✅ НОВОЕ: Загрузка групп
+      const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
+        setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+      
+      getDoc(doc(db, "settings", "global")).then((snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setFinanceSettings((prev: any) => ({
+            ...prev,
+            price_individual: data.price_individual_lesson || prev.price_individual,
+            price_group: data.price_group_lesson || prev.price_group,
+            price_trial: data.price_trial ?? prev.price_trial,
+            lesson_expiration_days: data.lesson_expiration_days || prev.lesson_expiration_days,
+          }));
+        }
+      });
+      
+      getDoc(doc(db, "settings", "finance")).then((snap) => {
+        if (snap.exists()) {
+          setFinanceSettings((prev: any) => ({ ...prev, ...snap.data() }));
+        }
+        setSettingsLoaded(true);
+      });
+      
+      return () => { unsubPayments(); unsubStudents(); unsubGroups(); };
+    }
+
+    if (role === "parent") {
+      const unsubChildren = onSnapshot(query(collection(db, "profiles"), where("parent_id", "==", uid)), (snap) => {
+        const kids = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setChildren(kids);
+        if (kids.length > 0 && !selectedChildId) setSelectedChildId(kids[0].id);
+      });
+      return () => { unsubPayments(); unsubChildren(); };
+    }
+
+    return () => { unsubPayments(); };
+  }, [uid, role, selectedChildId]);
 
   useEffect(() => {
-    if (!uid || role !== "tutor") return;
+    if (role !== "tutor" || !uid) return;
     const unsubRequests = onSnapshot(query(collection(db, "payment_requests"), where("tutor_id", "==", uid), where("status", "==", "pending")), (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      list.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      setPaymentRequests(list);
-      setLoadingRequests(false);
+      setPaymentRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsubRequests();
   }, [uid, role]);
 
+  // ✅ АВТОРАСЧЁТ СУММЫ ПРИ ИЗМЕНЕНИИ ТИПА, ГРУППЫ ИЛИ КОЛИЧЕСТВА
   useEffect(() => {
-    if (!uid) return;
-    getDoc(doc(db, "settings", "payments")).then((snap) => {
-      if (snap.exists()) {
-        const d = snap.data();
-        setPaymentEnabled(d.enabled || false);
-        setPrimaryProvider(d.primary_provider || "manual");
-        // ЗАМЕНЕНО: Lava на Enot
-        setEnotShopId(d.enot_shop_id || "");
-        setEnotSecretKey(d.enot_secret_key || "");
-        setEnotSuccessUrl(d.enot_success_url || "");
-        setEnotFailUrl(d.enot_fail_url || "");
-        
-        setProdamusShopId(d.prodamus_shop_id || "");
-        setProdamusSecretKey(d.prodamus_secret_key || "");
-        setProdamusSuccessUrl(d.prodamus_success_url || "");
-        setProdamusFailUrl(d.prodamus_fail_url || "");
-        setManualPaymentInstructions(d.manual_instructions || "Переведите сумму через Золотую Корону...");
+    if (lessons > 0) {
+      let pricePerLesson = 0;
+      let autoComment = "";
+      
+      if (selectedGroup) {
+        // Если выбрана группа — берём цену из группы
+        const group = groups.find(g => g.id === selectedGroup);
+        if (group) {
+          pricePerLesson = group.price_per_lesson || 0;
+          autoComment = `Оплата за группу "${group.name}"`;
+        }
+      } else {
+        // Иначе — из настроек
+        pricePerLesson = paymentType === "individual" ? financeSettings.price_individual : financeSettings.price_group;
       }
-    });
-  }, [uid]);
+      
+      if (amount === 0 || !selectedGroup) {
+        setAmount(pricePerLesson * lessons);
+      }
+      if (autoComment && !comment) {
+        setComment(autoComment);
+      }
+    }
+  }, [paymentType, lessons, selectedGroup, financeSettings.price_individual, financeSettings.price_group, groups]);
+
+  // ✅ ОБРАБОТКА ПАРАМЕТРОВ ИЗ URL (при переходе из Groups)
+  useEffect(() => {
+    const groupIdFromUrl = searchParams.get("groupId");
+    const groupNameFromUrl = searchParams.get("groupName");
+    const groupPriceFromUrl = searchParams.get("groupPrice");
+    
+    if (groupIdFromUrl && groupPriceFromUrl && groups.length > 0) {
+      setSelectedGroup(groupIdFromUrl);
+      setPaymentType("group");
+      setAmount(parseInt(groupPriceFromUrl) * 4);
+      setComment(`Оплата за группу: ${groupNameFromUrl}`);
+      setShowAddForm(true);
+      // Очищаем URL
+      router.replace(`/finance?uid=${uid}&role=${role}&tab=stats`);
+      toast.success("Данные группы загружены! ✨");
+    }
+  }, [searchParams, groups, router, uid, role]);
 
   async function addPayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedStudent || amount <= 0 || lessons <= 0) {
-      toast.error("Заполните все обязательные поля корректно");
+    if (!selectedStudent && !selectedGroup) {
+      toast.error("Выберите ученика или группу");
       return;
     }
+    if (lessons <= 0) {
+      toast.error("Укажите количество занятий");
+      return;
+    }
+    
+    const finalAmount = amount > 0 ? amount : 
+      (selectedGroup 
+        ? (groups.find(g => g.id === selectedGroup)?.price_per_lesson || 0) * lessons
+        : (paymentType === "individual" ? financeSettings.price_individual : financeSettings.price_group) * lessons);
+    
+    if (finalAmount <= 0) {
+      toast.error("Сумма должна быть больше 0");
+      return;
+    }
+    
     setSavingPayment(true);
     try {
-      const student = students.find(s => s.id === selectedStudent);
+      let studentName = "Ученик";
+      let studentId = selectedStudent;
+      
+      if (selectedGroup) {
+        const group = groups.find(g => g.id === selectedGroup);
+        if (group) {
+          studentName = `Группа: ${group.name}`;
+          // Если не выбран конкретный ученик, берём первого из группы
+          if (!studentId && group.student_ids?.length > 0) {
+            studentId = group.student_ids[0];
+          }
+        }
+      } else if (selectedStudent) {
+        const student = students.find(s => s.id === selectedStudent);
+        if (student) studentName = student.full_name;
+      }
+      
       const deadlineTimestamp = deadline ? new Date(deadline) : null;
       
-      if (editingPayment) {
-        await updateDoc(doc(db, "payments", editingPayment.id), {
-          student_id: selectedStudent, student_name: student?.full_name || "Ученик",
-          amount, lessons, tariff, comment: comment.trim(), deadline: deadlineTimestamp, updated_at: serverTimestamp(),
-        });
-        toast.success("✨ Платёж обновлён!");
-        setEditingPayment(null);
-      } else {
-        await addDoc(collection(db, "payments"), {
-          tutor_id: uid, student_id: selectedStudent, student_name: student?.full_name || "Ученик",
-          amount, lessons, tariff, comment: comment.trim(), deadline: deadlineTimestamp,
-          confirmed: false, created_at: serverTimestamp(),
-        });
-        toast.success(`✨ Платёж создан! Ожидает оплаты от ${student?.full_name}`);
-      }
+      await addDoc(collection(db, "payments"), {
+        tutor_id: uid,
+        student_id: studentId,
+        student_name: studentName,
+        type: paymentType,
+        group_id: selectedGroup || null, // ✅ НОВОЕ: связь с группой
+        amount: finalAmount,
+        lessons_count: lessons,
+        lessons_used: 0,
+        lessons_remaining: lessons,
+        tariff,
+        comment: comment.trim(),
+        deadline: deadlineTimestamp,
+        confirmed: false,
+        created_at: serverTimestamp(),
+      });
+      toast.success(`✨ Платёж создан на ${finalAmount.toLocaleString()} ₽!`);
       resetPaymentForm();
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
@@ -240,101 +327,43 @@ function FinanceContent() {
         const studentSnap = await getDoc(doc(db, "profiles", payment.student_id));
         if (studentSnap.exists()) {
           const currentPaid = studentSnap.data().paid_lessons || 0;
-          await updateDoc(doc(db, "profiles", payment.student_id), { paid_lessons: currentPaid + (payment.lessons || 0) });
+          await updateDoc(doc(db, "profiles", payment.student_id), { 
+            paid_lessons: currentPaid + (payment.lessons_count || payment.lessons || 0) 
+          });
         }
       }
-      toast.success(`✅ Оплата подтверждена! +${payment.lessons} занятий`);
+      toast.success(`✅ Оплата подтверждена!`);
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
     }
   }
 
-  async function deletePayment(payment: any) {
-    if (!window.confirm(`Удалить платёж на ${payment.amount} ₽?`)) return;
+  async function deletePayment(paymentId: string) {
+    if (!window.confirm("Удалить эту запись о платеже?")) return;
     try {
-      if (payment.student_id && payment.confirmed) {
-        const studentSnap = await getDoc(doc(db, "profiles", payment.student_id));
-        if (studentSnap.exists()) {
-          const currentPaid = studentSnap.data().paid_lessons || 0;
-          await updateDoc(doc(db, "profiles", payment.student_id), { paid_lessons: Math.max(0, currentPaid - (payment.lessons || 0)) });
-        }
-      }
-      await deleteDoc(doc(db, "payments", payment.id));
-      toast.success("🗑️ Платёж удалён");
+      await deleteDoc(doc(db, "payments", paymentId));
+      toast.success("🗑️ Запись удалена");
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
     }
   }
 
   function resetPaymentForm() {
-    setEditingPayment(null); setSelectedStudent(""); setAmount(0); setLessons(4);
-    setTariff("Старт"); setComment(""); setDeadline(""); setShowAddForm(false);
-  }
-
-  async function payWithProvider(payment: any) {
-    setPaymentLoading(payment.id);
-    try {
-      const orderId = `payment_${payment.id}_${Date.now()}`;
-      // ЗАМЕНЕНО: lava на enot
-      const endpoint = primaryProvider === "enot" ? "/api/payments/enot/create" : "/api/payments/prodamus/create";
-      
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: payment.amount,
-          orderId,
-          description: `Оплата занятий: ${payment.student_name}`,
-          studentId: payment.student_id,
-          tutorId: uid,
-          payment_type: "lesson_pack",
-          item_id: "manual_payment",
-          duration_days: 30
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to create payment");
-      }
-
-      // ЗАМЕНЕНО: lava на enot
-      toast.success(`Перенаправляем на ${primaryProvider === "enot" ? "Enot.io" : "Prodamus"}...`);
-      window.open(data.url, "_blank");
-    } catch (error: any) {
-      toast.error(`Ошибка: ${error.message}`);
-    } finally {
-      setPaymentLoading(null);
-    }
+    setSelectedStudent(""); setSelectedGroup(""); setAmount(0); setLessons(4);
+    setTariff("start"); setComment(""); setDeadline(""); setShowAddForm(false);
   }
 
   async function handleApproveRequest(request: any) {
     setProcessingRequestId(request.id);
     try {
       await updateDoc(doc(db, "payment_requests", request.id), { status: "approved", approved_at: serverTimestamp() });
-
       await addDoc(collection(db, "payments"), {
-        tutor_id: uid,
-        student_id: request.student_id,
-        student_name: request.item_name || "Ученик",
-        amount: request.amount,
-        lessons: 1,
-        tariff: "Оплата по чеку",
-        comment: "Оплачено через загрузку чека",
-        confirmed: true,
-        confirmed_at: serverTimestamp(),
-        created_at: serverTimestamp(),
+        tutor_id: uid, student_id: request.student_id, student_name: request.item_name || "Ученик",
+        type: request.payment_type || "individual", amount: request.amount,
+        lessons_count: 1, lessons_used: 0, lessons_remaining: 1,
+        tariff: "Оплата по чеку", comment: "Оплачено через загрузку чека",
+        confirmed: true, confirmed_at: serverTimestamp(), created_at: serverTimestamp(),
       });
-
-      if (request.student_id) {
-        const studentSnap = await getDoc(doc(db, "profiles", request.student_id));
-        if (studentSnap.exists()) {
-          const currentPaid = studentSnap.data().paid_lessons || 0;
-          await updateDoc(doc(db, "profiles", request.student_id), { paid_lessons: currentPaid + 1 });
-        }
-      }
-
       toast.success("✅ Чек подтвержден, занятия начислены!");
       setSelectedReceiptImage(null);
     } catch (error: any) {
@@ -344,59 +373,15 @@ function FinanceContent() {
     }
   }
 
-  async function handleRejectRequest(requestId: string) {
-    if (!confirm("Отклонить эту заявку?")) return;
-    setProcessingRequestId(requestId);
-    try {
-      await updateDoc(doc(db, "payment_requests", requestId), { status: "rejected", rejected_at: serverTimestamp() });
-      toast.success("Заявка отклонена");
-      setSelectedReceiptImage(null);
-    } catch (error: any) {
-      toast.error("Ошибка: " + error.message);
-    } finally {
-      setProcessingRequestId(null);
-    }
-  }
-
-  async function handlePaymentSubmit() {
-    if (!paymentFile) { toast.error("Прикрепите скриншот чека"); return; }
-    const user = auth.currentUser;
-    if (!user) { toast.error("Войдите в аккаунт"); return; }
-
-    setPaymentSubmitting(true); setPaymentUploading(true);
-    try {
-      const storageRef = ref(storage, `receipts/${user.uid}/${Date.now()}_${paymentFile.name}`);
-      await uploadBytes(storageRef, paymentFile);
-      const downloadURL = await getDownloadURL(storageRef);
-
-      await addDoc(collection(db, "payment_requests"), {
-        student_id: user.uid, tutor_id: uid, item_id: "general", item_type: "course",
-        item_name: "Оплата занятий", amount: 2000, receipt_url: downloadURL,
-        status: "pending", created_at: serverTimestamp(),
-      });
-      toast.success("✅ Заявка отправлена!");
-      setPaymentFile(null); setShowPaymentModal(false);
-    } catch (error: any) {
-      toast.error("Ошибка: " + error.message);
-    } finally {
-      setPaymentSubmitting(false); setPaymentUploading(false);
-    }
-  }
-
-  async function saveSettings() {
+  async function saveFinanceSettings() {
     setSavingSettings(true);
     try {
-      await setDoc(doc(db, "settings", "payments"), {
-        enabled: paymentEnabled, primary_provider: primaryProvider,
-        // ЗАМЕНЕНО: Lava на Enot
-        enot_shop_id: enotShopId, enot_secret_key: enotSecretKey,
-        enot_success_url: enotSuccessUrl, enot_fail_url: enotFailUrl,
-        
-        prodamus_shop_id: prodamusShopId, prodamus_secret_key: prodamusSecretKey,
-        prodamus_success_url: prodamusSuccessUrl, prodamus_fail_url: prodamusFailUrl,
-        manual_instructions: manualPaymentInstructions, updated_at: serverTimestamp(),
+      await setDoc(doc(db, "settings", "finance"), {
+        ...financeSettings,
+        updated_at: serverTimestamp(),
+        tutor_id: uid,
       }, { merge: true });
-      toast.success("⚙️ Настройки оплаты сохранены!");
+      toast.success("✅ Настройки сохранены!");
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
     } finally {
@@ -404,101 +389,204 @@ function FinanceContent() {
     }
   }
 
-  const getFilteredPayments = () => {
-    let filtered = payments.map(p => ({ ...p, autoStatus: getAutoStatus(p) }));
-    if (filterStatus !== "all") filtered = filtered.filter(p => p.autoStatus === filterStatus);
+  const filteredPayments = payments.filter(p => {
+    if (filterStatus !== "all" && getAutoStatus(p) !== filterStatus) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(p => (p.student_name || "").toLowerCase().includes(q) || (p.tariff || "").toLowerCase().includes(q));
+      return (p.student_name || "").toLowerCase().includes(q) || (p.tariff || "").toLowerCase().includes(q);
     }
-    if (filterPeriod !== "all") {
-      const now = new Date();
-      const days = filterPeriod === "week" ? 7 : filterPeriod === "month" ? 30 : 365;
-      const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter(p => getPaymentDate(p) >= startDate);
-    }
-    return filtered;
-  };
+    return true;
+  });
 
-  const filteredPayments = getFilteredPayments();
+  const activeSubscription = payments.find(p => p.confirmed && (p.lessons_remaining || 0) > 0) || null;
   const totalReceived = payments.filter(p => p.confirmed).reduce((sum, p) => sum + (p.amount || 0), 0);
-  const totalLessons = payments.filter(p => p.confirmed).reduce((sum, p) => sum + (p.lessons || 0), 0);
   const pendingTotal = payments.filter(p => !p.confirmed && getAutoStatus(p) === "pending").reduce((sum, p) => sum + (p.amount || 0), 0);
-  const overdueTotal = payments.filter(p => !p.confirmed && getAutoStatus(p) === "overdue").reduce((sum, p) => sum + (p.amount || 0), 0);
-  const avgLessonPrice = totalLessons > 0 ? Math.round(totalReceived / totalLessons) : 0;
 
-  const chartData = (() => {
-    const months: Record<string, number> = {};
-    filteredPayments.forEach(p => {
-      if (p.confirmed) {
-        const date = getPaymentDate(p);
-        const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
-        months[key] = (months[key] || 0) + (p.amount || 0);
-      }
-    });
-    return Object.entries(months).map(([month, total]) => ({
-      month: month.split("-")[1] + "/" + month.split("-")[0].slice(-2), total,
-    })).slice(-6);
-  })();
-
-  const statusChartData = (() => {
-    const counts = { paid: 0, pending: 0, overdue: 0 };
-    filteredPayments.forEach(p => { const s = getAutoStatus(p); if (counts.hasOwnProperty(s)) counts[s as keyof typeof counts]++; });
-    return [
-      { name: "Оплачено", value: counts.paid, color: "#10b981" },
-      { name: "Ожидание", value: counts.pending, color: "#f59e0b" },
-      { name: "Просрочено", value: counts.overdue, color: "#ef4444" },
-    ].filter(d => d.value > 0);
-  })();
-
-  const exportToCSV = () => {
-    const headers = ["Дата", "Ученик", "Тариф", "Сумма", "Занятий", "Дедлайн", "Статус", "Комментарий"];
-    const rows = filteredPayments.map(p => [formatFullDate(p.created_at), p.student_name || "—", p.tariff || "—", p.amount || 0, p.lessons || 0, p.deadline ? formatFullDate(p.deadline) : "—", getStatusText(getAutoStatus(p)), p.comment || "—"].map(escapeCSV));
-    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `payments_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
-    URL.revokeObjectURL(url);
-    toast.success("📄 Экспортировано в CSV");
-  };
-
-  if (loadingLedger) return (
+  if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100 flex items-center justify-center">
-      <div className="relative w-20 h-20"><div className="absolute inset-0 rounded-full border-4 border-amber-500/20"></div><div className="absolute inset-0 rounded-full border-4 border-t-amber-500 animate-spin"></div></div>
+      <Loader2 className="w-10 h-10 animate-spin text-amber-600" />
     </div>
   );
+
+  if (role === "student" || role === "parent") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6 relative z-10">
+          <div className="grid grid-cols-3 items-center mb-6">
+            <Link href={`/dashboard?uid=${uid}&role=${role}`} className="text-indigo-600 hover:text-indigo-800 transition font-medium flex items-center gap-1">
+              <ChevronLeft size={18} /> Назад
+            </Link>
+            <h1 className="text-2xl font-serif font-bold text-indigo-900 text-center">
+              {role === "parent" ? "Управление оплатами" : "Мои платежи"}
+            </h1>
+            <div className="w-24"></div>
+          </div>
+
+          {role === "parent" && children.length > 0 && (
+            <div className="bg-white rounded-2xl p-4 shadow-md border border-indigo-100 mb-6">
+              <label className="text-sm font-bold text-indigo-800 block mb-2">👦 Вы просматриваете данные для:</label>
+              <select 
+                value={selectedChildId} 
+                onChange={(e) => setSelectedChildId(e.target.value)}
+                className="w-full bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-indigo-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                {children.map(child => (
+                  <option key={child.id} value={child.id}>{child.full_name || "Ученик"}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+            {availableTabs.filter(t => t.id !== "child_select").map((tab: any) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${
+                  activeTab === tab.id ? "bg-indigo-600 text-white shadow-lg" : "bg-white/80 text-indigo-700 hover:bg-white"
+                }`}
+              >
+                <tab.icon size={16} /> {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-3xl p-6 shadow-lg border border-indigo-100">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
+                    <GraduationCap className="text-indigo-600" /> Текущий абонемент
+                  </h2>
+                  <span className={`px-3 py-1 rounded-full text-sm font-bold ${activeSubscription ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
+                    {activeSubscription ? "Активен" : "Нет активного абонемента"}
+                  </span>
+                </div>
+
+                {activeSubscription ? (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <p className="text-sm text-gray-500">Тариф</p>
+                        <p className="text-lg font-bold text-gray-800 capitalize">{activeSubscription.tariff.replace('_', ' ')}</p>
+                        <p className="text-xs text-indigo-500 font-medium mt-1">
+                          {activeSubscription.type === 'group' ? '👥 Групповые занятия' : '👤 Индивидуальные занятия'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-500">Осталось занятий</p>
+                        <p className="text-3xl font-black text-indigo-600">
+                          {activeSubscription.lessons_remaining} <span className="text-lg text-gray-400">/ {activeSubscription.lessons_count}</span>
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
+                      <div 
+                        className="bg-gradient-to-r from-indigo-500 to-purple-500 h-4 rounded-full transition-all duration-1000"
+                        style={{ width: `${((activeSubscription.lessons_count - activeSubscription.lessons_remaining) / activeSubscription.lessons_count) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 text-center">
+                      Использовано {activeSubscription.lessons_used} из {activeSubscription.lessons_count} занятий
+                    </p>
+
+                    {activeSubscription.lessons_remaining <= 2 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
+                        <AlertTriangle className="text-amber-600 flex-shrink-0" size={20} />
+                        <p className="text-sm text-amber-800 font-medium">
+                          Абонемент заканчивается! Рекомендуем пополнить его заранее.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <p className="text-gray-500 mb-4">У вас пока нет оплаченных занятий</p>
+                    <Link 
+                      href={`/pricing?uid=${uid}&role=${role}${selectedChildId ? `&childId=${selectedChildId}` : ''}`}
+                      className="inline-flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition"
+                    >
+                      <Plus size={18} /> Выбрать тариф и оплатить
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "history" && (
+            <div className="bg-white rounded-3xl shadow-lg border border-indigo-100 overflow-hidden">
+              <div className="p-5 border-b border-indigo-100 flex items-center justify-between">
+                <h2 className="font-bold text-indigo-900">История платежей</h2>
+                <Link 
+                  href={`/pricing?uid=${uid}&role=${role}`}
+                  className="text-sm bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-200 transition"
+                >
+                  + Пополнить
+                </Link>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-indigo-50/50">
+                    <tr>
+                      <th className="text-left py-3 px-4 text-xs text-indigo-500 font-bold">Дата</th>
+                      <th className="text-left py-3 px-4 text-xs text-indigo-500 font-bold">Тип</th>
+                      <th className="text-right py-3 px-4 text-xs text-indigo-500 font-bold">Сумма</th>
+                      <th className="text-center py-3 px-4 text-xs text-indigo-500 font-bold">Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPayments.length === 0 ? (
+                      <tr><td colSpan={4} className="text-center py-8 text-gray-400">История пуста</td></tr>
+                    ) : filteredPayments.map((p: any) => (
+                      <tr key={p.id} className="border-b border-indigo-50 hover:bg-indigo-50/30 transition">
+                        <td className="py-3 px-4 text-gray-600">{formatDate(p.created_at)}</td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                            {p.type === 'group' ? '👥 Группа' : '👤 Индивид'} ({p.lessons_count} зан.)
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-gray-800">{p.amount?.toLocaleString()} ₽</td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${getStatusColor(getAutoStatus(p))}`}>
+                            {getStatusText(getAutoStatus(p))}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100">
       <div className="max-w-7xl mx-auto p-4 sm:p-6 relative z-10">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <Link href={`/dashboard?uid=${uid}&role=${role}`} className="text-amber-600 hover:text-amber-700 transition font-medium flex items-center gap-1 group">
-            <ChevronLeft size={18} className="group-hover:-translate-x-0.5 transition" /> Назад
+        
+        <div className="grid grid-cols-3 items-center mb-6">
+          <Link href={`/dashboard?uid=${uid}&role=${role}`} className="text-amber-600 hover:text-amber-700 transition font-medium flex items-center gap-1">
+            <ChevronLeft size={18} /> Назад
           </Link>
-          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-500 to-yellow-600 bg-clip-text text-transparent text-center flex-1">
-            💰 Финансы и Оплата
-          </h1>
-          <button onClick={() => setShowPaymentModal(true)} className="flex items-center gap-2 bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-emerald-600 transition shadow-lg">
-            <Plus size={16} /> Тест оплаты
-          </button>
+          <h1 className="text-2xl font-serif font-bold text-amber-900 text-center">Финансы и учет</h1>
+          <div className="w-24"></div>
         </div>
 
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {[
-            { id: "stats", label: "📊 Статистика и Учет", icon: TrendingUp },
-            { id: "requests", label: `📥 Заявки с чеками ${paymentRequests.length > 0 ? `(${paymentRequests.length})` : ""}`, icon: Receipt },
-            { id: "settings", label: "⚙️ Настройки оплаты", icon: Settings },
-          ].map((tab) => (
+          {tutorTabs.map((tab: any) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${
-                activeTab === tab.id 
-                  ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20" 
-                  : "bg-white/80 text-amber-700 hover:bg-white"
+                activeTab === tab.id ? "bg-amber-600 text-white shadow-lg" : "bg-white/80 text-amber-700 hover:bg-white"
               }`}
             >
-              <tab.icon size={16} /> {tab.label}
+              <tab.icon size={16} /> {tab.label} {tab.id === 'requests' && paymentRequests.length > 0 ? `(${paymentRequests.length})` : ''}
             </button>
           ))}
         </div>
@@ -512,109 +600,129 @@ function FinanceContent() {
                 <p className="text-xs text-gray-500">Всего получено</p>
               </div>
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 shadow-lg border border-amber-200/50">
-                <BookOpen size={18} className="text-amber-500 mb-1" />
-                <p className="text-2xl font-bold text-amber-600">{totalLessons}</p>
-                <p className="text-xs text-gray-500">Оплачено занятий</p>
+                <Users size={18} className="text-blue-500 mb-1" />
+                <p className="text-2xl font-bold text-blue-600">{students.length}</p>
+                <p className="text-xs text-gray-500">Активных учеников</p>
               </div>
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 shadow-lg border border-amber-200/50">
-                <Clock size={18} className="text-yellow-500 mb-1" />
-                <p className="text-2xl font-bold text-yellow-600">{pendingTotal.toLocaleString()} ₽</p>
-                <p className="text-xs text-gray-500">В ожидании</p>
+                <Users size={18} className="text-purple-500 mb-1" />
+                <p className="text-2xl font-bold text-purple-600">{groups.length}</p>
+                <p className="text-xs text-gray-500">Активных групп</p>
               </div>
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 shadow-lg border border-amber-200/50">
                 <AlertTriangle size={18} className="text-red-500 mb-1" />
-                <p className="text-2xl font-bold text-red-500">{overdueTotal.toLocaleString()} ₽</p>
-                <p className="text-xs text-gray-500">Просрочено</p>
-              </div>
-            </div>
-
-            {avgLessonPrice > 0 && (
-              <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/10 rounded-2xl p-4 border border-amber-200/50 flex items-center justify-between">
-                <div><p className="text-sm text-amber-700 font-medium">💎 Средняя стоимость занятия</p></div>
-                <p className="text-3xl font-bold text-amber-600">{avgLessonPrice.toLocaleString()} ₽</p>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white/90 backdrop-blur rounded-2xl p-5 shadow-lg border border-amber-200/50">
-                <h3 className="font-semibold text-amber-700 mb-4 flex items-center gap-2"><TrendingUp size={18} /> Динамика платежей</h3>
-                {chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip formatter={(value) => `${value} ₽`} />
-                      <Line type="monotone" dataKey="total" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : <p className="text-gray-400 text-center py-12">Нет данных</p>}
-              </div>
-              <div className="bg-white/90 backdrop-blur rounded-2xl p-5 shadow-lg border border-amber-200/50">
-                <h3 className="font-semibold text-amber-700 mb-4 flex items-center gap-2"><Shield size={18} /> Статусы платежей</h3>
-                {statusChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie data={statusChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                        {statusChartData.map((entry, index) => (<Cell key={index} fill={entry.color} />))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : <p className="text-gray-400 text-center py-12">Нет данных</p>}
+                <p className="text-2xl font-bold text-red-500">
+                  {payments.filter(p => !p.confirmed && getAutoStatus(p) === "overdue").length}
+                </p>
+                <p className="text-xs text-gray-500">Просроченных оплат</p>
               </div>
             </div>
 
             <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-5 border border-amber-200/50">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                <h2 className="font-semibold text-amber-700 flex items-center gap-2"><Receipt size={18} /> История платежей ({filteredPayments.length})</h2>
-                <div className="flex gap-2">
-                  <button onClick={() => { resetPaymentForm(); setShowAddForm(!showAddForm); }} className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-yellow-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:from-amber-600 hover:to-yellow-700 transition shadow">
-                    <Plus size={16} /> {editingPayment ? "Редактировать" : "Платёж"}
-                  </button>
-                  <button onClick={exportToCSV} className="flex items-center gap-2 bg-white border border-amber-200 text-amber-600 px-4 py-2 rounded-xl text-sm font-medium hover:bg-amber-50 transition">
-                    <Download size={16} /> CSV
-                  </button>
-                </div>
+                <h2 className="font-semibold text-amber-700 flex items-center gap-2"><Receipt size={18} /> История платежей</h2>
+                <button onClick={() => { resetPaymentForm(); setShowAddForm(!showAddForm); }} className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-yellow-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:from-amber-600 hover:to-yellow-700 transition shadow">
+                  <Plus size={16} /> Создать платёж
+                </button>
               </div>
 
               {showAddForm && (
                 <form onSubmit={addPayment} className="bg-amber-50/50 rounded-xl p-4 mb-4 border border-amber-200 space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs text-amber-600 font-medium">Ученик</label>
-                      <select value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)} required className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white">
-                        <option value="">Выберите ученика</option>
-                        {students.map((s: any) => (<option key={s.id} value={s.id}>{s.full_name} | Оплачено: {s.paid_lessons || 0}</option>))}
-                      </select>
+                      <label className="text-xs text-amber-600 font-medium">Тип платежа</label>
+                      <div className="flex gap-2 mt-1">
+                        <button type="button" onClick={() => { setPaymentType("individual"); setSelectedGroup(""); }} className={`flex-1 py-2 rounded-lg text-sm font-bold border transition ${paymentType === "individual" ? "bg-amber-500 text-white border-amber-500" : "bg-white text-gray-600 border-gray-300"}`}>
+                          👤 Индивидуальное
+                        </button>
+                        <button type="button" onClick={() => setPaymentType("group")} className={`flex-1 py-2 rounded-lg text-sm font-bold border transition ${paymentType === "group" ? "bg-blue-500 text-white border-blue-500" : "bg-white text-gray-600 border-gray-300"}`}>
+                          👥 Групповое
+                        </button>
+                      </div>
                     </div>
+                    
+                    {/* ✅ НОВОЕ: Выбор группы */}
+                    {paymentType === "group" && (
+                      <div>
+                        <label className="text-xs text-amber-600 font-medium">Выбрать группу</label>
+                        <select 
+                          value={selectedGroup} 
+                          onChange={(e) => {
+                            setSelectedGroup(e.target.value);
+                            const group = groups.find(g => g.id === e.target.value);
+                            if (group) {
+                              setComment(`Оплата за группу "${group.name}"`);
+                              setAmount(group.price_per_lesson * lessons);
+                            }
+                          }}
+                          className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white"
+                        >
+                          <option value="">— Выберите группу —</option>
+                          {groups.map(g => (
+                            <option key={g.id} value={g.id}>{g.name} ({g.price_per_lesson} ₽/зан)</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Ученик (только для индивидуальных) */}
+                    {paymentType === "individual" && (
+                      <div>
+                        <label className="text-xs text-amber-600 font-medium">Ученик</label>
+                        <select value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)} required className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white">
+                          <option value="">Выберите ученика</option>
+                          {students.map((s: any) => (<option key={s.id} value={s.id}>{s.full_name}</option>))}
+                        </select>
+                      </div>
+                    )}
+                    
                     <div>
-                      <label className="text-xs text-amber-600 font-medium">📅 Дедлайн оплаты</label>
-                      <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} min={new Date().toISOString().slice(0, 10)} className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" />
+                      <label className="text-xs text-amber-600 font-medium">
+                        Сумма (₽)
+                        <span className="text-stone-400 ml-1 text-[10px]">
+                          {selectedGroup 
+                            ? `(группа: ${groups.find(g => g.id === selectedGroup)?.price_per_lesson} ₽/зан × ${lessons})`
+                            : `(по умолчанию: ${paymentType === "individual" ? financeSettings.price_individual : financeSettings.price_group} ₽/зан × ${lessons})`
+                          }
+                        </span>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={amount} 
+                        onChange={(e) => setAmount(parseInt(e.target.value) || 0)} 
+                        min={0}
+                        className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" 
+                      />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs text-amber-600 font-medium">Сумма (₽)</label>
-                      <input type="number" value={amount} onChange={(e) => setAmount(parseInt(e.target.value) || 0)} min={1} required className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-amber-600 font-medium">Занятий</label>
+                      <label className="text-xs text-amber-600 font-medium">Кол-во занятий</label>
                       <input type="number" value={lessons} onChange={(e) => setLessons(parseInt(e.target.value) || 1)} min={1} required className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" />
                     </div>
                     <div>
-                      <label className="text-xs text-amber-600 font-medium">Тариф</label>
-                      <select value={tariff} onChange={(e) => setTariff(e.target.value)} className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white">
-                        <option value="Пробный">🎁 Пробный</option>
-                        <option value="Старт">⭐ Старт (4)</option>
-                        <option value="Оптима">📦 Оптима (8)</option>
-                        <option value="Максимум">🚀 Максимум (12)</option>
-                      </select>
+                      <label className="text-xs text-amber-600 font-medium">Дедлайн</label>
+                      <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" />
                     </div>
                   </div>
+
+                  <div>
+                    <label className="text-xs text-amber-600 font-medium">Комментарий</label>
+                    <input 
+                      type="text" 
+                      value={comment} 
+                      onChange={(e) => setComment(e.target.value)} 
+                      placeholder="Например: Оплата за март"
+                      className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" 
+                    />
+                  </div>
+
                   <div className="flex gap-3">
                     <button type="submit" disabled={savingPayment} className="flex-1 bg-amber-500 text-white py-2.5 rounded-xl font-bold hover:bg-amber-600 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                      <Save size={16} /> {savingPayment ? "Сохранение..." : editingPayment ? "🔄 Обновить" : "✨ Создать"}
+                      <Save size={16} /> {savingPayment ? "Сохранение..." : "✨ Создать"}
                     </button>
                     <button type="button" onClick={resetPaymentForm} className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition">Отмена</button>
                   </div>
@@ -622,16 +730,10 @@ function FinanceContent() {
               )}
 
               <div className="flex flex-wrap gap-3 mb-4 p-3 bg-white rounded-xl border border-amber-100">
-                <select value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value as any)} className="border border-amber-200 rounded-lg p-1.5 text-sm bg-white">
-                  <option value="all">Всё время</option>
-                  <option value="week">7 дней</option>
-                  <option value="month">Месяц</option>
-                  <option value="year">Год</option>
-                </select>
                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as any)} className="border border-amber-200 rounded-lg p-1.5 text-sm bg-white">
                   <option value="all">Все статусы</option>
                   <option value="paid">✅ Оплачено</option>
-                  <option value="pending">⏳ Ожидание</option>
+                  <option value="pending"> Ожидание</option>
                   <option value="overdue">🔴 Просрочено</option>
                 </select>
                 <div className="relative flex-1 min-w-[150px]">
@@ -645,9 +747,9 @@ function FinanceContent() {
                   <thead>
                     <tr className="border-b border-amber-200">
                       <th className="text-left py-3 px-2 text-xs text-amber-500">Дата</th>
-                      <th className="text-left py-3 px-2 text-xs text-amber-500">Ученик</th>
+                      <th className="text-left py-3 px-2 text-xs text-amber-500">Ученик/Группа</th>
+                      <th className="text-left py-3 px-2 text-xs text-amber-500">Тип</th>
                       <th className="text-right py-3 px-2 text-xs text-amber-500">Сумма</th>
-                      <th className="text-center py-3 px-2 text-xs text-amber-500">Занятий</th>
                       <th className="text-center py-3 px-2 text-xs text-amber-500">Статус</th>
                       <th className="text-right py-3 px-2"></th>
                     </tr>
@@ -661,30 +763,23 @@ function FinanceContent() {
                         <tr key={payment.id} className="border-b border-amber-100 hover:bg-amber-50/50 transition">
                           <td className="py-3 px-2 text-xs text-gray-500">{formatDate(payment.created_at)}</td>
                           <td className="py-3 px-2 font-medium text-gray-800">{payment.student_name || "—"}</td>
+                          <td className="py-3 px-2">
+                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${payment.type === 'group' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
+                              {payment.type === 'group' ? '👥 Группа' : '👤 Индивид'}
+                            </span>
+                          </td>
                           <td className="py-3 px-2 text-right font-bold text-amber-600">{payment.amount?.toLocaleString()} ₽</td>
-                          <td className="py-3 px-2 text-center"><span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs">{payment.lessons || 0}</span></td>
                           <td className="py-3 px-2 text-center">
                             <span className={`px-2 py-0.5 rounded-full text-xs ${getStatusColor(autoStatus)}`}>
-                              {getStatusIcon(autoStatus)} {getStatusText(autoStatus)}
+                              {getStatusText(autoStatus)}
                             </span>
                           </td>
                           <td className="py-3 px-2 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {!payment.confirmed && paymentEnabled && (primaryProvider === "enot" || primaryProvider === "prodamus") && (
-                                <button 
-                                  onClick={() => payWithProvider(payment)} 
-                                  disabled={paymentLoading === payment.id}
-                                  className={`p-1.5 text-white rounded-lg hover:opacity-90 transition disabled:opacity-50 ${primaryProvider === "enot" ? "bg-gradient-to-r from-blue-600 to-indigo-600" : "bg-gradient-to-r from-purple-500 to-pink-500"}`}
-                                  title={`Оплатить через ${primaryProvider === "enot" ? "Enot.io" : "Prodamus"}`}
-                                >
-                                  {paymentLoading === payment.id ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
-                                </button>
-                              )}
                               {!payment.confirmed && (
-                                <button onClick={() => confirmPayment(payment)} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition" title="Подтвердить"><Check size={14} /></button>
+                                <button onClick={() => confirmPayment(payment)} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition" title="Подтвердить"><CheckCircle size={16} /></button>
                               )}
-                              <button onClick={() => { setEditingPayment(payment); setSelectedStudent(payment.student_id); setAmount(payment.amount); setLessons(payment.lessons); setTariff(payment.tariff); setComment(payment.comment || ""); setShowAddForm(true); }} className="p-1 text-gray-400 hover:text-amber-500 transition" title="Редактировать"><Edit2 size={16} /></button>
-                              <button onClick={() => deletePayment(payment)} className="p-1 text-gray-400 hover:text-red-500 transition" title="Удалить"><Trash2 size={16} /></button>
+                              <button onClick={() => deletePayment(payment.id)} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition" title="Удалить"><Trash2 size={16} /></button>
                             </div>
                           </td>
                         </tr>
@@ -698,185 +793,120 @@ function FinanceContent() {
         )}
 
         {activeTab === "requests" && (
-          <div className="space-y-6">
-            <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-6 border border-amber-200/50">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="font-bold text-xl text-amber-700 flex items-center gap-2"><Receipt size={20} /> Входящие заявки на оплату</h2>
-                <div className="bg-amber-100 text-amber-800 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2">
-                  <Clock className="w-4 h-4" /> Ожидают: {paymentRequests.length}
-                </div>
+          <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-6 border border-amber-200/50">
+            <h2 className="font-bold text-xl text-amber-700 mb-6 flex items-center gap-2"><Receipt size={20} /> Входящие заявки на оплату</h2>
+            {paymentRequests.length === 0 ? (
+              <div className="text-center py-12 bg-stone-50 rounded-xl border-2 border-dashed border-stone-200">
+                <p className="text-stone-600 font-medium">Новых заявок нет 🎉</p>
               </div>
-
-              {loadingRequests ? (
-                <div className="text-center py-12"><Loader2 className="w-8 h-8 animate-spin text-amber-600 mx-auto" /><p className="text-stone-500 text-sm mt-2">Загрузка заявок...</p></div>
-              ) : paymentRequests.length === 0 ? (
-                <div className="text-center py-12 bg-stone-50 rounded-xl border-2 border-dashed border-stone-200">
-                  <div className="text-4xl mb-2">🎉</div>
-                  <p className="text-stone-600 font-medium">Новых заявок нет</p>
-                  <p className="text-stone-400 text-xs mt-1">Как только ученик загрузит чек, он появится здесь</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {paymentRequests.map((req) => (
-                    <div key={req.id} className="bg-stone-50 rounded-xl p-5 border border-stone-200 flex flex-col sm:flex-row gap-5 items-start sm:items-center">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-bold text-stone-800 text-lg">{req.item_name}</span>
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-xs font-bold rounded-full">{req.item_type === "course" ? "Курс" : "ДЗ"}</span>
-                        </div>
-                        <p className="text-stone-600 text-sm mb-1">
-                          Ученик ID: <span className="font-mono text-stone-800">{req.student_id.slice(0, 8)}...</span> • 
-                          Сумма: <span className="font-bold text-emerald-600 text-base">{req.amount} ₽</span>
-                        </p>
-                        <p className="text-xs text-stone-400">{new Date(req.created_at).toLocaleString("ru-RU")}</p>
-                      </div>
-
-                      <div className="flex items-center gap-3 w-full sm:w-auto">
-                        <button onClick={() => setSelectedReceiptImage(req.receipt_url)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-stone-100 text-stone-700 rounded-xl text-sm font-medium transition border border-stone-200">
-                          <Eye className="w-4 h-4" /> Смотреть чек
-                        </button>
-                        <button onClick={() => handleApproveRequest(req)} disabled={processingRequestId === req.id} className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 disabled:opacity-50">
-                          {processingRequestId === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Подтвердить
-                        </button>
-                        <button onClick={() => handleRejectRequest(req.id)} disabled={processingRequestId === req.id} className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-sm font-bold transition disabled:opacity-50">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
+            ) : (
+              <div className="space-y-4">
+                {paymentRequests.map((req: any) => (
+                  <div key={req.id} className="bg-stone-50 rounded-xl p-5 border border-stone-200 flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-stone-800 text-lg">{req.item_name}</p>
+                      <p className="text-stone-600 text-sm">Сумма: <span className="font-bold text-emerald-600">{req.amount} ₽</span></p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setSelectedReceiptImage(req.receipt_url)} className="px-4 py-2 bg-white hover:bg-stone-100 text-stone-700 rounded-xl text-sm font-medium transition border border-stone-200 flex items-center gap-2">
+                        <Eye className="w-4 h-4" /> Чек
+                      </button>
+                      <button onClick={() => handleApproveRequest(req)} disabled={processingRequestId === req.id} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition flex items-center gap-2 disabled:opacity-50">
+                        {processingRequestId === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Подтвердить
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {activeTab === "settings" && (
+        {activeTab === "settings" && settingsLoaded && (
           <div className="space-y-6">
             <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-6 border border-amber-200/50">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="font-bold text-xl text-amber-700 flex items-center gap-2"><Settings size={20} /> Настройки оплаты</h2>
-                <button type="button" onClick={() => { setPaymentEnabled(!paymentEnabled); }} className={`relative w-14 h-8 rounded-full transition-colors duration-300 ${paymentEnabled ? 'bg-emerald-600' : 'bg-stone-300'}`}>
-                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all duration-300 ${paymentEnabled ? 'left-7' : 'left-1'}`} />
-                </button>
+              <h3 className="font-bold text-xl text-amber-700 mb-4 flex items-center gap-2">
+                <Wallet size={20} /> Цены по умолчанию
+              </h3>
+              <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 mb-4">
+                <p className="text-sm text-amber-800">
+                  💡 <b>Важно:</b> Цены редактируются в общих настройках платформы. Здесь они отображаются только для справки.
+                </p>
               </div>
-              
-              {paymentEnabled && (
-                <div className="space-y-6">
-                  <div>
-                    <label className="text-sm font-medium text-stone-700 mb-3 block">Способ оплаты</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {/* ЗАМЕНЕНО: Lava на Enot */}
-                      <button onClick={() => setPrimaryProvider("enot")} className={`p-4 rounded-xl border-2 text-sm font-medium transition text-left ${primaryProvider === "enot" ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-stone-200 bg-white text-stone-600 hover:border-blue-300'}`}>
-                        <div className="text-2xl mb-2">💎</div>
-                        <div className="font-bold text-base">Enot.io</div>
-                        <div className="text-xs mt-1 opacity-75">Карты РФ → Крипта/Счёт</div>
-                      </button>
-                      <button onClick={() => setPrimaryProvider("prodamus")} className={`p-4 rounded-xl border-2 text-sm font-medium transition text-left ${primaryProvider === "prodamus" ? 'border-purple-500 bg-purple-50 text-purple-800' : 'border-stone-200 bg-white text-stone-600 hover:border-purple-300'}`}>
-                        <div className="text-2xl mb-2">🟣</div>
-                        <div className="font-bold text-base">Prodamus</div>
-                        <div className="text-xs mt-1 opacity-75">Карты РФ → Счёт РФ</div>
-                      </button>
-                      <button onClick={() => setPrimaryProvider("manual")} className={`p-4 rounded-xl border-2 text-sm font-medium transition text-left ${primaryProvider === "manual" ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-stone-200 bg-white text-stone-600 hover:border-amber-300'}`}>
-                        <div className="text-2xl mb-2">🤝</div>
-                        <div className="font-bold text-base">Ручная</div>
-                        <div className="text-xs mt-1 opacity-75">Ученик загружает чек</div>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="min-h-[280px]">
-                    {/* ЗАМЕНЕНО: Lava на Enot */}
-                    {primaryProvider === "enot" && (
-                      <div className="p-5 bg-blue-50 rounded-xl border-2 border-blue-200">
-                        <h4 className="font-bold text-blue-900 mb-4 flex items-center gap-2">💎 Настройки Enot.io</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">Merchant ID</label>
-                            <input type="text" value={enotShopId} onChange={(e) => setEnotShopId(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="Ваш ID магазина" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">Secret Key</label>
-                            <input type="password" value={enotSecretKey} onChange={(e) => setEnotSecretKey(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="Секретный ключ" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">URL успеха</label>
-                            <input type="text" value={enotSuccessUrl} onChange={(e) => setEnotSuccessUrl(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/success" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">URL ошибки</label>
-                            <input type="text" value={enotFailUrl} onChange={(e) => setEnotFailUrl(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-blue-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/failed" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {primaryProvider === "prodamus" && (
-                      <div className="p-5 bg-purple-50 rounded-xl border-2 border-purple-200">
-                        <h4 className="font-bold text-purple-900 mb-4 flex items-center gap-2">🟣 Настройки Prodamus</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">Shop ID</label>
-                            <input type="text" value={prodamusShopId} onChange={(e) => setProdamusShopId(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="Ваш ID магазина" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">Secret Key</label>
-                            <input type="password" value={prodamusSecretKey} onChange={(e) => setProdamusSecretKey(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="Секретный ключ" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">URL успеха</label>
-                            <input type="text" value={prodamusSuccessUrl} onChange={(e) => setProdamusSuccessUrl(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/success" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">URL ошибки</label>
-                            <input type="text" value={prodamusFailUrl} onChange={(e) => setProdamusFailUrl(e.target.value)} className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-purple-400 focus:outline-none" placeholder="https://jenyawisch.com/payments/failed" />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {primaryProvider === "manual" && (
-                      <div className="p-5 bg-green-50 rounded-xl border-2 border-green-200">
-                        <h4 className="font-bold text-green-900 mb-4 flex items-center gap-2">📝 Настройки ручной оплаты</h4>
-                        <div className="grid grid-cols-1 gap-4">
-                          <div>
-                            <label className="text-xs text-stone-600 font-medium">Инструкция для ученика</label>
-                            <textarea value={manualPaymentInstructions} onChange={(e) => setManualPaymentInstructions(e.target.value)} rows={4} className="w-full border border-green-200 rounded-lg p-2.5 mt-1 text-sm bg-white focus:border-green-400 focus:outline-none resize-none" placeholder="Например: Переведите сумму через Золотую Корону..." />
-                          </div>
-                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex gap-2 items-start">
-                            <span className="text-lg flex-shrink-0">💡</span>
-                            <span>Ученик увидит эту инструкцию и сможет прикрепить скриншот чека. Вы подтвердите оплату вручную во вкладке "Заявки с чеками".</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {(primaryProvider === "enot" || primaryProvider === "prodamus") && (
-                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800 flex gap-2 items-start">
-                      <span className="text-lg flex-shrink-0">💡</span>
-                      <div className="flex-1">
-                        <p className="font-medium mb-1">Webhook URL для {primaryProvider === "enot" ? "Enot.io" : "Prodamus"}:</p>
-                        <code className="bg-blue-100 px-2 py-1 rounded text-xs break-all">https://jenyawisch.com/api/payments/{primaryProvider}/webhook</code>
-                        <p className="text-xs mt-2 text-blue-700">Настройте этот URL в кабинете провайдера → Магазин → Webhook</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <button onClick={saveSettings} disabled={savingSettings} className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-600 text-white rounded-xl font-bold hover:from-amber-600 hover:to-yellow-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                    {savingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    {savingSettings ? "Сохранение..." : "💾 Сохранить настройки"}
-                  </button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs text-stone-600 font-medium">👤 Индивидуальное занятие</label>
+                  <input type="number" value={financeSettings.price_individual} disabled className="w-full border border-amber-200 rounded-lg p-2.5 mt-1 text-sm bg-gray-100 text-gray-500 cursor-not-allowed" />
                 </div>
-              )}
-
-              {!paymentEnabled && (
-                <div className="text-center py-12 bg-stone-50 rounded-xl border-2 border-dashed border-stone-200">
-                  <div className="text-4xl mb-2">🔒</div>
-                  <p className="text-stone-600 font-medium">Приём оплаты отключён</p>
-                  <p className="text-stone-400 text-xs mt-1">Включите тумблер выше, чтобы настроить провайдера</p>
+                <div>
+                  <label className="text-xs text-stone-600 font-medium"> Групповое занятие</label>
+                  <input type="number" value={financeSettings.price_group} disabled className="w-full border border-amber-200 rounded-lg p-2.5 mt-1 text-sm bg-gray-100 text-gray-500 cursor-not-allowed" />
                 </div>
-              )}
+                <div>
+                  <label className="text-xs text-stone-600 font-medium"> Пробное занятие</label>
+                  <input type="number" value={financeSettings.price_trial} disabled className="w-full border border-amber-200 rounded-lg p-2.5 mt-1 text-sm bg-gray-100 text-gray-500 cursor-not-allowed" />
+                </div>
+              </div>
+              <Link href={`/settings?uid=${uid}&role=${role}`} className="inline-flex items-center gap-2 mt-4 text-sm text-amber-700 hover:text-amber-900 font-medium">
+                <Settings size={14} /> Перейти в общие настройки для изменения цен →
+              </Link>
             </div>
+
+            <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-6 border border-amber-200/50">
+              <h3 className="font-bold text-xl text-amber-700 mb-4 flex items-center gap-2">
+                 Платежные системы
+              </h3>
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                  <h4 className="font-bold text-blue-900 mb-3">Enot.io</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-stone-600">Shop ID</label>
+                      <input type="text" value={financeSettings.enot_shop_id} onChange={(e) => setFinanceSettings({...financeSettings, enot_shop_id: e.target.value})} placeholder="Ваш ID магазина" className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white/80 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-stone-600">Secret Key</label>
+                      <input type="password" value={financeSettings.enot_secret_key} onChange={(e) => setFinanceSettings({...financeSettings, enot_secret_key: e.target.value})} placeholder="Секретный ключ" className="w-full border border-blue-200 rounded-lg p-2.5 mt-1 text-sm bg-white/80 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-purple-50 rounded-xl border border-purple-200">
+                  <h4 className="font-bold text-purple-900 mb-3">Prodamus</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-stone-600">Shop ID</label>
+                      <input type="text" value={financeSettings.prodamus_shop_id} onChange={(e) => setFinanceSettings({...financeSettings, prodamus_shop_id: e.target.value})} placeholder="Ваш ID магазина" className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white/80 focus:border-purple-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-stone-600">Secret Key</label>
+                      <input type="password" value={financeSettings.prodamus_secret_key} onChange={(e) => setFinanceSettings({...financeSettings, prodamus_secret_key: e.target.value})} placeholder="Секретный ключ" className="w-full border border-purple-200 rounded-lg p-2.5 mt-1 text-sm bg-white/80 focus:border-purple-500 focus:outline-none" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-6 border border-amber-200/50">
+              <h3 className="font-bold text-xl text-amber-700 mb-4 flex items-center gap-2">
+                📝 Инструкция для учеников
+              </h3>
+              <textarea 
+                rows={5}
+                value={financeSettings.manual_instructions}
+                onChange={(e) => setFinanceSettings({...financeSettings, manual_instructions: e.target.value})}
+                className="w-full border border-amber-200 rounded-lg p-3 text-sm bg-white/80 focus:border-amber-500 focus:outline-none resize-none" 
+              />
+            </div>
+
+            <button 
+              onClick={saveFinanceSettings}
+              disabled={savingSettings}
+              className="w-full py-4 bg-gradient-to-r from-amber-500 to-yellow-600 text-white rounded-xl font-bold hover:from-amber-600 hover:to-yellow-700 transition shadow-lg flex items-center justify-center gap-2 text-lg disabled:opacity-50"
+            >
+              {savingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save size={20} />} 
+              {savingSettings ? "Сохранение..." : "💾 Сохранить настройки"}
+            </button>
           </div>
         )}
       </div>
@@ -884,40 +914,8 @@ function FinanceContent() {
       {selectedReceiptImage && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedReceiptImage(null)}>
           <div className="relative max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setSelectedReceiptImage(null)} className="absolute -top-10 right-0 text-white hover:text-stone-300 transition"><X className="w-8 h-8" /></button>
+            <button onClick={() => setSelectedReceiptImage(null)} className="absolute -top-10 right-0 text-white hover:text-stone-300 transition"><Trash2 className="w-8 h-8" /></button>
             <img src={selectedReceiptImage} alt="Чек" className="w-full h-auto max-h-[80vh] object-contain rounded-2xl shadow-2xl bg-white" />
-            <p className="text-center text-white/70 text-sm mt-3">Нажмите в любом месте, чтобы закрыть</p>
-          </div>
-        </div>
-      )}
-
-      {showPaymentModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowPaymentModal(false)}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-amber-600 to-emerald-700 px-6 py-5 flex items-center justify-between">
-              <div><h2 className="text-xl font-bold text-white flex items-center gap-2">💳 Тест оплаты</h2><p className="text-white/80 text-sm mt-1">Сумма: 2000 ₽</p></div>
-              <button onClick={() => setShowPaymentModal(false)} className="text-white/80 hover:text-white transition"><X className="w-6 h-6" /></button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <h3 className="font-bold text-amber-900 mb-2">📋 Инструкция</h3>
-                <p className="text-sm text-amber-800 whitespace-pre-wrap">{manualPaymentInstructions}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-stone-700 mb-2">📎 Прикрепите скриншот чека</label>
-                <div className="relative border-2 border-dashed border-stone-300 rounded-xl p-6 text-center hover:border-amber-500 transition-colors bg-stone-50">
-                  <input type="file" accept="image/*" onChange={(e) => { if (e.target.files && e.target.files[0]) setPaymentFile(e.target.files[0]); }} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" disabled={paymentSubmitting} />
-                  {paymentFile ? (
-                    <div className="flex flex-col items-center gap-2"><CheckCircle className="w-8 h-8 text-emerald-600" /><p className="text-sm font-medium text-stone-800 truncate max-w-xs">{paymentFile.name}</p><button onClick={(e) => { e.preventDefault(); setPaymentFile(null); }} className="text-xs text-red-500 hover:text-red-700 underline">Удалить</button></div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2"><Upload className="w-8 h-8 text-stone-400" /><p className="text-sm text-stone-600">Нажмите или перетащите файл</p></div>
-                  )}
-                </div>
-              </div>
-              <button onClick={handlePaymentSubmit} disabled={paymentSubmitting || !paymentFile} className={`w-full py-3.5 rounded-xl font-bold text-white transition flex items-center justify-center gap-2 ${paymentSubmitting || !paymentFile ? "bg-stone-300 cursor-not-allowed" : "bg-gradient-to-r from-amber-600 to-emerald-700 hover:shadow-lg"}`}>
-                {paymentSubmitting ? <><Loader2 className="w-5 h-5 animate-spin" /> Отправка...</> : "✅ Я оплатил, проверить чек"}
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -927,8 +925,14 @@ function FinanceContent() {
 
 export default function PaymentsPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100 flex items-center justify-center"><div className="relative w-20 h-20"><div className="absolute inset-0 rounded-full border-4 border-amber-500/20"></div><div className="absolute inset-0 rounded-full border-4 border-t-amber-500 animate-spin"></div></div></div>}>
-      <FinanceContent />
-    </Suspense>
+    <AuthGuard requiredRole="tutor">
+      <Suspense fallback={
+        <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100 flex items-center justify-center">
+          <Loader2 className="w-10 h-10 animate-spin text-amber-600" />
+        </div>
+      }>
+        <FinanceContent />
+      </Suspense>
+    </AuthGuard>
   );
 }

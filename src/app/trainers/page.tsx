@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import AuthGuard from "@/components/AuthGuard";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -20,9 +21,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// ✅ ОСТАВЛЕНЫ ТОЛЬКО 3 РАБОЧИХ ТРЕНАЖЁРА ПО ХИМИИ
 const TRAINERS = [
   {
     id: "redox",
+    subject: "chemistry",
     name: "ОВР",
     icon: "⚡",
     color: "from-red-500 to-orange-600",
@@ -33,84 +36,20 @@ const TRAINERS = [
     difficulty: "Сложно",
   },
   {
-    id: "chains",
-    name: "Цепочки превращений",
-    icon: "🧬",
-    color: "from-purple-500 to-fuchsia-600",
-    bgLight: "bg-purple-50",
-    description: "Генетические связи в органике. От углеводородов до кислот.",
-    collection: "organic_chains",
-    exam: "ЕГЭ №32",
-    difficulty: "Очень сложно",
-  },
-  {
     id: "ionic",
+    subject: "chemistry",
     name: "Ионные уравнения",
     icon: "⚗️",
     color: "from-cyan-500 to-blue-600",
     bgLight: "bg-cyan-50",
-    description: "Полные и сокращённые ионные уравнения реакций.",
+    description: "Полные и сокращённые ионные уравнения реакций (выбор веществ + ввод).",
     collection: "ionic_equations",
     exam: "ЕГЭ №20",
     difficulty: "Средне",
   },
   {
-    id: "qualitative",
-    name: "Качественные реакции",
-    icon: "🔬",
-    color: "from-emerald-500 to-teal-600",
-    bgLight: "bg-emerald-50",
-    description: "Распознавание веществ по характерным признакам.",
-    collection: "qualitative_reactions",
-    exam: "ЕГЭ №24-26",
-    difficulty: "Средне",
-  },
-  {
-    id: "inorganic",
-    name: "Неорганика",
-    icon: "🧪",
-    color: "from-indigo-500 to-purple-600",
-    bgLight: "bg-indigo-50",
-    description: "Типы оксидов, степени окисления, свойства элементов, решётки.",
-    collection: "inorganic_cards",
-    exam: "ЕГЭ №7-12",
-    difficulty: "Разное",
-  },
-  {
-    id: "calc",
-    name: "Расчётные задачи",
-    icon: "🧮",
-    color: "from-amber-500 to-orange-600",
-    bgLight: "bg-amber-50",
-    description: "Массовая доля, моли, объёмы газов, выход продукта.",
-    collection: "calc_problems",
-    exam: "ЕГЭ №27-29",
-    difficulty: "Сложно",
-  },
-  {
-    id: "reaction_types",
-    name: "Типы реакций",
-    icon: "🎯",
-    color: "from-pink-500 to-rose-600",
-    bgLight: "bg-pink-50",
-    description: "Соединение, разложение, замещение, обмен, ОВР.",
-    collection: "reaction_types",
-    exam: "ЕГЭ №13-15",
-    difficulty: "Легко",
-  },
-  {
-    id: "nomenclature",
-    name: "Номенклатура органики",
-    icon: "🧬",
-    color: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    description: "Систематические названия органических соединений.",
-    collection: "nomenclature_items",
-    exam: "ЕГЭ №13-15",
-    difficulty: "Средне",
-  },
-  {
     id: "trivial_names",
+    subject: "chemistry",
     name: "Тривиальные названия",
     icon: "📛",
     color: "from-fuchsia-500 to-pink-600",
@@ -137,31 +76,42 @@ function TrainersContent() {
     const loadCounts = async () => {
       try {
         let tid = uid;
+        let hasTutor = false;
+        
         if (role === "student") {
           const snap = await getDoc(doc(db, "profiles", uid));
-          if (snap.exists()) tid = snap.data().tutor_id || uid;
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data.tutor_id) {
+              tid = data.tutor_id;
+              hasTutor = true;
+            }
+          }
+        } else {
+          hasTutor = true; // Репетиторы всегда видят свои задания
         }
         
         const newCounts: Record<string, number> = {};
         await Promise.all(
           TRAINERS.map(async (trainer) => {
             try {
-              const q = query(collection(db, trainer.collection), where("tutor_id", "==", tid));
+              // ✅ Если у ученика нет привязанного репетитора, показываем ВСЕ доступные задания
+              const q = hasTutor 
+                ? query(collection(db, trainer.collection), where("tutor_id", "==", tid))
+                : query(collection(db, trainer.collection));
+              
               const snap = await getDocs(q);
               newCounts[trainer.id] = snap.size;
-            } catch { newCounts[trainer.id] = 0; }
+            } catch { 
+              newCounts[trainer.id] = 0; 
+            }
           })
         );
         setCounts(newCounts);
 
-        // Общая статистика из localStorage
         let totalSolved = 0, totalCorrect = 0;
         if (typeof window !== "undefined") {
-          const keys = [
-            `redox_stats_${uid}`, `chains_stats_${uid}`, `ionic_stats_${uid}`,
-            `qual_stats_${uid}`, `inorganic_stats_${uid}`, `calc_stats_${uid}`,
-            `rtypes_stats_${uid}`, `nomenclature_stats_${uid}`, `trivial_stats_${uid}`,
-          ];
+          const keys = TRAINERS.map(t => `${t.id}_stats_${uid}`);
           keys.forEach(key => {
             const saved = localStorage.getItem(key);
             if (saved) {
@@ -175,7 +125,7 @@ function TrainersContent() {
         }
         setTotalStats({ solved: totalSolved, correct: totalCorrect });
       } catch (e) {
-        console.error(e);
+        console.error("Ошибка загрузки статистики тренажёров:", e);
       }
       setLoading(false);
     };
@@ -184,6 +134,9 @@ function TrainersContent() {
 
   const totalTasks = Object.values(counts).reduce((sum, c) => sum + c, 0);
   const accuracy = totalStats.solved > 0 ? Math.round((totalStats.correct / totalStats.solved) * 100) : 0;
+
+  // Теперь у нас только химия, но оставляем фильтр для масштабируемости
+  const chemistryTrainers = TRAINERS.filter(t => t.subject === "chemistry");
 
   if (loading) {
     return (
@@ -202,8 +155,6 @@ function TrainersContent() {
         <div className="absolute top-20 left-10 text-6xl">🧪</div>
         <div className="absolute bottom-20 right-10 text-6xl">⚗️</div>
         <div className="absolute top-1/2 left-1/4 text-5xl">✨</div>
-        <div className="absolute bottom-1/3 right-1/4 text-7xl">🔬</div>
-        <div className="absolute top-1/3 right-1/3 text-6xl">⚡</div>
       </div>
 
       <div className="max-w-7xl mx-auto p-4 sm:p-6 relative z-10">
@@ -214,13 +165,13 @@ function TrainersContent() {
           </Link>
           <div className="text-center flex-1">
             <div className="flex items-center gap-3 justify-center">
-              <span className="text-4xl animate-float">🧪</span>
+              <span className="text-4xl animate-float">🎓</span>
               <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
                 Тренажёры
               </h1>
               <span className="text-4xl animate-float delay-100">✨</span>
             </div>
-            <p className="text-sm text-purple-700 mt-2">Подготовка к ЕГЭ по химии</p>
+            <p className="text-sm text-purple-700 mt-2">Интерактивная подготовка к ЕГЭ по химии</p>
           </div>
           <div className="w-24"></div>
         </div>
@@ -250,74 +201,70 @@ function TrainersContent() {
           </div>
         </div>
 
-        {/* Сетка тренажёров */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {TRAINERS.map((trainer, idx) => {
-            const count = counts[trainer.id] || 0;
-            return (
-              <Link
-                key={trainer.id}
-                href={`/trainers/${trainer.id}?uid=${uid}&role=${role}`}
-                className="group relative bg-white/90 backdrop-blur rounded-2xl shadow-lg overflow-hidden border border-purple-200 hover:border-purple-400 hover:shadow-2xl transition-all hover:-translate-y-1"
-              >
-                {/* Градиентная полоска сверху */}
-                <div className={`h-2 bg-gradient-to-r ${trainer.color}`}></div>
-                
-                <div className="p-5">
-                  {/* Заголовок с иконкой */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${trainer.color} flex items-center justify-center text-3xl shadow-lg group-hover:scale-110 transition-transform`}>
-                      {trainer.icon}
+        {/* Секция: ХИМИЯ (Единственная секция) */}
+        <div className="mb-10">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            🧪 Химия
+            <span className="h-px flex-1 bg-gradient-to-r from-purple-200 to-transparent ml-4"></span>
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {chemistryTrainers.map((trainer, idx) => {
+              const count = counts[trainer.id] || 0;
+              return (
+                <Link
+                  key={trainer.id}
+                  href={`/trainers/${trainer.id}?uid=${uid}&role=${role}`}
+                  className="group relative bg-white/90 backdrop-blur rounded-2xl shadow-lg overflow-hidden border border-purple-200 hover:border-purple-400 hover:shadow-2xl transition-all hover:-translate-y-1"
+                >
+                  <div className={`h-2 bg-gradient-to-r ${trainer.color}`}></div>
+                  <div className="p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${trainer.color} flex items-center justify-center text-3xl shadow-lg group-hover:scale-110 transition-transform`}>
+                        {trainer.icon}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500 font-medium">Заданий</div>
+                        <div className="text-2xl font-black text-purple-700">{count}</div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs text-gray-500 font-medium">Заданий</div>
-                      <div className="text-2xl font-black text-purple-700">{count}</div>
+                    <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-purple-700 transition">
+                      {trainer.name}
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                      {trainer.description}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-medium">
+                        📝 {trainer.exam}
+                      </span>
+                      <span className={`text-xs ${trainer.bgLight} text-gray-700 px-2 py-1 rounded-full font-medium`}>
+                        ⚡ {trainer.difficulty}
+                      </span>
+                    </div>
+                    <div className={`flex items-center justify-between p-3 rounded-xl bg-gradient-to-r ${trainer.color} text-white font-bold text-sm`}>
+                      <span>Начать тренировку</span>
+                      <span className="group-hover:translate-x-1 transition-transform">→</span>
                     </div>
                   </div>
-
-                  {/* Название и описание */}
-                  <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-purple-700 transition">
-                    {trainer.name}
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                    {trainer.description}
-                  </p>
-
-                  {/* Теги */}
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-medium">
-                      📝 {trainer.exam}
-                    </span>
-                    <span className={`text-xs ${trainer.bgLight} text-gray-700 px-2 py-1 rounded-full font-medium`}>
-                      ⚡ {trainer.difficulty}
-                    </span>
+                  <div className="absolute top-4 right-4 text-6xl font-black text-purple-100 group-hover:text-purple-200 transition pointer-events-none">
+                    {String(idx + 1).padStart(2, '0')}
                   </div>
-
-                  {/* Кнопка */}
-                  <div className={`flex items-center justify-between p-3 rounded-xl bg-gradient-to-r ${trainer.color} text-white font-bold text-sm`}>
-                    <span>Начать тренировку</span>
-                    <span className="group-hover:translate-x-1 transition-transform">→</span>
-                  </div>
-                </div>
-
-                {/* Номер карточки */}
-                <div className="absolute top-4 right-4 text-6xl font-black text-purple-100 group-hover:text-purple-200 transition pointer-events-none">
-                  {idx + 1}
-                </div>
-              </Link>
-            );
-          })}
+                </Link>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Подсказка */}
+        {/* Подсказка для ученика */}
         {role === "student" && totalTasks === 0 && (
           <div className="mt-8 bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 text-center">
             <p className="text-4xl mb-2">📚</p>
-            <p className="text-amber-800 font-bold mb-1">Пока нет заданий</p>
-            <p className="text-sm text-amber-700">Попросите репетитора создать задания в тренажёрах</p>
+            <p className="text-amber-800 font-bold mb-1">Пока нет доступных заданий</p>
+            <p className="text-sm text-amber-700">Попросите репетитора добавить задания в тренажёры, или проверьте подключение к вашему репетитору в профиле.</p>
           </div>
         )}
 
+        {/* Подсказка для репетитора */}
         {role === "tutor" && (
           <div className="mt-8 bg-gradient-to-r from-purple-50 to-violet-50 border-2 border-purple-200 rounded-2xl p-6">
             <div className="flex items-start gap-4">
@@ -325,8 +272,7 @@ function TrainersContent() {
               <div>
                 <p className="text-purple-800 font-bold mb-1">Совет репетитору</p>
                 <p className="text-sm text-purple-700">
-                  Создавайте задания в каждом тренажёре — ученики смогут тренироваться по отдельным темам и отслеживать свой прогресс.
-                  Используйте <span className="font-bold">блиц-режим</span> ⚡ для быстрой проверки знаний.
+                  Создавайте задания в соответствующих коллекциях Firestore (например, <code className="bg-purple-100 px-1 rounded">redox_reactions</code> или <code className="bg-cyan-100 px-1 rounded">ionic_equations</code>), чтобы ученики могли тренироваться по отдельным темам и отслеживать свой прогресс.
                 </p>
               </div>
             </div>
@@ -345,12 +291,14 @@ function TrainersContent() {
 
 export default function TrainersPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-purple-100 via-violet-50 to-fuchsia-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent"></div>
-      </div>
-    }>
-      <TrainersContent />
-    </Suspense>
+    <AuthGuard>
+      <Suspense fallback={
+        <div className="min-h-screen bg-gradient-to-br from-purple-100 via-violet-50 to-fuchsia-50 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent"></div>
+        </div>
+      }>
+        <TrainersContent />
+      </Suspense>
+    </AuthGuard>
   );
 }
