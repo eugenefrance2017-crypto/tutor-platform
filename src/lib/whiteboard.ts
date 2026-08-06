@@ -1,68 +1,64 @@
-// Типы и утилиты доски
+export type Pt = { x: number; y: number };
 
-export interface Pt {
-  x: number;
-  y: number;
+export type Tool =
+  | "select" | "pen" | "marker" | "eraser" | "hand" | "laser"
+  | "line" | "arrow"
+  | "rect" | "ellipse" | "triangle" | "star"
+  | "text";
+
+type Base = { id: string; stroke: string; strokeWidth: number };
+
+export type Shape =
+  | (Base & { type: "pen"; points: number[] })
+  | (Base & { type: "marker"; points: number[] })
+  | (Base & { type: "line"; start: Pt; end: Pt })
+  | (Base & { type: "arrow"; start: Pt; end: Pt })
+  | (Base & { type: "rect"; x: number; y: number; width: number; height: number })
+  | (Base & { type: "ellipse"; x: number; y: number; radiusX: number; radiusY: number })
+  | (Base & { type: "triangle"; x: number; y: number; radius: number })
+  | (Base & { type: "star"; x: number; y: number; radius: number })
+  | (Base & { type: "text"; x: number; y: number; text: string; fontSize: number });
+
+export function uid() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-export type Tool = "pen" | "eraser" | "line" | "arrow" | "rect" | "ellipse" | "text";
-
-interface Base {
-  id: string;
-  stroke: string;
-  strokeWidth: number;
-}
-
-export interface PenShape extends Base { type: "pen"; points: number[] }
-export interface LineShape extends Base { type: "line"; start: Pt; end: Pt }
-export interface ArrowShape extends Base { type: "arrow"; start: Pt; end: Pt }
-export interface RectShape extends Base { type: "rect"; x: number; y: number; width: number; height: number }
-export interface EllipseShape extends Base { type: "ellipse"; x: number; y: number; radiusX: number; radiusY: number }
-export interface TextShape extends Base { type: "text"; x: number; y: number; text: string; fontSize: number }
-
-export type Shape = PenShape | LineShape | ArrowShape | RectShape | EllipseShape | TextShape;
-
-export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-
-const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) ** 2 + (ay - by) ** 2;
-
-function distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
-  const l2 = dist2(x1, y1, x2, y2);
-  if (l2 === 0) return Math.sqrt(dist2(px, py, x1, y1));
-  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.sqrt(dist2(px, py, x1 + t * (x2 - x1), y1 + t * (y2 - y1)));
-}
-
-// Проверка попадания точки в фигуру (для ластика)
-export function hitTest(s: Shape, x: number, y: number, r: number): boolean {
+export function hitTest(s: Shape, x: number, y: number, pad = 8): boolean {
   switch (s.type) {
-    case "pen": {
-      for (let i = 0; i < s.points.length - 2; i += 2) {
-        if (distToSegment(x, y, s.points[i], s.points[i + 1], s.points[i + 2], s.points[i + 3]) < r + s.strokeWidth) return true;
+    case "pen":
+    case "marker": {
+      const r = (pad + s.strokeWidth) ** 2;
+      for (let i = 0; i < s.points.length; i += 2) {
+        const dx = s.points[i] - x;
+        const dy = s.points[i + 1] - y;
+        if (dx * dx + dy * dy <= r) return true;
       }
       return false;
     }
     case "line":
-    case "arrow":
-      return distToSegment(x, y, s.start.x, s.start.y, s.end.x, s.end.y) < r + s.strokeWidth;
+    case "arrow": {
+      const l2 = (s.end.x - s.start.x) ** 2 + (s.end.y - s.start.y) ** 2;
+      if (l2 === 0) return Math.hypot(x - s.start.x, y - s.start.y) <= pad;
+      let t = ((x - s.start.x) * (s.end.x - s.start.x) + (y - s.start.y) * (s.end.y - s.start.y)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      const px = s.start.x + t * (s.end.x - s.start.x);
+      const py = s.start.y + t * (s.end.y - s.start.y);
+      return Math.hypot(x - px, y - py) <= pad + s.strokeWidth;
+    }
     case "rect": {
-      const x1 = Math.min(s.x, s.x + s.width) - r;
-      const x2 = Math.max(s.x, s.x + s.width) + r;
-      const y1 = Math.min(s.y, s.y + s.height) - r;
-      const y2 = Math.max(s.y, s.y + s.height) + r;
-      return x >= x1 && x <= x2 && y >= y1 && y <= y2;
+      const x1 = Math.min(s.x, s.x + s.width), x2 = Math.max(s.x, s.x + s.width);
+      const y1 = Math.min(s.y, s.y + s.height), y2 = Math.max(s.y, s.y + s.height);
+      return x >= x1 - pad && x <= x2 + pad && y >= y1 - pad && y <= y2 + pad;
     }
     case "ellipse": {
-      const rx = Math.abs(s.radiusX) + r;
-      const ry = Math.abs(s.radiusY) + r;
-      if (rx === 0 || ry === 0) return false;
-      return ((x - s.x) ** 2) / (rx * rx) + ((y - s.y) ** 2) / (ry * ry) <= 1;
+      const dx = (x - s.x) / (s.radiusX + pad);
+      const dy = (y - s.y) / (s.radiusY + pad);
+      return dx * dx + dy * dy <= 1;
     }
-    case "text": {
-      const w = s.text.length * s.fontSize * 0.6 + r;
-      const h = s.fontSize + r;
-      return x >= s.x - r && x <= s.x + w && y >= s.y - r && y <= s.y + h;
-    }
+    case "triangle":
+    case "star":
+      return Math.hypot(x - s.x, y - s.y) <= s.radius + pad;
+    case "text":
+      return x >= s.x - pad && x <= s.x + s.text.length * s.fontSize * 0.6 + pad && y >= s.y - s.fontSize && y <= s.y + pad;
   }
 }

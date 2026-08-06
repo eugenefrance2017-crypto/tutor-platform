@@ -15,6 +15,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Sidebar from "../Sidebar";
 import NotificationBell from "../NotificationBell";
 import { Upload, File, X, Download, Clock, User, Users, BookOpen, Video, Palette, CheckCircle, Calendar, Archive, RotateCcw, Trash2, Sun, Moon, Hourglass } from "lucide-react";
+import { renderBoardSnapshot } from "@/lib/boardSnapshot";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -93,7 +94,6 @@ function TopicChips({ topics, setTopics, theme }: { topics: string[]; setTopics:
 
   return (
     <div>
-      <label className={`block text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}> Темы урока</label>
       <div className="flex flex-wrap gap-2 mb-3 min-h-[32px]">
         {topics.map((topic) => (
           <div key={topic} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${isDark ? 'bg-red-900/40 text-red-300' : 'bg-gradient-to-br from-red-100 to-rose-100 text-red-700'}`}>
@@ -146,8 +146,9 @@ function ScheduleContent() {
   const [lessons, setLessons] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [libraryItems, setLibraryItems] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]); // ✅ НОВОЕ: список групп
-  const [selectedGroupId, setSelectedGroupId] = useState(""); // ✅ НОВОЕ: выбранная группа
+  const [homeworks, setHomeworks] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   
   const [showForm, setShowForm] = useState(false);
   const [editLesson, setEditLesson] = useState<any>(null);
@@ -180,6 +181,16 @@ function ScheduleContent() {
   const [attachedFileName, setAttachedFileName] = useState("");
   const [fileUploading, setFileUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [isGroupLesson, setIsGroupLesson] = useState(false);
+  const [studentSearch, setStudentSearch] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
+  const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+  const [showHomeworkModal, setShowHomeworkModal] = useState(false);
+
+  const studentDropdownRef = useRef<HTMLDivElement>(null);
+  const groupDropdownRef = useRef<HTMLDivElement>(null);
 
   const isTutor = role === "tutor";
   const isDark = theme === 'dark';
@@ -287,12 +298,12 @@ function ScheduleContent() {
     for (const lesson of upcomingLessons) {
       const lessonTime = new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       const subject = lesson.subject === 'chemistry' ? '🧪 Химия' : '🧬 Биология';
-      const zoomLink = lesson.zoom_link ? `\n🔗 Ссылка: ${lesson.zoom_link}` : '';
+      const zoomLink = lesson.zoom_link ? `\n Ссылка: ${lesson.zoom_link}` : '';
       const topics = lesson.topics ? `\n🎯 Темы: ${lesson.topics}` : '';
       const boardLink = lesson.board_link ? `\n🖌️ Доска: ${lesson.board_link}` : '';
       if (lesson.is_group) {
         const groupName = lesson.group_name || 'Группа';
-        const tutorMsg = `⏰ Напоминание: групповое занятие через час!\n\n📚 ${subject}\n👥 Группа: ${groupName}\n🕐 ${lessonTime}${zoomLink}${topics}${boardLink}\n\nУчастников: ${lesson.group_participants?.length || lesson.group_size || 0}`;
+        const tutorMsg = ` Напоминание: групповое занятие через час!\n\n📚 ${subject}\n Группа: ${groupName}\n🕐 ${lessonTime}${zoomLink}${topics}${boardLink}\n\nУчастников: ${lesson.group_participants?.length || lesson.group_size || 0}`;
         await sendTelegramToTutor(tutorMsg);
         sentCount++;
         if (lesson.group_participants && lesson.group_participants.length > 0) {
@@ -307,7 +318,7 @@ function ScheduleContent() {
         const tutorMsg = `⏰ Напоминание: занятие через час!\n\n📚 ${subject}\n👤 ${studentName}\n🕐 ${lessonTime}${zoomLink}${topics}${boardLink}`;
         await sendTelegramToTutor(tutorMsg);
         sentCount++;
-        const studentMsg = `📅 Напоминание о занятии через час!\n\n📚 ${subject}\n👤 ${studentName}\n🕐 ${lessonTime}${zoomLink}${topics}\n\nНе забудь подготовиться! 💪`;
+        const studentMsg = `📅 Напоминание о занятии через час!\n\n📚 ${subject}\n👤 ${studentName}\n ${lessonTime}${zoomLink}${topics}\n\nНе забудь подготовиться! 💪`;
         await sendTelegramToStudent(lesson.student_id, studentMsg);
         sentCount++;
       }
@@ -446,14 +457,31 @@ function ScheduleContent() {
     if (isTutor) {
       getDocs(query(collection(db, "profiles"), where("role", "==", "student"))).then((snap) => setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
       getDocs(query(collection(db, "library_items"), where("tutor_id", "==", uid))).then((snap) => setLibraryItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+      getDocs(query(collection(db, "homeworks"), where("tutor_id", "==", uid))).then((snap) => 
+        setHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      );
       
-      // ✅ НОВОЕ: Загрузка групп репетитора
       const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
         setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       });
       return () => unsubGroups();
     }
   }, [isTutor, uid]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (studentDropdownRef.current && !studentDropdownRef.current.contains(event.target as Node)) {
+        setShowStudentDropdown(false);
+      }
+      if (groupDropdownRef.current && !groupDropdownRef.current.contains(event.target as Node)) {
+        setShowGroupDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -523,13 +551,12 @@ function ScheduleContent() {
   async function saveLesson(e: React.FormEvent) {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
-    const isGroup = (form.elements.namedItem("is_group") as HTMLInputElement)?.checked || false;
+    const isGroup = isGroupLesson;
     const studentId = !isGroup ? formStudentId : null;
     if (!isGroup && !studentId) return toast.error("Выберите ученика!");
     
-    // ✅ НОВОЕ: Получаем данные выбранной группы
     const selectedGroupData = groups.find(g => g.id === selectedGroupId);
-    const groupName = isGroup ? (selectedGroupData?.name || (form.elements.namedItem("group_name") as HTMLInputElement)?.value || "Группа") : null;
+    const groupName = isGroup ? (selectedGroupData?.name || groupSearch || "Группа") : null;
     const participants = isGroup ? (selectedGroupData?.student_ids || formGroupParticipants) : [];
     
     if (isGroup && participants.length === 0) return toast.error("Добавьте хотя бы одного участника группы!");
@@ -545,7 +572,6 @@ function ScheduleContent() {
     }
     const hwTemplateId = formHwTemplateId;
     const duration = (form.elements.namedItem("duration") as HTMLInputElement)?.value;
-    const repeatWeeks = parseInt((form.elements.namedItem("repeat_weeks") as HTMLInputElement)?.value || "0");
     const zoomLink = (form.elements.namedItem("zoom_link") as HTMLInputElement)?.value || "";
     const subject = (form.elements.namedItem("subject") as HTMLSelectElement).value;
     const groupSize = isGroup ? participants.length : 0;
@@ -560,7 +586,7 @@ function ScheduleContent() {
       student_id: studentId,
       student_name: studentName,
       is_group: isGroup,
-      group_id: selectedGroupId || null, // ✅ НОВОЕ: связь с группой
+      group_id: selectedGroupId || null,
       group_name: groupName,
       group_size: groupSize,
       group_participants: isGroup ? participants : [],
@@ -585,9 +611,13 @@ function ScheduleContent() {
         }
       }
       await updateDoc(doc(db, "lessons", editLesson.id), baseData);
+      if (!editLesson.board_link) {
+        await updateDoc(doc(db, "lessons", editLesson.id), { board_link: `${window.location.origin}/lesson/${editLesson.id}` });
+      }
       toast.success("Занятие обновлено!");
     } else {
       const docRef = await addDoc(collection(db, "lessons"), { ...baseData, status: "scheduled", created_at: new Date().toISOString() });
+      await updateDoc(docRef, { board_link: `${window.location.origin}/lesson/${docRef.id}` });
       if (attachedFile) {
         const fileUrl = await uploadFile(docRef.id);
         if (fileUrl) {
@@ -595,28 +625,17 @@ function ScheduleContent() {
         }
       }
       if (!isGroup) {
-        const msg = `📅 Привет, ${studentName}!\n\nУ нас запланировано новое занятие по ${subjectName}.\n🗓 Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n🔗 Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n🎯 Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
+        const msg = ` Привет, ${studentName}!\n\nУ нас запланировано новое занятие по ${subjectName}.\n Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n🎯 Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
         sendTelegramToStudent(studentId!, msg);
       } else {
         for (const participantId of participants) {
           const participant = students.find(s => s.id === participantId);
           const participantName = participant?.full_name || 'Ученик';
-          const msg = `📅 Привет, ${participantName}!\n\nУ нас запланировано групповое занятие по ${subjectName}.\n👥 Группа: ${groupName}\n🗓 Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n🔗 Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n🎯 Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
+          const msg = ` Привет, ${participantName}!\n\nУ нас запланировано групповое занятие по ${subjectName}.\n👥 Группа: ${groupName}\n Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n🎯 Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
           sendTelegramToStudent(participantId, msg);
         }
       }
-      if (repeatWeeks > 0) {
-        for (let i = 1; i <= repeatWeeks; i++) {
-          const nextDate = new Date(date);
-          nextDate.setDate(nextDate.getDate() + i * 7);
-          const nextStart = `${nextDate.toISOString().slice(0, 10)}T${startTime}:00`;
-          const nextEnd = `${nextDate.toISOString().slice(0, 10)}T${endTime}:00`;
-          await addDoc(collection(db, "lessons"), { ...baseData, start_time: nextStart, end_time: nextEnd, status: "scheduled", created_at: new Date().toISOString(), recurring_group: `group_${Date.now()}` });
-        }
-        toast.success(`Создано ${repeatWeeks + 1} занятий (еженедельно)!`);
-      } else {
-        toast.success("Занятие создано!");
-      }
+      toast.success("Занятие создано!");
     }
     form.reset();
     setShowForm(false);
@@ -629,6 +648,9 @@ function ScheduleContent() {
     setAttachedFile(null);
     setAttachedFileUrl("");
     setAttachedFileName("");
+    setIsGroupLesson(false);
+    setStudentSearch("");
+    setGroupSearch("");
   }
 
   async function deleteLesson(id: string) {
@@ -669,7 +691,7 @@ function ScheduleContent() {
     setSelectedLesson(null);
   }
 
-   async function saveLessonNotes() {
+  async function saveLessonNotes() {
     if (!selectedLessonForNotes) return;
     
     const topicsStr = lessonTopics.join(", ");
@@ -678,6 +700,13 @@ function ScheduleContent() {
       post_topics: topicsStr,
       status: "completed",
     };
+
+    try {
+      const snapUrl = await renderBoardSnapshot(selectedLessonForNotes.id);
+      if (snapUrl) updateData.board_snapshot_url = snapUrl;
+    } catch (e) {
+      console.error("Ошибка снимка доски:", e);
+    }
 
     if (!selectedLessonForNotes.is_group) {
       const currentBalance = lessonBalances[selectedLessonForNotes.student_id] || 0;
@@ -692,19 +721,19 @@ function ScheduleContent() {
       }
     }
 
-    if (selectedLessonForNotes.hw_template_id) {
-      const template = libraryItems.find(item => item.id === selectedLessonForNotes.hw_template_id);
-      if (template && template.sections?.length > 0) {
-        const totalMaxScore = template.sections.reduce((sum: number, s: any) => sum + (s.max_score || 0), 0);
+    if (formHwTemplateId) {
+      const hw = homeworks.find(item => item.id === formHwTemplateId);
+      if (hw && hw.sections?.length > 0) {
+        const totalMaxScore = hw.sections.reduce((sum: number, s: any) => sum + (s.max_score || 0), 0);
         await addDoc(collection(db, "homeworks"), {
           tutor_id: uid,
           student_id: selectedLessonForNotes.student_id,
           student_name: selectedLessonForNotes.student_name || "",
           lesson_id: selectedLessonForNotes.id,
-          title: `ДЗ после занятия: ${template.title || new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU')}`,
+          title: `ДЗ после занятия: ${hw.title || new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU')}`,
           description: `Автоматически создано после занятия`,
           task_type: "multi",
-          sections: template.sections,
+          sections: hw.sections,
           max_score: totalMaxScore,
           status: "active",
           created_at: new Date().toISOString(),
@@ -740,17 +769,18 @@ function ScheduleContent() {
     await sendAIReportToTelegram(selectedLessonForNotes, lessonNotes, topicsStr);
 
     if (!selectedLessonForNotes.is_group && selectedLessonForNotes.student_id) {
-      const topicsText = topicsStr ? `\n🎯 Темы: ${topicsStr}` : '';
+      const topicsText = topicsStr ? `\n Темы: ${topicsStr}` : '';
       const notesText = lessonNotes ? `\n📝 Заметки: ${lessonNotes}` : '';
       const msg = `✅ Занятие проведено!\n\n📅 ${new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}${topicsText}${notesText}\n\nОтличная работа! 🚀`;
       sendTelegramToStudent(selectedLessonForNotes.student_id, msg);
     }
 
-    toast.success("Занятие проведено! Заметки сохранены, отчёт отправлен.");
+    toast.success("Занятие проведено! Заметки и снимок доски сохранены, отчёт отправлен.");
     setShowNotesModal(false);
     setSelectedLessonForNotes(null);
     setLessonNotes("");
     setLessonTopics([]);
+    setFormHwTemplateId("");
   }
 
   async function cancelLesson(id: string) {
@@ -829,7 +859,7 @@ function ScheduleContent() {
           {notifications.map(n => (
             <motion.div key={n.id} initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 100 }} className="relative bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-2xl p-4 shadow-2xl max-w-sm">
               <p className="text-sm font-medium pr-6">{n.message}</p>
-              <button onClick={() => setNotifications(notifications.filter(x => x.id !== n.id))} className="absolute top-2 right-2 text-white/60 hover:text-white text-lg">✕</button>
+              <button onClick={() => setNotifications(notifications.filter(x => x.id !== n.id))} className="absolute top-2 right-2 text-white/60 hover:text-white text-lg"></button>
             </motion.div>
           ))}
         </div>
@@ -868,14 +898,14 @@ function ScheduleContent() {
             <span className={`text-xs flex-shrink-0 ${isDark ? 'text-red-400' : 'text-red-500 font-medium'}`}>{getLessonsForDate(new Date()).length} сегодня</span>
             <div className="flex gap-2 flex-shrink-0">
               <button onClick={() => setShowStats(!showStats)} className={`text-xl transition ${isDark ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-700'}`} title="Статистика">📊</button>
-              {isTutor && <button onClick={() => { setShowForm(true); setEditLesson(null); setSelectedGroupId(""); setFormStudentId(""); setFormHwTemplateId(""); setFormTopics([]); setFormGroupParticipants([]); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); }} className="px-3 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-500/30 hover:shadow-xl hover:shadow-rose-500/40 hover:scale-105 active:scale-95 transition-all text-xs sm:text-sm whitespace-nowrap">+ Занятие</button>}
+              {isTutor && <button onClick={() => { setShowForm(true); setEditLesson(null); setSelectedGroupId(""); setFormStudentId(""); setFormHwTemplateId(""); setFormTopics([]); setFormGroupParticipants([]); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }} className="px-3 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-500/30 hover:shadow-xl hover:shadow-rose-500/40 hover:scale-105 active:scale-95 transition-all text-xs sm:text-sm whitespace-nowrap">+ Занятие</button>}
             </div>
           </div>
         </div>
 
         {showStats && isTutor && (
           <motion.div className={`rounded-2xl p-3 sm:p-4 mb-4 shadow-lg ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-red-500/30' : 'bg-gradient-to-br from-white to-rose-50/50 border border-red-200 shadow-rose-200/50'}`} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-            <h3 className={`font-semibold mb-3 flex items-center gap-2 ${isDark ? 'text-red-300' : 'text-red-700'}`}>📊 Статистика по ученикам</h3>
+            <h3 className={`font-semibold mb-3 flex items-center gap-2 ${isDark ? 'text-red-300' : 'text-red-700'}`}> Статистика по ученикам</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               {students.map((s, idx) => {
                 const stat = studentStats[s.id] || { total: 0, completed: 0, cancelled: 0, hours: 0 };
@@ -934,16 +964,17 @@ function ScheduleContent() {
                               <span className="flex-shrink-0">{l.subject === "chemistry" ? "🧪" : "🧬"}</span>
                               <span className="truncate">{isGroup ? l.group_name : (l.student_name || "Ученик")}</span>
                             </span>
-                            {!isGroup && <span className={`text-[8px] sm:text-[9px] px-1 rounded font-bold flex-shrink-0 ${balance > 0 ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-700' : 'bg-gradient-to-r from-red-100 to-red-200 text-red-700'}`}>📦{balance}</span>}
+                            {!isGroup && <span className={`text-[8px] sm:text-[9px] px-1 rounded font-bold flex-shrink-0 ${balance > 0 ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-700' : 'bg-gradient-to-r from-red-100 to-red-200 text-red-700'}`}>{balance}</span>}
                           </div>
                           {viewMode === 'week' && <div className={`text-[9px] sm:text-[10px] opacity-70 ${isDark ? 'text-gray-300' : ''}`}>{startTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div>}
                           {l.hw_template_id && <div className="mt-1 text-[8px] sm:text-[10px] bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800 px-1 py-0.5 rounded inline-block font-bold">📎ДЗ</div>}
                           {l.attached_file_url && <div className="mt-1 text-[8px] sm:text-[10px] bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 px-1 py-0.5 rounded inline-block font-bold flex items-center gap-1"><File className="w-2 h-2 sm:w-3 sm:h-3" /><span className="truncate max-w-[60px] sm:max-w-[80px]">{l.attached_file_name || "Файл"}</span></div>}
                           <div className={`flex gap-0.5 mt-1 ${isDark ? 'bg-gray-800/90' : 'bg-white/90'} rounded-lg p-0.5 shadow z-10 md:opacity-0 md:group-hover:opacity-100 transition-opacity`}>
+                            <a href={`/lesson/${l.id}`} onClick={(e) => e.stopPropagation()} className="p-0.5 text-xs hover:scale-110 transition" title="Комната урока"></a>
                             {l.status === "scheduled" && (<><button onClick={(e) => { e.stopPropagation(); setStatus(l); }} className="p-0.5 text-xs hover:scale-110 transition">✅</button><button onClick={(e) => { e.stopPropagation(); cancelLesson(l.id); }} className="p-0.5 text-xs hover:scale-110 transition">❌</button></>)}
                             <button onClick={(e) => { e.stopPropagation(); setSelectedLessonForNotes(l); setLessonNotes(l.post_notes || ''); setLessonTopics(l.topics ? l.topics.split(",").map((t: string) => t.trim()) : []); setShowNotesModal(true); setSelectedLesson(null); }} className="p-0.5 text-xs hover:scale-110 transition">📝</button>
                             <button onClick={(e) => { e.stopPropagation(); exportToCalendar(l); }} className="p-0.5 text-xs hover:scale-110 transition">📅</button>
-                            {isTutor && (<><button onClick={(e) => { e.stopPropagation(); setEditLesson(l); setShowForm(true); setFormStudentId(l.student_id || ""); setFormHwTemplateId(l.hw_template_id || ""); setFormTopics(l.topics ? l.topics.split(",").map((t: string) => t.trim()) : []); setFormGroupParticipants(l.group_participants || []); setSelectedGroupId(l.group_id || ""); setAttachedFile(null); setAttachedFileName(l.attached_file_name || ""); setAttachedFileUrl(l.attached_file_url || ""); setSelectedLesson(null); }} className="p-0.5 text-xs hover:scale-110 transition">✏️</button><button onClick={(e) => { e.stopPropagation(); deleteLesson(l.id); }} className="p-0.5 text-xs hover:scale-110 transition">🗑️</button></>)}
+                            {isTutor && (<><button onClick={(e) => { e.stopPropagation(); setEditLesson(l); setShowForm(true); setFormStudentId(l.student_id || ""); setFormHwTemplateId(l.hw_template_id || ""); setFormTopics(l.topics ? l.topics.split(",").map((t: string) => t.trim()) : []); setFormGroupParticipants(l.group_participants || []); setSelectedGroupId(l.group_id || ""); setAttachedFile(null); setAttachedFileName(l.attached_file_name || ""); setAttachedFileUrl(l.attached_file_url || ""); setIsGroupLesson(l.is_group || false); setStudentSearch(students.find(s => s.id === l.student_id)?.full_name || ""); setSelectedLesson(null); }} className="p-0.5 text-xs hover:scale-110 transition">✏️</button><button onClick={(e) => { e.stopPropagation(); deleteLesson(l.id); }} className="p-0.5 text-xs hover:scale-110 transition">🗑️</button></>)}
                           </div>
                         </motion.div>
                       );
@@ -970,7 +1001,7 @@ function ScheduleContent() {
                   return (
                     <motion.div key={l.id} className={`flex flex-wrap items-center justify-between p-2 sm:p-3 rounded-xl hover:shadow-lg transition cursor-pointer gap-2 ${l.subject === "chemistry" ? (isDark ? "bg-gradient-to-br from-red-900/30 to-red-800/20 border-l-4 border-red-500" : "bg-gradient-to-br from-red-50 to-rose-50 border-l-4 border-red-500") : (isDark ? "bg-gradient-to-br from-rose-900/30 to-rose-800/20 border-l-4 border-rose-500" : "bg-gradient-to-br from-rose-50 to-pink-50 border-l-4 border-rose-500")}`} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.1 }} whileHover={{ scale: 1.01, x: 3 }} onClick={() => setSelectedLesson(l)}>
                       <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                        <span className="text-lg flex-shrink-0">{l.subject === "chemistry" ? "🧪" : "🧬"}</span>
+                        <span className="text-lg flex-shrink-0">{l.subject === "chemistry" ? "🧪" : ""}</span>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className={`font-medium text-xs sm:text-sm truncate ${isDark ? 'text-white' : 'text-gray-800'}`}>{l.is_group ? `👥 ${l.group_name}` : (l.student_name || "Ученик")}</p>
@@ -985,7 +1016,8 @@ function ScheduleContent() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <RedTimer startTime={startTime} endTime={endTime} />
                         {l.zoom_link && <a href={l.zoom_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] sm:text-xs bg-gradient-to-r from-red-500 to-rose-600 text-white px-2 sm:px-3 py-1 rounded-lg hover:shadow-md transition flex items-center gap-1">🎥 Zoom</a>}
-                        <button onClick={(e) => { e.stopPropagation(); exportToCalendar(l); }} className={`text-[10px] sm:text-xs px-2 py-1 rounded-lg transition ${isDark ? 'bg-rose-900/30 text-rose-300 hover:bg-rose-900/50' : 'bg-gradient-to-br from-rose-100 to-rose-200 text-rose-600 hover:shadow-md'}`} title="Экспорт">📅</button>
+                        <a href={`/lesson/${l.id}`} onClick={(e) => e.stopPropagation()} className="text-[10px] sm:text-xs bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-2 sm:px-3 py-1 rounded-lg hover:shadow-md transition flex items-center gap-1">▶ Занятие</a>
+                        <button onClick={(e) => { e.stopPropagation(); exportToCalendar(l); }} className={`text-[10px] sm:text-xs px-2 py-1 rounded-lg transition ${isDark ? 'bg-rose-900/30 text-rose-300 hover:bg-rose-900/50' : 'bg-gradient-to-br from-rose-100 to-rose-200 text-rose-600 hover:shadow-md'}`} title="Экспорт"></button>
                       </div>
                     </motion.div>
                   );
@@ -1033,6 +1065,12 @@ function ScheduleContent() {
                 {selectedLesson.zoom_link && <a href={selectedLesson.zoom_link} target="_blank" rel="noopener noreferrer" className="block rounded-xl p-3 bg-gradient-to-r from-red-500 to-rose-500 text-white hover:from-red-600 hover:to-rose-600 transition shadow-md hover:shadow-lg"><div className="flex items-center gap-2 mb-1"><Video className="w-4 h-4" /><span className="text-xs font-bold">ПОДКЛЮЧИТЬСЯ К ZOOM</span></div><p className="text-xs text-white/80 truncate">{selectedLesson.zoom_link}</p></a>}
                 {selectedLesson.board_link && <a href={selectedLesson.board_link} target="_blank" rel="noopener noreferrer" className={`block rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-purple-900/30 to-purple-800/20 border border-purple-500/30' : 'bg-gradient-to-br from-purple-50 to-purple-100/50 border border-purple-200'} hover:shadow-md transition`}><div className="flex items-center gap-2 mb-1"><Palette className="w-4 h-4 text-purple-500" /><span className={`text-xs font-bold ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>ОТКРЫТЬ ДОСКУ</span></div><p className={`text-xs truncate ${isDark ? 'text-purple-400' : 'text-purple-600'}`}>{selectedLesson.board_link}</p></a>}
                 {selectedLesson.attached_file_url && <a href={selectedLesson.attached_file_url} target="_blank" rel="noopener noreferrer" className={`block rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-blue-900/30 to-blue-800/20 border border-blue-500/30' : 'bg-gradient-to-br from-blue-50 to-blue-100/50 border border-blue-200'} hover:shadow-md transition`}><div className="flex items-center gap-2 mb-1"><File className="w-4 h-4 text-blue-500" /><span className={`text-xs font-bold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>СКАЧАТЬ ФАЙЛ</span></div><p className={`text-xs truncate ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{selectedLesson.attached_file_name || 'Материалы к уроку'}</p></a>}
+                {selectedLesson.board_snapshot_url && (
+                  <a href={selectedLesson.board_snapshot_url} target="_blank" rel="noopener noreferrer" className={`block rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-emerald-900/30 to-emerald-800/20 border border-emerald-500/30' : 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200'} hover:shadow-md transition`}>
+                    <div className="flex items-center gap-2 mb-1"><CheckCircle className="w-4 h-4 text-emerald-500" /><span className={`text-xs font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>📸 СНИМОК ДОСКИ</span></div>
+                    <p className={`text-xs truncate ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>Как выглядела доска на занятии</p>
+                  </a>
+                )}
                 {selectedLesson.hw_template_id && <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-amber-900/30 to-amber-800/20 border border-amber-500/30' : 'bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200'}`}><div className="flex items-center gap-2 mb-1"><CheckCircle className="w-4 h-4 text-amber-500" /><span className={`text-xs font-bold ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>ДОМАШНЕЕ ЗАДАНИЕ</span></div><p className={`text-xs ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>ДЗ будет создано автоматически после проведения занятия</p></div>}
                 {!selectedLesson.is_group && selectedLesson.student_id && lessonBalances[selectedLesson.student_id] !== undefined && (
                   <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}>
@@ -1046,12 +1084,12 @@ function ScheduleContent() {
                     <div className="space-y-1.5">{selectedLesson.group_participants.map((participantId: string) => { const participant = students.find(s => s.id === participantId); return (<div key={participantId} className={`flex items-center gap-2 p-2 rounded-lg ${isDark ? 'bg-gradient-to-br from-gray-700 to-gray-600' : 'bg-gradient-to-br from-white to-purple-50/50'}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isDark ? 'bg-gradient-to-br from-purple-900/40 to-purple-800/30 text-purple-300' : 'bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700'}`}>{(participant?.full_name || '?')[0]}</div><span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-800'}`}>{participant?.full_name || 'Неизвестно'}</span></div>); })}</div>
                   </div>
                 )}
-                {selectedLesson.post_notes && <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}><div className="flex items-center gap-2 mb-2"><span className="text-rose-500">📝</span><span className={`text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ЗАМЕТКИ ПОСЛЕ УРОКА</span></div><p className={`text-sm whitespace-pre-wrap ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{selectedLesson.post_notes}</p></div>}
+                {selectedLesson.post_notes && <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}><div className="flex items-center gap-2 mb-2"><span className="text-rose-500"></span><span className={`text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ЗАМЕТКИ ПОСЛЕ УРОКА</span></div><p className={`text-sm whitespace-pre-wrap ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{selectedLesson.post_notes}</p></div>}
                 {isTutor && selectedLesson.status === 'scheduled' && (
                   <div className="grid grid-cols-2 gap-2 pt-2">
                     <button onClick={() => setStatus(selectedLesson)} className="py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-bold text-sm hover:from-green-600 hover:to-emerald-700 transition shadow-md hover:shadow-lg">✅ Проведено</button>
                     <button onClick={() => cancelLesson(selectedLesson.id)} className="py-2.5 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-700 transition shadow-md hover:shadow-lg">❌ Отменить</button>
-                    <button onClick={() => { setEditLesson(selectedLesson); setShowForm(true); setFormStudentId(selectedLesson.student_id || ""); setFormHwTemplateId(selectedLesson.hw_template_id || ""); setFormTopics(selectedLesson.topics ? selectedLesson.topics.split(",").map((t: string) => t.trim()) : []); setFormGroupParticipants(selectedLesson.group_participants || []); setSelectedGroupId(selectedLesson.group_id || ""); setAttachedFile(null); setAttachedFileName(selectedLesson.attached_file_name || ""); setAttachedFileUrl(selectedLesson.attached_file_url || ""); setSelectedLesson(null); }} className="py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-600 hover:to-indigo-700 transition shadow-md hover:shadow-lg">✏️ Редактировать</button>
+                    <button onClick={() => { setEditLesson(selectedLesson); setShowForm(true); setFormStudentId(selectedLesson.student_id || ""); setFormHwTemplateId(selectedLesson.hw_template_id || ""); setFormTopics(selectedLesson.topics ? selectedLesson.topics.split(",").map((t: string) => t.trim()) : []); setFormGroupParticipants(selectedLesson.group_participants || []); setSelectedGroupId(selectedLesson.group_id || ""); setAttachedFile(null); setAttachedFileName(selectedLesson.attached_file_name || ""); setAttachedFileUrl(selectedLesson.attached_file_url || ""); setIsGroupLesson(selectedLesson.is_group || false); setStudentSearch(students.find(s => s.id === selectedLesson.student_id)?.full_name || ""); setSelectedLesson(null); }} className="py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-600 hover:to-indigo-700 transition shadow-md hover:shadow-lg">✏️ Редактировать</button>
                     <button onClick={() => exportToCalendar(selectedLesson)} className={`py-2.5 rounded-xl font-bold text-sm transition shadow-md hover:shadow-lg ${isDark ? 'bg-gradient-to-br from-gray-700 to-gray-600 text-white' : 'bg-gradient-to-br from-gray-200 to-gray-300 text-gray-800'}`}>📅 В календарь</button>
                   </div>
                 )}
@@ -1071,7 +1109,7 @@ function ScheduleContent() {
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl"><Archive className="w-6 h-6 text-white" /></div>
                     <div>
-                      <h2 className="font-bold text-lg sm:text-xl text-white">📦 Архив отменённых занятий</h2>
+                      <h2 className="font-bold text-lg sm:text-xl text-white"> Архив отменённых занятий</h2>
                       <p className="text-white/80 text-xs sm:text-sm">{cancelledLessons.length} занятий в архиве</p>
                     </div>
                   </div>
@@ -1091,7 +1129,7 @@ function ScheduleContent() {
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-2">
-                            <span className="text-2xl">{lesson.subject === 'chemistry' ? '🧪' : '🧬'}</span>
+                            <span className="text-2xl">{lesson.subject === 'chemistry' ? '🧪' : ''}</span>
                             <div>
                               <h3 className={`font-bold text-sm sm:text-base ${isDark ? 'text-white' : 'text-gray-800'}`}>{lesson.is_group ? lesson.group_name : lesson.student_name}</h3>
                               <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{lesson.subject === 'chemistry' ? 'Химия' : 'Биология'} • {lesson.is_group ? 'Групповое' : 'Индивидуальное'}</p>
@@ -1120,115 +1158,273 @@ function ScheduleContent() {
 
       <AnimatePresence>
         {showForm && (
-          <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/60' : 'bg-black/40'}`} onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); }} />
-            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-white to-rose-50/30'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
-              <div className="p-4 sm:p-5 rounded-t-3xl sticky top-0 z-10 bg-gradient-to-r from-red-500 to-rose-500">
+          <motion.div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+          >
+            <div 
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+              onClick={() => { 
+                setShowForm(false); 
+                setEditLesson(null); 
+                setSelectedGroupId(""); 
+                setAttachedFile(null); 
+                setAttachedFileName(""); 
+                setAttachedFileUrl("");
+                setIsGroupLesson(false);
+                setStudentSearch("");
+                setGroupSearch("");
+              }} 
+            />
+            <motion.div 
+              className="relative rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white" 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 p-6 bg-white border-b border-gray-200 rounded-t-2xl">
                 <div className="flex items-center justify-between">
-                  <div><h2 className="font-bold text-lg sm:text-2xl text-white">{editLesson ? "✏️ Редактировать" : "✨ Создать занятие"}</h2><p className="text-white/80 text-xs sm:text-sm mt-1">Заполните все поля</p></div>
-                  <button onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); }} className="text-white/80 hover:text-white text-3xl sm:text-4xl leading-none transition">×</button>
+                  <div>
+                    <h2 className="font-bold text-xl text-gray-900">
+                      {editLesson ? "Редактировать занятие" : "Создать занятие"}
+                    </h2>
+                    <p className="text-gray-500 text-sm mt-1">Заполните основные поля</p>
+                  </div>
+                  <button 
+                    onClick={() => { 
+                      setShowForm(false); 
+                      setEditLesson(null); 
+                      setSelectedGroupId(""); 
+                      setAttachedFile(null); 
+                      setAttachedFileName(""); 
+                      setAttachedFileUrl("");
+                      setIsGroupLesson(false);
+                      setStudentSearch("");
+                      setGroupSearch("");
+                    }} 
+                    className="text-gray-400 hover:text-gray-600 text-3xl leading-none transition"
+                  >
+                    ×
+                  </button>
                 </div>
               </div>
-              <form onSubmit={saveLesson} className="p-4 sm:p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                  <div className="space-y-3 sm:space-y-4">
-                    <div>
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>Тип занятия</label>
-                      <div className="flex gap-2">
-                        <label className={`flex-1 flex items-center justify-center gap-2 p-2 sm:p-3 rounded-xl border-2 cursor-pointer transition text-xs sm:text-sm ${isDark ? 'border-gray-700 hover:border-red-500' : 'border-gray-200 hover:border-red-400'}`}>
-                          <input type="radio" name="is_group" value="false" defaultChecked className="accent-red-500" onChange={(e) => { const form = e.target.form; if(form) { (form.elements.namedItem("student_select") as HTMLElement).style.display = 'block'; (form.elements.namedItem("group_select_block") as HTMLElement).style.display = 'none'; (form.elements.namedItem("group_name_block") as HTMLElement).style.display = 'none'; (form.elements.namedItem("group_size_block") as HTMLElement).style.display = 'none'; (form.elements.namedItem("group_participants_block") as HTMLElement).style.display = 'none'; } }} />
-                          👤 Индивид.
-                        </label>
-                        <label className={`flex-1 flex items-center justify-center gap-2 p-2 sm:p-3 rounded-xl border-2 cursor-pointer transition text-xs sm:text-sm ${isDark ? 'border-gray-700 hover:border-red-500' : 'border-gray-200 hover:border-red-400'}`}>
-                          <input type="radio" name="is_group" value="true" className="accent-red-500" onChange={(e) => { const form = e.target.form; if(form) { (form.elements.namedItem("student_select") as HTMLElement).style.display = 'none'; (form.elements.namedItem("group_select_block") as HTMLElement).style.display = 'block'; (form.elements.namedItem("group_name_block") as HTMLElement).style.display = 'block'; (form.elements.namedItem("group_size_block") as HTMLElement).style.display = 'block'; (form.elements.namedItem("group_participants_block") as HTMLElement).style.display = 'block'; } }} />
-                          👥 Группа
-                        </label>
-                      </div>
-                    </div>
-                    <div name="student_select">
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>👤 Ученик</label>
-                      <select value={formStudentId} onChange={(e) => setFormStudentId(e.target.value)} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`}>
-                        <option value="">— Выбрать ученика —</option>
-                        {students.map((s: any) => (<option key={s.id} value={s.id}>{s.full_name}</option>))}
-                      </select>
-                    </div>
-                    
-                    {/* ✅ НОВОЕ: Выпадающий список существующих групп */}
-                    <div name="group_select_block" style={{ display: 'none' }}>
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>👥 Выбрать группу</label>
-                      <select 
-                        value={selectedGroupId} 
+
+              <form onSubmit={saveLesson} className="p-6 space-y-5">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">Тип занятия</label>
+                  <div className="flex bg-gray-100 rounded-xl p-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsGroupLesson(false)}
+                      className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg transition-all ${
+                        !isGroupLesson ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <span className="text-lg">👤</span>
+                      <span className="font-medium">Индивидуальное</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsGroupLesson(true)}
+                      className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg transition-all ${
+                        isGroupLesson ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <span className="text-lg">👥</span>
+                      <span className="font-medium">Групповое</span>
+                    </button>
+                  </div>
+                  <input type="hidden" name="is_group" value={isGroupLesson ? "true" : "false"} />
+                </div>
+
+                {!isGroupLesson && (
+                  <div ref={studentDropdownRef}>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Ученик</label>
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        value={studentSearch}
                         onChange={(e) => {
-                          setSelectedGroupId(e.target.value);
-                          const group = groups.find(g => g.id === e.target.value);
-                          if (group) {
-                            setFormGroupParticipants(group.student_ids || []);
-                          } else {
+                          setStudentSearch(e.target.value);
+                          setShowStudentDropdown(true);
+                          const student = students.find(s => s.full_name === e.target.value);
+                          if (!student) setFormStudentId("");
+                        }}
+                        onFocus={() => setShowStudentDropdown(true)}
+                        placeholder={formStudentId ? students.find(s => s.id === formStudentId)?.full_name : "Выберите ученика..."}
+                        className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none transition-all"
+                      />
+                      {showStudentDropdown && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-auto">
+                          {students
+                            .filter(s => s.full_name.toLowerCase().includes(studentSearch.toLowerCase()))
+                            .map(student => (
+                              <button
+                                key={student.id}
+                                type="button"
+                                onClick={() => {
+                                  setFormStudentId(student.id);
+                                  setStudentSearch(student.full_name);
+                                  setShowStudentDropdown(false);
+                                }}
+                                className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3 ${
+                                  formStudentId === student.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''
+                                }`}
+                              >
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
+                                  {student.full_name.charAt(0)}
+                                </div>
+                                <span className="text-gray-900 font-medium">{student.full_name}</span>
+                              </button>
+                            ))}
+                          {students.filter(s => s.full_name.toLowerCase().includes(studentSearch.toLowerCase())).length === 0 && (
+                            <div className="px-4 py-3 text-gray-500 text-center">Ученик не найден</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {isGroupLesson && (
+                  <div ref={groupDropdownRef}>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Группа</label>
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        value={groupSearch}
+                        onChange={(e) => {
+                          setGroupSearch(e.target.value);
+                          setShowGroupDropdown(true);
+                          const group = groups.find(g => g.name === e.target.value);
+                          if (!group) {
+                            setSelectedGroupId("");
                             setFormGroupParticipants([]);
                           }
                         }}
-                        className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`}
-                      >
-                        <option value="">— Выберите группу из списка —</option>
-                        {groups.map(g => (
-                          <option key={g.id} value={g.id}>{g.name} ({g.student_ids?.length || 0} уч.)</option>
-                        ))}
-                      </select>
-                      <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Участники подставятся автоматически
-                      </p>
+                        onFocus={() => setShowGroupDropdown(true)}
+                        placeholder={selectedGroupId ? groups.find(g => g.id === selectedGroupId)?.name : "Выберите группу..."}
+                        className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none transition-all"
+                      />
+                      {showGroupDropdown && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-auto">
+                          {groups
+                            .filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase()))
+                            .map(group => (
+                              <button
+                                key={group.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedGroupId(group.id);
+                                  setGroupSearch(group.name);
+                                  setFormGroupParticipants(group.student_ids || []);
+                                  setShowGroupDropdown(false);
+                                }}
+                                className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+                                  selectedGroupId === group.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-900 font-medium">{group.name}</span>
+                                  <span className="text-gray-500 text-sm">{group.student_ids?.length || 0} уч.</span>
+                                </div>
+                              </button>
+                            ))}
+                          {groups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase())).length === 0 && (
+                            <div className="px-4 py-3 text-gray-500 text-center">Группа не найдена</div>
+                          )}
+                        </div>
+                      )}
                     </div>
-
-                    <div name="group_name_block" style={{ display: 'none' }}>
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>👥 Или введите название новой группы</label>
-                      <input type="text" name="group_name" placeholder="Например: ЕГЭ Химия 2027" className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} />
-                    </div>
-                    <div name="group_participants_block" style={{ display: 'none' }}>
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>👥 Участники группы</label>
-                      <div className={`border-2 rounded-xl p-2 sm:p-3 max-h-32 overflow-y-auto ${isDark ? 'bg-gray-800 border-red-500/30' : 'bg-white border-gray-200'}`}>
-                        {students.map((s: any) => (
-                          <label key={s.id} className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-red-50'}`}>
-                            <input type="checkbox" checked={formGroupParticipants.includes(s.id)} onChange={(e) => { if (e.target.checked) setFormGroupParticipants([...formGroupParticipants, s.id]); else setFormGroupParticipants(formGroupParticipants.filter(id => id !== s.id)); }} className="accent-red-500" />
-                            <span className={`text-xs sm:text-sm truncate ${isDark ? 'text-white' : 'text-gray-800'}`}>{s.full_name}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Выбрано: {formGroupParticipants.length} учеников</p>
-                    </div>
-                    <div name="group_size_block" style={{ display: 'none' }}>
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>👥 Кол-во учеников</label>
-                      <input type="number" name="group_size" min="1" max="20" defaultValue={formGroupParticipants.length || 1} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} readOnly />
-                    </div>
-                    <div>
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📚 Предмет *</label>
-                      <select name="subject" required defaultValue={editLesson?.subject || "chemistry"} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`}>
-                        <option value="chemistry">🧪 Химия</option>
-                        <option value="biology">🧬 Биология</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📅 Дата *</label>
-                      <input type="date" name="date" required defaultValue={editLesson?.start_time?.slice(0, 10) || ""} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>⏰ Начало</label><input type="time" name="start_time" required defaultValue={editLesson?.start_time?.slice(11, 16) || ""} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>
-                      <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>🕒 Конец</label><input type="time" name="end_time" required defaultValue={editLesson?.end_time?.slice(11, 16) || ""} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>
-                    </div>
-                    {!editLesson && <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>🔁 Повторять (недель)</label><input type="number" name="repeat_weeks" min="0" max="52" defaultValue="0" placeholder="0 — не повторять" className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>}
                   </div>
-                  <div className="space-y-3 sm:space-y-4">
-                    <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>⏱️ Длительность (мин)</label><input type="number" name="duration" defaultValue={editLesson?.duration || 60} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>
-                    <TopicChips topics={formTopics} setTopics={setFormTopics} theme={theme} />
-                    <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>🎥 Zoom ссылка</label><input type="url" name="zoom_link" defaultValue={editLesson?.zoom_link || ""} placeholder="https://zoom.us/j/..." className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>
-                    <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>🖌️ Доска (Miro/Holst)</label><input type="url" name="board_link" defaultValue={editLesson?.board_link || ""} placeholder="https://miro.com/..." className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>
-                    <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📋 Шаблон ДЗ</label><select value={formHwTemplateId} onChange={(e) => setFormHwTemplateId(e.target.value)} className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'}`}><option value="">— Не привязано —</option>{libraryItems.map((item) => (<option key={item.id} value={item.id}>{item.title || "Без названия"} ({item.sections?.length || 0} зад.)</option>))}</select></div>
-                    <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📎 Прикрепить файл</label><div className="space-y-2"><input ref={fileInputRef} type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.zip" className="hidden" /><button type="button" onClick={() => fileInputRef.current?.click()} className={`w-full border-2 border-dashed rounded-xl p-2 sm:p-3 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 ${isDark ? 'border-red-500/30 text-red-300 hover:bg-red-500/10' : 'border-red-300 text-red-600 hover:bg-red-50'}`}><Upload className="w-3 h-3 sm:w-4 sm:h-4" />{attachedFile ? attachedFileName : (attachedFileName || "Выбрать файл")}</button>{attachedFileName && !attachedFile && <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>✓ Файл уже прикреплен: {attachedFileName}</p>}{attachedFile && <div className="flex items-center gap-2"><File className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" /><span className={`text-xs truncate ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{attachedFileName}</span><button type="button" onClick={() => { setAttachedFile(null); setAttachedFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="text-red-500 hover:text-red-700 flex-shrink-0"><X className="w-3 h-3 sm:w-4 sm:h-4" /></button></div>}</div></div>
+                )}
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Дата *</label>
+                    <input type="date" name="date" required defaultValue={editLesson?.start_time?.slice(0, 10) || ""} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Начало *</label>
+                    <input type="time" name="start_time" required defaultValue={editLesson?.start_time?.slice(11, 16) || ""} onChange={(e) => {
+                      const startTime = e.target.value;
+                      const endTimeInput = document.querySelector('input[name="end_time"]') as HTMLInputElement;
+                      if (endTimeInput && endTimeInput.value) {
+                        const start = new Date(`2000-01-01T${startTime}`);
+                        const end = new Date(`2000-01-01T${endTimeInput.value}`);
+                        const duration = Math.round((end.getTime() - start.getTime()) / 60000);
+                        const durationInput = document.querySelector('input[name="duration"]') as HTMLInputElement;
+                        if (durationInput && duration > 0) durationInput.value = duration.toString();
+                      }
+                    }} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Конец *</label>
+                    <input type="time" name="end_time" required defaultValue={editLesson?.end_time?.slice(11, 16) || ""} onChange={(e) => {
+                      const endTime = e.target.value;
+                      const startTimeInput = document.querySelector('input[name="start_time"]') as HTMLInputElement;
+                      if (startTimeInput && startTimeInput.value) {
+                        const start = new Date(`2000-01-01T${startTimeInput.value}`);
+                        const end = new Date(`2000-01-01T${endTime}`);
+                        const duration = Math.round((end.getTime() - start.getTime()) / 60000);
+                        const durationInput = document.querySelector('input[name="duration"]') as HTMLInputElement;
+                        if (durationInput && duration > 0) durationInput.value = duration.toString();
+                      }
+                    }} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all" />
                   </div>
                 </div>
-                <div className="mt-3 sm:mt-4"><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📝 Заметки (план урока)</label><textarea name="notes" rows={4} defaultValue={editLesson?.notes || ""} placeholder="Темы, материалы, домашнее задание..." className={`w-full border-2 rounded-xl p-2 sm:p-3 font-medium text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>
-                <div className="flex gap-2 sm:gap-4 mt-4 sm:mt-6">
-                  <button type="submit" disabled={fileUploading} className="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base hover:from-red-600 hover:to-rose-700 disabled:opacity-50 transition shadow-lg shadow-rose-500/30 hover:shadow-xl">{fileUploading ? <span className="flex items-center justify-center gap-2"><div className="w-3 h-3 sm:w-4 sm:h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>Загрузка...</span> : (editLesson ? "💾 Сохранить" : "✅ Создать")}</button>
-                  <button type="button" onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); }} className={`px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-lg transition ${isDark ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}>Отмена</button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Предмет *</label>
+                    <select name="subject" required defaultValue={editLesson?.subject || "chemistry"} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all bg-white">
+                      <option value="chemistry"> Химия</option>
+                      <option value="biology">🧬 Биология</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Длительность (авто)</label>
+                    <input type="number" name="duration" defaultValue={editLesson?.duration || 60} min={15} max={180} step={15} readOnly className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-500 bg-gray-50 cursor-not-allowed" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Темы урока</label>
+                  <TopicChips topics={formTopics} setTopics={setFormTopics} theme="light" />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Прикрепить файл</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-gray-400 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    <input ref={fileInputRef} type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.zip" className="hidden" />
+                    {attachedFile || attachedFileName ? (
+                      <div className="flex items-center justify-center gap-2 text-gray-700">
+                        <span className="text-2xl">📎</span>
+                        <span className="font-medium">{attachedFile?.name || attachedFileName}</span>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setAttachedFile(null); setAttachedFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="ml-2 text-red-500 hover:text-red-700">×</button>
+                      </div>
+                    ) : (
+                      <div className="text-gray-500">
+                        <span className="text-2xl block mb-2">📁</span>
+                        <span className="text-sm">Нажмите для загрузки файла</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <button type="submit" disabled={fileUploading} className="flex-1 bg-gray-900 text-white py-3.5 rounded-xl font-semibold text-base hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                    {fileUploading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Загрузка...
+                      </span>
+                    ) : (editLesson ? " Сохранить" : "✅ Создать")}
+                  </button>
+                  <button type="button" onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }} className="px-6 py-3.5 rounded-xl font-semibold text-gray-700 hover:bg-gray-100 transition-all">Отмена</button>
                 </div>
               </form>
             </motion.div>
@@ -1238,14 +1434,166 @@ function ScheduleContent() {
 
       <AnimatePresence>
         {showNotesModal && selectedLessonForNotes && (
-          <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/60' : 'bg-black/40'}`} onClick={() => setShowNotesModal(false)} />
-            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-white to-rose-50/30'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
-              <div className="p-4 sm:p-5 rounded-t-3xl bg-gradient-to-r from-red-500 to-rose-500"><div className="flex items-center justify-between"><div><h2 className="font-bold text-base sm:text-xl text-white">✅ Занятие проведено</h2><p className="text-white/80 text-xs sm:text-sm mt-1">{selectedLessonForNotes?.student_name} • {new Date(selectedLessonForNotes?.start_time || '').toLocaleDateString('ru-RU')}</p></div><button onClick={() => setShowNotesModal(false)} className="text-white/80 hover:text-white text-2xl sm:text-3xl">×</button></div></div>
-              <div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
-                <TopicChips topics={lessonTopics} setTopics={setLessonTopics} theme={theme} />
-                <div><label className={`block text-xs sm:text-sm font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>📝 Заметки</label><textarea value={lessonNotes} onChange={(e) => setLessonNotes(e.target.value)} rows={5} placeholder="Как прошёл урок, что повторить..." className={`w-full border-2 rounded-xl p-2 sm:p-3 text-sm ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`} /></div>
-                <div className="flex gap-2 sm:gap-3"><button onClick={saveLessonNotes} className="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base hover:from-red-600 hover:to-rose-700 transition shadow-lg shadow-rose-500/30 hover:shadow-xl">💾 Сохранить</button><button onClick={() => setShowNotesModal(false)} className={`px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition ${isDark ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}>Отмена</button></div>
+          <motion.div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+          >
+            <div 
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+              onClick={() => setShowNotesModal(false)} 
+            />
+            <motion.div 
+              className="relative rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white" 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 p-6 bg-white border-b border-gray-200 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="font-bold text-xl text-gray-900">✅ Занятие проведено</h2>
+                    <p className="text-gray-500 text-sm mt-1">
+                      {selectedLessonForNotes.student_name} • {new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU')}
+                    </p>
+                  </div>
+                  <button onClick={() => setShowNotesModal(false)} className="text-gray-400 hover:text-gray-600 text-3xl leading-none transition">×</button>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Обратная связь по занятию</label>
+                  <textarea 
+                    value={lessonNotes} 
+                    onChange={(e) => setLessonNotes(e.target.value)} 
+                    rows={4} 
+                    placeholder="Как прошло занятие? Что получилось хорошо, над чем нужно поработать..." 
+                    className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none transition-all resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Темы, которые прошли</label>
+                  <TopicChips topics={lessonTopics} setTopics={setLessonTopics} theme="light" />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Прикрепить домашнее задание</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowHomeworkModal(true)}
+                    className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-left hover:border-gray-400 transition-all flex items-center justify-between"
+                  >
+                    <span className={formHwTemplateId ? "text-gray-900 font-medium" : "text-gray-400"}>
+                      {formHwTemplateId 
+                        ? homeworks.find(h => h.id === formHwTemplateId)?.title || "ДЗ выбрано"
+                        : "Выбрать ДЗ из списка..."
+                      }
+                    </span>
+                    <span className="text-gray-400">→</span>
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Прикрепить файл</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-gray-400 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    <input ref={fileInputRef} type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.zip" className="hidden" />
+                    {attachedFile || attachedFileName ? (
+                      <div className="flex items-center justify-center gap-2 text-gray-700">
+                        <span className="text-2xl">📎</span>
+                        <span className="font-medium">{attachedFile?.name || attachedFileName}</span>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setAttachedFile(null); setAttachedFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="ml-2 text-red-500 hover:text-red-700">×</button>
+                      </div>
+                    ) : (
+                      <div className="text-gray-500">
+                        <span className="text-2xl block mb-2">📁</span>
+                        <span className="text-sm">Нажмите для загрузки файла</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <button onClick={saveLessonNotes} className="flex-1 bg-gray-900 text-white py-3.5 rounded-xl font-semibold text-base hover:bg-gray-800 transition-all">💾 Сохранить</button>
+                  <button onClick={() => setShowNotesModal(false)} className="px-6 py-3.5 rounded-xl font-semibold text-gray-700 hover:bg-gray-100 transition-all">Отмена</button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showHomeworkModal && (
+          <motion.div 
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+          >
+            <div 
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+              onClick={() => setShowHomeworkModal(false)} 
+            />
+            <motion.div 
+              className="relative rounded-2xl shadow-xl w-full max-w-md bg-white overflow-hidden" 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 className="font-bold text-lg text-gray-900">Выбрать ДЗ</h3>
+                <button onClick={() => setShowHomeworkModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+              </div>
+              
+              <div className="max-h-80 overflow-y-auto p-2">
+                {homeworks.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-4xl mb-2">📭</p>
+                    <p>Нет назначенных ДЗ</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {homeworks.map(hw => (
+                      <button
+                        key={hw.id}
+                        type="button"
+                        onClick={() => {
+                          setFormHwTemplateId(hw.id);
+                          setShowHomeworkModal(false);
+                        }}
+                        className={`w-full text-left p-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-3 ${
+                          formHwTemplateId === hw.id ? 'bg-indigo-50 border-2 border-indigo-500' : 'border-2 border-transparent'
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-lg flex-shrink-0">📚</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{hw.title || "Без названия"}</p>
+                          <p className="text-xs text-gray-500">
+                            {hw.student_name || "Не назначено"} • {hw.sections?.length || 0} заданий
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div className="p-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormHwTemplateId("");
+                    setShowHomeworkModal(false);
+                  }}
+                  className="w-full py-2.5 rounded-xl text-gray-700 hover:bg-gray-100 transition-all font-medium"
+                >
+                  Не назначать ДЗ
+                </button>
               </div>
             </motion.div>
           </motion.div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation"; // ✅ Добавлен usePathname
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { 
@@ -59,7 +59,7 @@ const NAVIGATION = [
 ];
 
 export default function Sidebar() {
-  const pathname = usePathname(); // ✅ Теперь определён
+  const pathname = usePathname();
   const router = useRouter();
   const [role, setRole] = useState<string>("student");
   const [userName, setUserName] = useState<string>("Пользователь");
@@ -67,6 +67,82 @@ export default function Sidebar() {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [mounted, setMounted] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Авто-скрытие только на странице урока
+  const isAutoHide = pathname?.startsWith("/lesson/") ?? false;
+
+  // Десктоп: отслеживание курсора для авто-скрытия
+  useEffect(() => {
+    if (!isAutoHide) {
+      setIsHovered(false);
+      return;
+    }
+
+    let hideTimeout: NodeJS.Timeout;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // У левого края (0-20px) — показываем
+      if (e.clientX <= 20) {
+        clearTimeout(hideTimeout);
+        setIsHovered(true);
+        return;
+      }
+      // Правее сайдбара (>300px) — запускаем таймер скрытия
+      if (e.clientX > 300) {
+        clearTimeout(hideTimeout);
+        hideTimeout = setTimeout(() => setIsHovered(false), 500);
+        return;
+      }
+      // В зоне сайдбара (20-300px) — ничего не делаем, он виден
+    };
+
+    const handleMouseLeaveWindow = () => {
+      setIsHovered(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseleave", handleMouseLeaveWindow);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseleave", handleMouseLeaveWindow);
+      clearTimeout(hideTimeout);
+    };
+  }, [isAutoHide]);
+
+  // Мобильные: свайп от левого края открывает сайдбар
+  useEffect(() => {
+    if (!isAutoHide) return;
+
+    let startX = 0;
+    let startY = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - startX;
+      const deltaY = touch.clientY - startY;
+
+      // Свайп вправо от левого края
+      if (startX < 20 && deltaX > 50 && Math.abs(deltaY) < 30) {
+        setIsMobileOpen(true);
+      }
+    };
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
+
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+    };
+  }, [isAutoHide]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -127,7 +203,7 @@ export default function Sidebar() {
   const getRoleInfo = () => {
     switch (role) {
       case "tutor": return { icon: "👨‍🏫", label: "Репетитор", color: "from-emerald-500 to-teal-600" };
-      case "parent": return { icon: "👨‍👩‍👧", label: "Родитель", color: "from-purple-500 to-pink-600" };
+      case "parent": return { icon: "👨‍‍", label: "Родитель", color: "from-purple-500 to-pink-600" };
       default: return { icon: "🎓", label: "Ученик", color: "from-indigo-500 to-blue-600" };
     }
   };
@@ -152,11 +228,17 @@ export default function Sidebar() {
     }
   };
 
+  // Видимость: мобильные — isMobileOpen; десктоп — авто-режим или всегда
+  const desktopVisible = isAutoHide ? isHovered : true;
+  const translateClass = isMobileOpen
+    ? "translate-x-0"
+    : desktopVisible
+    ? "-translate-x-full lg:translate-x-0"
+    : "-translate-x-full";
+
   const SidebarContent = () => (
     <aside 
-      className={`fixed top-0 left-0 h-full w-[280px] flex flex-col z-50 shadow-2xl overflow-hidden transition-all duration-300 border-r ${
-        isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-      } ${
+      className={`fixed top-0 left-0 h-full w-[280px] flex flex-col z-50 shadow-2xl overflow-hidden transition-transform duration-300 border-r ${translateClass} ${
         isDark 
           ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 text-slate-100 border-slate-700/50' 
           : 'bg-gradient-to-br from-white via-slate-50 to-slate-100 text-slate-900 border-slate-200'
@@ -282,9 +364,12 @@ export default function Sidebar() {
 
   return (
     <>
+      {/* Кнопка-гамбургер: на странице урока скрыта */}
       <button
         onClick={() => setIsMobileOpen(!isMobileOpen)}
         className={`lg:hidden fixed top-4 left-4 z-[60] p-3 rounded-xl shadow-lg border transition-all duration-200 ${
+          isAutoHide ? "opacity-0 pointer-events-none" : ""
+        } ${
           isDark 
             ? 'bg-slate-900/90 backdrop-blur-sm text-white border-slate-700/50 hover:bg-slate-800' 
             : 'bg-white/90 backdrop-blur-sm text-slate-900 border-slate-200 hover:bg-slate-50'
@@ -295,6 +380,11 @@ export default function Sidebar() {
           {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </motion.div>
       </button>
+
+      {/* Индикатор свайпа для мобильных на странице урока */}
+      {isAutoHide && !isMobileOpen && (
+        <div className="lg:hidden fixed left-2 top-1/2 -translate-y-1/2 w-1 h-12 bg-indigo-500/50 rounded-full z-50 animate-pulse" />
+      )}
 
       <AnimatePresence>
         {isMobileOpen && (
@@ -317,9 +407,15 @@ export function MainContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const publicPaths = ["/", "/pricing", "/auth"];
   const isPublic = publicPaths.includes(pathname) || pathname?.startsWith("/parent-shared/");
+  const isLessonPage = pathname?.startsWith("/lesson/");
 
   if (isPublic) {
     return <>{children}</>;
+  }
+
+  // На странице урока контент занимает всю ширину (сайдбар автоскрывается)
+  if (isLessonPage) {
+    return <div className="min-h-screen">{children}</div>;
   }
 
   return <div className="lg:ml-[280px] min-h-screen">{children}</div>;
