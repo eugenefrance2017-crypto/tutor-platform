@@ -10,8 +10,7 @@ const MAX_SCALE = 5;
 
 function getShapeBounds(s: Shape): { x: number; y: number; width: number; height: number } {
   switch (s.type) {
-    case "pen":
-    case "marker": {
+    case "pen": case "marker": {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (let i = 0; i < s.points.length; i += 2) {
         minX = Math.min(minX, s.points[i]); minY = Math.min(minY, s.points[i + 1]);
@@ -19,12 +18,10 @@ function getShapeBounds(s: Shape): { x: number; y: number; width: number; height
       }
       return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     }
-    case "line":
-    case "arrow": return { x: Math.min(s.start.x, s.end.x), y: Math.min(s.start.y, s.end.y), width: Math.abs(s.end.x - s.start.x), height: Math.abs(s.end.y - s.start.y) };
+    case "line": case "arrow": return { x: Math.min(s.start.x, s.end.x), y: Math.min(s.start.y, s.end.y), width: Math.abs(s.end.x - s.start.x), height: Math.abs(s.end.y - s.start.y) };
     case "rect": return { x: Math.min(s.x, s.x + s.width), y: Math.min(s.y, s.y + s.height), width: Math.abs(s.width), height: Math.abs(s.height) };
     case "ellipse": return { x: s.x - s.radiusX, y: s.y - s.radiusY, width: s.radiusX * 2, height: s.radiusY * 2 };
-    case "triangle":
-    case "star": return { x: s.x - s.radius, y: s.y - s.radius, width: s.radius * 2, height: s.radius * 2 };
+    case "triangle": case "star": return { x: s.x - s.radius, y: s.y - s.radius, width: s.radius * 2, height: s.radius * 2 };
     case "text": return { x: s.x, y: s.y - s.fontSize, width: s.text.length * s.fontSize * 0.6, height: s.fontSize };
   }
 }
@@ -68,12 +65,86 @@ function ShapeNode({ s, isSelected }: { s: Shape; isSelected?: boolean }) {
   );
 }
 
+function LaserLines({ laserPoints, cursors }: { 
+  laserPoints: Record<string, number[]>;
+  cursors: Record<string, { x: number; y: number; name: string; color: string }>;
+}) {
+  return (
+    <>
+      {Object.entries(laserPoints).map(([userId, points]) => {
+        if (points.length < 2) return null;
+        const color = cursors[userId]?.color || "#ff0000";
+        return (
+          <Line
+            key={userId}
+            points={points}
+            stroke={color}
+            strokeWidth={4}
+            lineCap="round"
+            lineJoin="round"
+            opacity={0.9}
+            listening={false}
+            shadowColor={color}
+            shadowBlur={10}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+// 🔥 Компонент для отрисовки камеры в углу холста (PiP) во время записи
+function CameraPiP({ stream, stageWidth, stageHeight, scale }: { 
+  stream: MediaStream | null | undefined;
+  stageWidth: number;
+  stageHeight: number;
+  scale: number;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (!stream || !videoRef.current) return;
+    videoRef.current.srcObject = stream;
+    videoRef.current.muted = true;
+    videoRef.current.play().catch(console.error);
+    setVideoEl(videoRef.current);
+  }, [stream]);
+
+  if (!stream || !videoEl) return null;
+
+  const width = 200;
+  const height = 150;
+  const x = (stageWidth / scale) - width - 20;
+  const y = (stageHeight / scale) - height - 20;
+
+  return (
+    <>
+      <video ref={videoRef} style={{ display: "none" }} />
+      <KonvaImage 
+        image={videoEl} 
+        x={x} 
+        y={y} 
+        width={width} 
+        height={height} 
+        cornerRadius={12}
+        shadowColor="black"
+        shadowBlur={10}
+        shadowOpacity={0.5}
+        listening={false}
+      />
+    </>
+  );
+}
+
 interface Props {
   wb: WhiteboardState;
   onStageReady?: (stage: any) => void;
+  isRecording?: boolean;
+  localVideoStream?: MediaStream | null;
 }
 
-export default function WhiteboardCanvas({ wb, onStageReady }: Props) {
+export default function WhiteboardCanvas({ wb, onStageReady, isRecording, localVideoStream }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -102,11 +173,12 @@ export default function WhiteboardCanvas({ wb, onStageReady }: Props) {
   }, [mounted, size, onStageReady]);
 
   useEffect(() => {
-    if (!wb.bgUrl) { setBgImage(null); return; }
+    const currentUrl = wb.bgUrls[wb.currentBgPage];
+    if (!currentUrl) { setBgImage(null); return; }
     const img = new Image();
     img.onload = () => setBgImage(img);
-    img.src = wb.bgUrl;
-  }, [wb.bgUrl]);
+    img.src = currentUrl;
+  }, [wb.bgUrls, wb.currentBgPage]);
 
   const getPos = (): Pt | null => {
     const stage = stageRef.current;
@@ -191,10 +263,16 @@ export default function WhiteboardCanvas({ wb, onStageReady }: Props) {
             {bgImage && <KonvaImage image={bgImage} x={0} y={0} width={bgImage.width} height={bgImage.height} listening={false} opacity={0.95} />}
             {wb.shapes.map((s) => <ShapeNode key={s.id} s={s} isSelected={s.id === wb.selectedId} />)}
             {wb.draft && <ShapeNode s={wb.draft} />}
-            {wb.laserPoints.length > 1 && (
-              <Line points={wb.laserPoints} stroke="#ff0000" strokeWidth={4} lineCap="round" lineJoin="round" opacity={0.9} listening={false} shadowColor="#ff0000" shadowBlur={10} />
-            )}
+            <LaserLines laserPoints={wb.laserPoints} cursors={wb.cursors} />
             {Object.entries(wb.cursors).map(([id, cursor]) => <CursorNode key={id} cursor={cursor} />)}
+            {isRecording && (
+              <CameraPiP 
+                stream={localVideoStream} 
+                stageWidth={size.w} 
+                stageHeight={size.h} 
+                scale={scale} 
+              />
+            )}
           </Layer>
         </Stage>
       )}

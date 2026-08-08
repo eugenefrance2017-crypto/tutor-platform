@@ -4,11 +4,11 @@ import { useState } from "react";
 import {
   MousePointer2, Pencil, Eraser, Hand, Minus, ArrowUpRight, Square, Circle, Type,
   Undo2, Redo2, Trash2, Save, Camera, Paperclip, X, Eye,
-  Highlighter, Triangle, Star, CircleDot, Timer,
+  Highlighter, Triangle, Star, CircleDot, Timer, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { Tool } from "@/lib/whiteboard";
 import { WhiteboardState } from "@/hooks/useWhiteboard";
-import { imageFileToOptimizedDataUrl, pdfFileToFirstPageDataUrl, uploadBackground } from "@/lib/background";
+import { imageFileToOptimizedDataUrl, pdfFileToDataUrls, uploadBackground } from "@/lib/background";
 
 const tools: { id: Tool; icon: any; label: string }[] = [
   { id: "select", icon: MousePointer2, label: "Выделение" },
@@ -32,10 +32,23 @@ function IconBtn({ active = false, disabled = false, danger = false, onClick, ti
   active?: boolean; disabled?: boolean; danger?: boolean; onClick?: () => void; title?: string; children: React.ReactNode;
 }) {
   return (
-    <button title={title} disabled={disabled} onClick={onClick}
-      className={`h-8 w-8 flex items-center justify-center rounded-lg transition-colors disabled:opacity-35 ${
-        active ? "bg-indigo-600 text-white shadow-sm" : danger ? "text-gray-600 hover:bg-red-50 hover:text-red-600" : "text-gray-600 hover:bg-gray-100"
-      }`}>
+    <button 
+      title={title} 
+      disabled={disabled} 
+      onClick={onClick}
+      className={`
+        h-10 w-10 sm:h-8 sm:w-8 
+        flex items-center justify-center 
+        rounded-lg transition-colors 
+        disabled:opacity-35 
+        ${active 
+          ? "bg-indigo-600 text-white shadow-sm" 
+          : danger 
+            ? "text-gray-600 hover:bg-red-50 hover:text-red-600" 
+            : "text-gray-600 hover:bg-gray-100"
+        }
+      `}
+    >
       {children}
     </button>
   );
@@ -43,9 +56,13 @@ function IconBtn({ active = false, disabled = false, danger = false, onClick, ti
 
 const Divider = () => <div className="w-px h-6 bg-gray-200 mx-0.5" />;
 
-interface Props { wb: WhiteboardState; stage: any; }
+interface Props { 
+  wb: WhiteboardState; 
+  stage: any;
+  recorder: any;
+}
 
-export default function WhiteboardToolbar({ wb, stage }: Props) {
+export default function WhiteboardToolbar({ wb, stage, recorder }: Props) {
   const [uploading, setUploading] = useState(false);
   const [showTimerInput, setShowTimerInput] = useState(false);
   const [timerInputValue, setTimerInputValue] = useState("5");
@@ -62,45 +79,78 @@ export default function WhiteboardToolbar({ wb, stage }: Props) {
     if (!f) return;
     setUploading(true);
     try {
-      const dataUrl = f.type === "application/pdf" ? await pdfFileToFirstPageDataUrl(f) : await imageFileToOptimizedDataUrl(f);
-      let url: string;
-      try { url = await uploadBackground(wb.lessonId, dataUrl); }
-      catch (storageErr) {
-        console.warn("Storage failed, fallback to Firestore", storageErr);
-        if (dataUrl.length > 900_000) throw new Error("Файл слишком большой");
-        url = dataUrl;
+      let dataUrls: string[] = [];
+      if (f.type === "application/pdf") {
+        dataUrls = await pdfFileToDataUrls(f);
+      } else {
+        dataUrls = [await imageFileToOptimizedDataUrl(f)];
       }
-      await wb.setBackground(url);
+
+      const urls: string[] = [];
+      for (const dataUrl of dataUrls) {
+        try {
+          urls.push(await uploadBackground(wb.lessonId, dataUrl));
+        } catch (storageErr) {
+          console.warn("Storage failed, fallback", storageErr);
+          if (dataUrl.length > 900_000) throw new Error("Файл слишком большой");
+          urls.push(dataUrl);
+        }
+      }
+      await wb.setBackgrounds(urls);
     } catch (err) { console.error(err); alert("Не удалось загрузить задание"); }
     setUploading(false);
   };
 
   const dis = !wb.canDraw;
 
+  const zoomIn = () => {
+    if (!stage) return;
+    const oldScale = stage.scaleX();
+    const newScale = Math.min(5, oldScale * 1.2);
+    stage.scale({ x: newScale, y: newScale });
+    stage.batchDraw();
+  };
+
+  const zoomOut = () => {
+    if (!stage) return;
+    const oldScale = stage.scaleX();
+    const newScale = Math.max(0.1, oldScale / 1.2);
+    stage.scale({ x: newScale, y: newScale });
+    stage.batchDraw();
+  };
+
+  const resetZoom = () => {
+    if (!stage) return;
+    stage.scale({ x: 1, y: 1 });
+    stage.position({ x: 0, y: 0 });
+    stage.batchDraw();
+  };
+
+  const currentScale = stage ? Math.round(stage.scaleX() * 100) : 100;
+
   return (
-    <div className="flex flex-wrap items-center gap-1 p-1.5 bg-white">
-      {/* Навигация по страницам */}
+    <div className="flex flex-wrap items-center gap-1 p-1.5 sm:p-2 bg-white">
       <button onClick={() => wb.goToPage(wb.currentPage - 1)} disabled={wb.currentPage === 0}
-        className="h-8 w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30" title="Предыдущая">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        className="h-10 w-10 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30" title="Предыдущая">
+        <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
       </button>
-      <span className="text-xs text-gray-600 px-1 tabular-nums">{wb.currentPage + 1}/{wb.pages.length}</span>
+      <span className="text-xs text-gray-600 px-1 tabular-nums min-w-[3rem] text-center">{wb.currentPage + 1}/{wb.pages.length}</span>
       <button onClick={() => wb.goToPage(wb.currentPage + 1)} disabled={wb.currentPage >= wb.pages.length - 1}
-        className="h-8 w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30" title="Следующая">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        className="h-10 w-10 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30" title="Следующая">
+        <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </button>
-      <button onClick={wb.addPage} className="h-8 w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100" title="Новая страница">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <button onClick={wb.addPage} className="h-10 w-10 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100" title="Новая страница">
+        <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
       </button>
       {wb.pages.length > 1 && (
-        <button onClick={() => wb.deletePage(wb.currentPage)} className="h-8 w-8 flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50" title="Удалить страницу">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <button onClick={() => wb.deletePage(wb.currentPage)} className="h-10 w-10 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50" title="Удалить страницу">
+          <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
@@ -108,22 +158,24 @@ export default function WhiteboardToolbar({ wb, stage }: Props) {
 
       <Divider />
 
-      {/* Инструменты */}
       {tools.map((t) => {
         const I = t.icon;
-        return <IconBtn key={t.id} active={wb.tool === t.id} disabled={dis && t.id !== "hand" && t.id !== "select"} onClick={() => wb.setTool(t.id)} title={t.label}><I size={16} /></IconBtn>;
+        return (
+          <IconBtn key={t.id} active={wb.tool === t.id} disabled={dis && t.id !== "hand" && t.id !== "select"} onClick={() => wb.setTool(t.id)} title={t.label}>
+            <I size={18} className="sm:w-4 sm:h-4" />
+          </IconBtn>
+        );
       })}
 
       <Divider />
 
-      {/* Цвета */}
       <div className="flex items-center gap-0.5">
         {PALETTE.map((c) => (
           <button key={c} onClick={() => wb.setColor(c)} disabled={dis} title={c}
-            className={`h-5 w-5 rounded-full border-2 transition-transform disabled:opacity-40 ${wb.color === c ? "border-indigo-600 scale-110" : "border-white shadow"}`}
+            className={`h-6 w-6 sm:h-5 sm:w-5 rounded-full border-2 transition-transform disabled:opacity-40 ${wb.color === c ? "border-indigo-600 scale-110" : "border-white shadow"}`}
             style={{ backgroundColor: c }} />
         ))}
-        <label className="h-5 w-5 rounded-full overflow-hidden border border-gray-200 cursor-pointer relative shrink-0" title="Свой цвет">
+        <label className="h-6 w-6 sm:h-5 sm:w-5 rounded-full overflow-hidden border border-gray-200 cursor-pointer relative shrink-0" title="Свой цвет">
           <input type="color" value={wb.color} disabled={dis} onChange={(e) => wb.setColor(e.target.value)} className="absolute -inset-2 cursor-pointer disabled:opacity-40" />
         </label>
       </div>
@@ -132,22 +184,26 @@ export default function WhiteboardToolbar({ wb, stage }: Props) {
 
       <Divider />
 
-      {/* Undo/Redo/Delete */}
-      <IconBtn onClick={wb.undo} disabled={dis || !wb.canUndo} title="Отменить"><Undo2 size={16} /></IconBtn>
-      <IconBtn onClick={wb.redo} disabled={dis || !wb.canRedo} title="Повторить"><Redo2 size={16} /></IconBtn>
+      <IconBtn onClick={wb.undo} disabled={dis || !wb.canUndo} title="Отменить"><Undo2 size={18} className="sm:w-4 sm:h-4" /></IconBtn>
+      <IconBtn onClick={wb.redo} disabled={dis || !wb.canRedo} title="Повторить"><Redo2 size={18} className="sm:w-4 sm:h-4" /></IconBtn>
       {wb.selectedId && wb.canDraw && (
-        <IconBtn onClick={wb.deleteSelected} danger title="Удалить выделенное"><Trash2 size={16} /></IconBtn>
+        <IconBtn onClick={wb.deleteSelected} danger title="Удалить выделенное"><Trash2 size={18} className="sm:w-4 sm:h-4" /></IconBtn>
       )}
-      <IconBtn onClick={wb.clear} disabled={dis} danger title="Очистить всё"><X size={16} /></IconBtn>
+      <IconBtn onClick={wb.clear} disabled={dis} danger title="Очистить всё"><X size={18} className="sm:w-4 sm:h-4" /></IconBtn>
 
       <Divider />
 
-      {/* Таймер */}
+      <IconBtn onClick={zoomOut} title="Отдалить"><ZoomOut size={18} className="sm:w-4 sm:h-4" /></IconBtn>
+      <button onClick={resetZoom} className="h-10 px-3 sm:h-8 sm:px-2 flex items-center justify-center rounded-lg text-sm sm:text-xs text-gray-600 hover:bg-gray-100 tabular-nums min-w-[3.5rem] sm:min-w-[3rem] font-medium">
+        {currentScale}%
+      </button>
+      <IconBtn onClick={zoomIn} title="Приблизить"><ZoomIn size={18} className="sm:w-4 sm:h-4" /></IconBtn>
+
+      <Divider />
+
       {wb.timerSeconds > 0 ? (
-        <div className={`h-8 px-3 flex items-center gap-2 rounded-lg font-mono text-sm font-bold ${
-          wb.timerSeconds <= 10 ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-900"
-        }`}>
-          <Timer size={14} />
+        <div className={`h-10 px-3 sm:h-8 sm:px-2 flex items-center gap-2 rounded-lg font-mono text-sm font-bold ${wb.timerSeconds <= 10 ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-900"}`}>
+          <Timer size={16} className="sm:w-4 sm:h-4" />
           {Math.floor(wb.timerSeconds / 60)}:{(wb.timerSeconds % 60).toString().padStart(2, "0")}
           {wb.timerRunning && (
             <button onClick={wb.stopTimer} className="opacity-70 hover:opacity-100">
@@ -159,46 +215,92 @@ export default function WhiteboardToolbar({ wb, stage }: Props) {
         </div>
       ) : showTimerInput ? (
         <div className="flex items-center gap-1">
-          <input type="number" value={timerInputValue} onChange={(e) => setTimerInputValue(e.target.value)}
-            className="w-12 h-8 px-2 rounded-lg border border-gray-200 text-sm" min={1} max={3600} autoFocus />
-          <button onClick={() => { wb.startTimer(parseInt(timerInputValue) * 60); setShowTimerInput(false); }}
-            className="h-8 px-2 rounded-lg bg-green-500 text-white text-xs hover:bg-green-600 flex items-center justify-center">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <input type="number" value={timerInputValue} onChange={(e) => setTimerInputValue(e.target.value)} className="w-16 h-10 sm:w-12 sm:h-8 px-2 rounded-lg border border-gray-200 text-sm" min={1} max={3600} autoFocus />
+          <button onClick={() => { wb.startTimer(parseInt(timerInputValue) * 60); setShowTimerInput(false); }} className="h-10 px-3 sm:h-8 sm:px-2 rounded-lg bg-green-500 text-white text-xs hover:bg-green-600 flex items-center justify-center">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
             </svg>
           </button>
-          <button onClick={() => setShowTimerInput(false)} className="h-8 w-8 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center justify-center">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onClick={() => setShowTimerInput(false)} className="h-10 w-10 sm:h-8 sm:w-8 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center justify-center">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
       ) : (
-        <button onClick={() => setShowTimerInput(true)} className="h-8 w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100" title="Таймер">
-          <Timer size={16} />
+        <button onClick={() => setShowTimerInput(true)} className="h-10 w-10 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100" title="Таймер">
+          <Timer size={18} className="sm:w-4 sm:h-4" />
         </button>
       )}
 
       <div className="flex-1" />
 
-      {/* Правая часть */}
       {wb.role === "teacher" && (
         <>
-          <label className={`h-8 px-3 flex items-center gap-1.5 rounded-lg text-sm cursor-pointer ${uploading ? "bg-gray-100 text-gray-400" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
-            <Paperclip size={14} />{uploading ? "Загрузка…" : "Задание"}
+          {/* 🔥 КНОПКА ЗАПИСИ УРОКА */}
+          {recorder.isRecording ? (
+            <button 
+              onClick={recorder.stopRecording}
+              className="h-10 px-3 sm:h-8 sm:px-3 flex items-center gap-1.5 rounded-lg bg-red-500 text-white text-sm hover:bg-red-600 animate-pulse shrink-0"
+              title="Остановить запись"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              <span className="hidden sm:inline">Стоп ({recorder.formatTime(recorder.recordingTime)})</span>
+              <span className="sm:hidden">{recorder.formatTime(recorder.recordingTime)}</span>
+            </button>
+          ) : (
+            <button 
+              onClick={recorder.startRecording}
+              className="h-10 px-3 sm:h-8 sm:px-3 flex items-center gap-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm shrink-0"
+              title="Начать запись (доска + звук + камера)"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/></svg>
+              <span className="hidden sm:inline">Запись</span>
+              <span className="sm:hidden">Зап</span>
+            </button>
+          )}
+
+          <label className={`h-10 px-3 sm:h-8 sm:px-3 flex items-center gap-1.5 rounded-lg text-sm cursor-pointer ${uploading ? "bg-gray-100 text-gray-400" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
+            <Paperclip size={16} className="sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">{uploading ? "Загрузка…" : "Задание"}</span>
+            <span className="sm:hidden">Зад</span>
             <input type="file" accept="image/png,image/jpeg,application/pdf" className="hidden" onChange={onFile} disabled={uploading} />
           </label>
-          {wb.bgUrl && <IconBtn onClick={() => wb.clearBackground()} title="Убрать фон"><X size={16} /></IconBtn>}
-          <button onClick={() => wb.setStudentCanDraw(!wb.studentCanDraw)}
-            className={`h-8 px-3 flex items-center gap-1.5 rounded-lg text-sm transition-colors ${wb.studentCanDraw ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-amber-100 text-amber-700 hover:bg-amber-200"}`}>
-            {wb.studentCanDraw ? <Pencil size={14} /> : <Eye size={14} />}
+          
+          {wb.bgUrls.length > 1 && (
+            <>
+              <button onClick={wb.prevBgPage} disabled={wb.currentBgPage === 0} className="h-10 w-10 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30" title="Предыдущая страница задания">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <span className="text-xs text-gray-600 px-1 tabular-nums min-w-[3rem] text-center">{wb.currentBgPage + 1}/{wb.bgUrls.length}</span>
+              <button onClick={wb.nextBgPage} disabled={wb.currentBgPage >= wb.bgUrls.length - 1} className="h-10 w-10 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30" title="Следующая страница задания">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+            </>
+          )}
+
+          {wb.bgUrls.length > 0 && <IconBtn onClick={wb.clearBackground} title="Убрать фон"><X size={18} className="sm:w-4 sm:h-4" /></IconBtn>}
+          
+          <button onClick={() => wb.setStudentCanDraw(!wb.studentCanDraw)} className={`h-10 px-3 sm:h-8 sm:px-3 flex items-center gap-1.5 rounded-lg text-sm transition-colors ${wb.studentCanDraw ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-amber-100 text-amber-700 hover:bg-amber-200"}`}>
+            {wb.studentCanDraw ? <Pencil size={16} className="sm:w-4 sm:h-4" /> : <Eye size={16} className="sm:w-4 sm:h-4" />}
             <span className="hidden sm:inline">{wb.studentCanDraw ? "Ученик рисует" : "Только просмотр"}</span>
+            <span className="sm:hidden">{wb.studentCanDraw ? "Рис" : "См"}</span>
           </button>
         </>
       )}
-      {wb.role !== "teacher" && !wb.canDraw && <span className="text-xs text-red-500 flex items-center gap-1"><Eye size={14} /> учитель выключил рисование</span>}
-      <button onClick={wb.save} className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 shadow-sm"><Save size={14} />Сохранить</button>
-      <IconBtn onClick={exportPNG} title="Скачать PNG"><Camera size={16} /></IconBtn>
+      {wb.role !== "teacher" && !wb.canDraw && (
+        <span className="text-xs text-red-500 flex items-center gap-1">
+          <Eye size={14} /> 
+          <span className="hidden sm:inline">учитель выключил рисование</span>
+          <span className="sm:hidden">нет доступа</span>
+        </span>
+      )}
+      <button onClick={wb.save} className="h-10 px-3 sm:h-8 sm:px-3 flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 shadow-sm">
+        <Save size={16} className="sm:w-4 sm:h-4" />
+        <span className="hidden sm:inline">Сохранить</span>
+        <span className="sm:hidden">Сохр</span>
+      </button>
+      <IconBtn onClick={exportPNG} title="Скачать PNG"><Camera size={18} className="sm:w-4 sm:h-4" /></IconBtn>
     </div>
   );
 }

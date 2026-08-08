@@ -21,7 +21,6 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-// Картинка -> JPEG до 1600px (чтобы легко грузилось и хранилось)
 export async function imageFileToOptimizedDataUrl(file: File): Promise<string> {
   const raw = await fileToDataUrl(file);
   const img = await loadImage(raw);
@@ -39,25 +38,29 @@ export async function imageFileToOptimizedDataUrl(file: File): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.82);
 }
 
-// PDF -> первая страница в JPEG
-export async function pdfFileToFirstPageDataUrl(file: File): Promise<string> {
+// 🔥 ТЕПЕРЬ КОНВЕРТИРУЕМ ВСЕ СТРАНИЦЫ PDF В МАССИВ
+export async function pdfFileToDataUrls(file: File): Promise<string[]> {
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
   const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: buf }).promise;
-  const page = await doc.getPage(1);
-  const viewport = page.getViewport({ scale: 2 });
-  const canvas = document.createElement("canvas");
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  const ctx = canvas.getContext("2d")!;
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  return canvas.toDataURL("image/jpeg", 0.85);
+  const urls: string[] = [];
+
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d")!;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    urls.push(canvas.toDataURL("image/jpeg", 0.85));
+  }
+  return urls;
 }
 
-// Загрузка в Firebase Storage, возвращает публичную ссылку
 export async function uploadBackground(lessonId: string, dataUrl: string): Promise<string> {
-  const path = `boards/${lessonId}/${Date.now()}.jpg`;
+  const path = `boards/${lessonId}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
   const r = ref(storage, path);
   await uploadString(r, dataUrl, "data_url");
   return await getDownloadURL(r);

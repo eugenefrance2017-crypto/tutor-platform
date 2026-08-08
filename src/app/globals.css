@@ -82,38 +82,30 @@
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s ease-out forwards;
-  opacity: 0;
-}
+.animate-fade-in-up { animation: fade-in-up 0.4s ease-out forwards; opacity: 0; }
 
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-5px); }
 }
-
 .animate-float { animation: float 3s ease infinite; }
 
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-
 .animate-spin-slow { animation: spin-slow 8s linear infinite; }
 
 @keyframes bounce-gentle {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-3px); }
 }
-
 .animate-bounce-gentle { animation: bounce-gentle 2s ease infinite; }
 
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
-
 .animate-shimmer {
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
   background-size: 200% 100%;
@@ -124,55 +116,30 @@
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
 
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(-20px); }
   to { opacity: 1; transform: translateX(0); }
 }
-
 .animate-slideIn { animation: slideIn 0.3s ease-out; }
 
 @keyframes pulseGlow {
   0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
   50% { box-shadow: 0 0 30px rgba(245, 158, 11, 0.6); }
 }
-
 .animate-pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
 
-/* ========== СКРОЛЛБАРЫ ========== */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ========== БАЗОВЫЕ СТИЛИ И ШРИФТЫ ========== */
+:root {
+  --font-jakarta: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
 }
 
-::-webkit-scrollbar-track {
-  background: #F5E6D3;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #D4A574;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #C9A96E;
-}
-
-textarea::-webkit-scrollbar {
-  width: 6px;
-}
-
-textarea::-webkit-scrollbar-thumb {
-  background: #D4A574;
-  border-radius: 3px;
-}
-
-/* ========== БАЗОВЫЕ СТИЛИ ========== */
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 input:focus, textarea:focus, select:focus {
@@ -184,6 +151,62 @@ button:active {
   transform: scale(0.98);
 }
 
+/* ========== PWA & МОБИЛЬНЫЕ ЗОНЫ ========== */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-area-pt {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ========== СКРОЛЛБАРЫ ========== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F5E6D3;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #D4A574;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C9A96E;
+}
+textarea::-webkit-scrollbar {
+  width: 6px;
+}
+textarea::-webkit-scrollbar-thumb {
+  background: #D4A574;
+  border-radius: 3px;
+}
+
+/* Тонкий скроллбар для ячеек календаря */
+.lesson-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.lesson-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.lesson-scroll::-webkit-scrollbar-thumb {
+  background: rgba(225, 29, 72, 0.3);
+  border-radius: 10px;
+}
+.lesson-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(225, 29, 72, 0.6);
+}
+
+/* Скрытие скроллбара для горизонтальных списков */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ========== TOAST УВЕДОМЛЕНИЯ ========== */
 [role="status"] {
   background: #FFF8F0 !important;
@@ -193,7 +216,6 @@ button:active {
   padding: 16px 20px !important;
   box-shadow: 0 10px 40px rgba(139, 111, 71, 0.2) !important;
 }
-
 [role="status"] > div {
   color: #3D2817 !important;
 }

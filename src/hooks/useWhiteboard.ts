@@ -14,10 +14,11 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
   const [past, setPast] = useState<Shape[][]>([]);
   const [future, setFuture] = useState<Shape[][]>([]);
   const [studentCanDraw, setStudentCanDraw] = useState(true);
-  const [bgUrl, setBgUrl] = useState<string | null>(null);
+  const [bgUrls, setBgUrls] = useState<string[]>([]);
+  const [currentBgPage, setCurrentBgPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string; color: string }>>({});
-  const [laserPoints, setLaserPoints] = useState<number[]>([]);
+  const [laserPoints, setLaserPoints] = useState<Record<string, number[]>>({});
   const [pages, setPages] = useState<Shape[][]>([[]]);
   const [currentPage, setCurrentPage] = useState(0);
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -26,10 +27,15 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
   const [timerDuration, setTimerDuration] = useState(0);
 
   const startRef = useRef<Pt | null>(null);
-  const isWritingRef = useRef(false);
   const dragOffsetRef = useRef<Pt | null>(null);
   const cursorThrottleRef = useRef<number>(0);
+  const laserThrottleRef = useRef<number>(0);
   const laserTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 🔥 КЛЮЧЕВОЕ: Флаг локального обновления и таймер
+  const isLocalUpdating = useRef(false);
+  const localVersion = useRef(0); // Версия локальных данных
+  const lastWriteTime = useRef(0); // Время последней записи
 
   const userId = typeof window !== "undefined" ? localStorage.getItem("uid") || "guest" : "guest";
   const userName = typeof window !== "undefined" ? localStorage.getItem("userName") || "Гость" : "Гость";
@@ -45,34 +51,58 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
 
   const canDraw = role === "teacher" ? true : studentCanDraw;
 
-  // Загрузка доски
+  // 🔥 УМНЫЙ onSnapshot: учитель блокирует, ученик всегда принимает
   useEffect(() => {
     if (!lessonId) return;
     const ref = doc(db, "lessons", lessonId, "board", "state");
     const unsub = onSnapshot(ref, (snap) => {
-      if (isWritingRef.current) return;
       if (snap.exists()) {
         const data = snap.data();
-        const loadedPages = Array.isArray(data.pages) ? data.pages : (Array.isArray(data.shapes) ? [data.shapes] : [[]]);
-        setPages(loadedPages);
-        setCurrentPage(typeof data.currentPage === "number" ? data.currentPage : 0);
+        
+        // УЧИТЕЛЬ: Игнорируем обновление, если мы только что сами записали (гонка данных)
+        if (role === "teacher" && isLocalUpdating.current) {
+          console.log("️ Учитель: игнорирую snapshot (локальное обновление)");
+          return;
+        }
+        
+        // УЧИТЕЛЬ: Игнорируем, если запись была меньше 1 секунды назад
+        if (role === "teacher" && Date.now() - lastWriteTime.current < 1000) {
+          console.log("⏸️ Учитель: игнорирую snapshot (слишком свежая запись)");
+          return;
+        }
+
+        // Парсим pagesJson
+        if (typeof data.pagesJson === "string") {
+          try {
+            const parsed = JSON.parse(data.pagesJson);
+            if (Array.isArray(parsed)) {
+              setPages(parsed);
+            }
+          } catch (e) {
+            console.error("parse error", e);
+          }
+        }
+        
+        if (typeof data.currentPage === "number") setCurrentPage(data.currentPage);
         if (typeof data.studentCanDraw === "boolean") setStudentCanDraw(data.studentCanDraw);
-        if (typeof data.bgUrl === "string") setBgUrl(data.bgUrl);
-        if (data.bgUrl === null) setBgUrl(null);
-      } else {
-        setPages([[]]);
-        setCurrentPage(0);
+        
+        if (Array.isArray(data.bgUrls)) {
+          setBgUrls(data.bgUrls);
+        } else if (typeof data.bgUrl === "string") {
+          setBgUrls([data.bgUrl]);
+        } else {
+          setBgUrls([]);
+        }
+        
+        if (typeof data.currentBgPage === "number") setCurrentBgPage(data.currentBgPage);
+        else setCurrentBgPage(0);
       }
     });
     return () => unsub();
-  }, [lessonId]);
+  }, [lessonId, role]);
 
-  // Текущие shapes = текущая страница
-  useEffect(() => {
-    setShapes(pages[currentPage] || []);
-  }, [pages, currentPage]);
+  useEffect(() => { setShapes(pages[currentPage] || []); }, [pages, currentPage]);
 
-  // Загрузка курсоров
   useEffect(() => {
     if (!lessonId) return;
     const ref = collection(db, "lessons", lessonId, "cursors");
@@ -87,43 +117,63 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
     return () => unsub();
   }, [lessonId]);
 
-  // Удаление курсора при выходе
+  useEffect(() => {
+    if (!lessonId) return;
+    const ref = collection(db, "lessons", lessonId, "lasers");
+    const unsub = onSnapshot(ref, (snap) => {
+      const lasersMap: Record<string, number[]> = {};
+      snap.forEach((d) => {
+        const data = d.data();
+        if (Array.isArray(data.points)) lasersMap[d.id] = data.points;
+      });
+      setLaserPoints(lasersMap);
+    });
+    return () => unsub();
+  }, [lessonId]);
+
   useEffect(() => {
     return () => {
       try {
         deleteDoc(doc(db, "lessons", lessonId, "cursors", userId));
+        deleteDoc(doc(db, "lessons", lessonId, "lasers", userId));
       } catch (e) { /* ignore */ }
     };
   }, [lessonId]);
 
-  // Таймер
   useEffect(() => {
     if (!timerRunning || timerStartAt === null) return;
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - timerStartAt) / 1000);
       const remaining = Math.max(0, timerDuration - elapsed);
       setTimerSeconds(remaining);
-      if (remaining === 0) {
-        setTimerRunning(false);
-        setTimerStartAt(null);
-      }
+      if (remaining === 0) { setTimerRunning(false); setTimerStartAt(null); }
     }, 250);
     return () => clearInterval(interval);
   }, [timerRunning, timerStartAt, timerDuration]);
 
+  // 🔥 ЗАПИСЬ С ЗАЩИТОЙ ОТ ГОНКИ
   const patchBoard = async (patch: Record<string, unknown>) => {
-    isWritingRef.current = true;
+    isLocalUpdating.current = true;
+    lastWriteTime.current = Date.now();
+    localVersion.current++;
+    
     try {
       await setDoc(doc(db, "lessons", lessonId, "board", "state"), patch, { merge: true });
-    } catch (e) {
-      console.error("board write failed", e);
+    } catch (e: any) {
+      console.error("Firestore write failed:", e);
     } finally {
-      setTimeout(() => { isWritingRef.current = false; }, 50);
+      // Снимаем флаг через 1.5 секунды (даём базе время распространить данные)
+      setTimeout(() => {
+        isLocalUpdating.current = false;
+      }, 1500);
     }
   };
 
   const writePages = (nextPages: Shape[][], nextCurrentPage?: number) => {
-    const patch: Record<string, unknown> = { pages: nextPages, updatedAt: serverTimestamp() };
+    const patch: Record<string, unknown> = { 
+      pagesJson: JSON.stringify(nextPages), 
+      updatedAt: serverTimestamp() 
+    };
     if (nextCurrentPage !== undefined) patch.currentPage = nextCurrentPage;
     patchBoard(patch);
   };
@@ -133,8 +183,33 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
     await patchBoard({ studentCanDraw: v });
   };
 
-  const setBackground = async (url: string) => patchBoard({ bgUrl: url });
-  const clearBackground = async () => patchBoard({ bgUrl: null });
+  const setBackgrounds = async (urls: string[]) => {
+    setBgUrls(urls);
+    setCurrentBgPage(0);
+    await patchBoard({ bgUrls: urls, currentBgPage: 0 });
+  };
+
+  const nextBgPage = async () => {
+    if (currentBgPage < bgUrls.length - 1) {
+      const next = currentBgPage + 1;
+      setCurrentBgPage(next);
+      await patchBoard({ currentBgPage: next });
+    }
+  };
+
+  const prevBgPage = async () => {
+    if (currentBgPage > 0) {
+      const prev = currentBgPage - 1;
+      setCurrentBgPage(prev);
+      await patchBoard({ currentBgPage: prev });
+    }
+  };
+
+  const clearBackground = async () => {
+    setBgUrls([]);
+    setCurrentBgPage(0);
+    await patchBoard({ bgUrls: [], currentBgPage: 0 });
+  };
 
   const commit = (next: Shape[]) => {
     const newPages = [...pages];
@@ -174,60 +249,47 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
 
   const getShapeCenter = (s: Shape): Pt => {
     switch (s.type) {
-      case "pen":
-      case "marker": {
+      case "pen": case "marker": {
         let cx = 0, cy = 0;
         for (let i = 0; i < s.points.length; i += 2) { cx += s.points[i]; cy += s.points[i + 1]; }
         return { x: cx / (s.points.length / 2), y: cy / (s.points.length / 2) };
       }
-      case "line":
-      case "arrow": return { x: (s.start.x + s.end.x) / 2, y: (s.start.y + s.end.y) / 2 };
+      case "line": case "arrow": return { x: (s.start.x + s.end.x) / 2, y: (s.start.y + s.end.y) / 2 };
       case "rect": return { x: s.x + s.width / 2, y: s.y + s.height / 2 };
-      case "ellipse": return { x: s.x, y: s.y };
-      case "triangle":
-      case "star": return { x: s.x, y: s.y };
-      case "text": return { x: s.x, y: s.y };
+      case "ellipse": case "triangle": case "star": case "text": return { x: s.x, y: s.y };
     }
   };
 
   const moveShape = (s: Shape, dx: number, dy: number): Shape => {
     switch (s.type) {
-      case "pen":
-      case "marker": {
+      case "pen": case "marker": {
         const newPoints = [...s.points];
         for (let i = 0; i < newPoints.length; i += 2) { newPoints[i] += dx; newPoints[i + 1] += dy; }
         return { ...s, points: newPoints };
       }
-      case "line":
-      case "arrow": return { ...s, start: { x: s.start.x + dx, y: s.start.y + dy }, end: { x: s.end.x + dx, y: s.end.y + dy } };
-      case "rect": return { ...s, x: s.x + dx, y: s.y + dy };
-      case "ellipse": return { ...s, x: s.x + dx, y: s.y + dy };
-      case "triangle":
-      case "star": return { ...s, x: s.x + dx, y: s.y + dy };
-      case "text": return { ...s, x: s.x + dx, y: s.y + dy };
+      case "line": case "arrow": return { ...s, start: { x: s.start.x + dx, y: s.start.y + dy }, end: { x: s.end.x + dx, y: s.end.y + dy } };
+      case "rect": case "ellipse": case "triangle": case "star": case "text": return { ...s, x: s.x + dx, y: s.y + dy };
     }
   };
 
   const start = (pt: Pt) => {
     if (!canDraw) return;
     if (tool === "hand") return;
-
     if (tool === "select") {
       const clicked = shapes.find((s) => hitTest(s, pt.x, pt.y, 8));
       if (clicked) {
         setSelectedId(clicked.id);
         dragOffsetRef.current = { x: pt.x - getShapeCenter(clicked).x, y: pt.y - getShapeCenter(clicked).y };
-      } else {
-        setSelectedId(null);
-      }
+      } else { setSelectedId(null); }
       return;
     }
-
     if (tool === "laser") {
-      setLaserPoints([pt.x, pt.y]);
+      setLaserPoints((prev) => ({ ...prev, [userId]: [pt.x, pt.y] }));
+      try {
+        setDoc(doc(db, "lessons", lessonId, "lasers", userId), { points: [pt.x, pt.y], userId, updatedAt: serverTimestamp() }, { merge: true });
+      } catch (e) { /* ignore */ }
       return;
     }
-
     startRef.current = pt;
     if (tool === "eraser") return eraseAt(pt);
     if (tool === "text") return;
@@ -250,43 +312,48 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
   const move = (pt: Pt) => {
     if (!canDraw) return;
     if (tool === "hand") return;
-
     if (tool === "select" && selectedId && dragOffsetRef.current) {
       const targetX = pt.x - dragOffsetRef.current.x;
       const targetY = pt.y - dragOffsetRef.current.y;
       const next = shapes.map((s) => {
         if (s.id !== selectedId) return s;
-        const dx = targetX - getShapeCenter(s).x;
-        const dy = targetY - getShapeCenter(s).y;
-        return moveShape(s, dx, dy);
+        return moveShape(s, targetX - getShapeCenter(s).x, targetY - getShapeCenter(s).y);
       });
       setShapes(next);
       return;
     }
-
     if (tool === "laser") {
-      setLaserPoints((prev) => [...prev, pt.x, pt.y]);
+      const now = Date.now();
+      if (now - laserThrottleRef.current < 30) return;
+      laserThrottleRef.current = now;
+      setLaserPoints((prev) => {
+        const currentPoints = prev[userId] || [];
+        return { ...prev, [userId]: [...currentPoints, pt.x, pt.y].slice(-100) };
+      });
+      try {
+        const currentPoints = laserPoints[userId] || [];
+        setDoc(doc(db, "lessons", lessonId, "lasers", userId), { points: [...currentPoints, pt.x, pt.y].slice(-100), userId, updatedAt: serverTimestamp() }, { merge: true });
+      } catch (e) { /* ignore */ }
       if (laserTimeoutRef.current) clearTimeout(laserTimeoutRef.current);
-      laserTimeoutRef.current = setTimeout(() => setLaserPoints([]), 600);
+      laserTimeoutRef.current = setTimeout(() => {
+        setLaserPoints((prev) => { const next = { ...prev }; delete next[userId]; return next; });
+        try { deleteDoc(doc(db, "lessons", lessonId, "lasers", userId)); } catch (e) { /* ignore */ }
+      }, 600);
       return;
     }
-
     if (tool === "eraser") return eraseAt(pt);
     if (!draft) return;
     setDraft((d) => {
       if (!d) return d;
       switch (d.type) {
-        case "pen":
-        case "marker": return { ...d, points: [...d.points, pt.x, pt.y] };
-        case "line":
-        case "arrow": return { ...d, end: pt };
+        case "pen": case "marker": return { ...d, points: [...d.points, pt.x, pt.y] };
+        case "line": case "arrow": return { ...d, end: pt };
         case "rect": return { ...d, width: pt.x - d.x, height: pt.y - d.y };
         case "ellipse": {
           const s = startRef.current!;
           return { ...d, x: (s.x + pt.x) / 2, y: (s.y + pt.y) / 2, radiusX: Math.abs(pt.x - s.x) / 2, radiusY: Math.abs(pt.y - s.y) / 2 };
         }
-        case "triangle":
-        case "star": {
+        case "triangle": case "star": {
           const s = startRef.current!;
           return { ...d, radius: Math.hypot(pt.x - s.x, pt.y - s.y) };
         }
@@ -300,13 +367,11 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
     if (tool === "select") { dragOffsetRef.current = null; return; }
     if (tool === "laser") {
       if (laserTimeoutRef.current) clearTimeout(laserTimeoutRef.current);
-      setLaserPoints([]);
+      setLaserPoints((prev) => { const next = { ...prev }; delete next[userId]; return next; });
+      try { deleteDoc(doc(db, "lessons", lessonId, "lasers", userId)); } catch (e) { /* ignore */ }
       return;
     }
-    if (draft) {
-      commit([...shapes, draft]);
-      setDraft(null);
-    }
+    if (draft) { commit([...shapes, draft]); setDraft(null); }
   };
 
   const addText = (pt: Pt, text: string) => {
@@ -314,11 +379,7 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
     commit([...shapes, { id: uid(), type: "text", x: pt.x, y: pt.y, text: text.trim(), stroke: color, fontSize: 16 + strokeWidth * 2 }]);
   };
 
-  const clear = () => {
-    if (!canDraw || shapes.length === 0) return;
-    commit([]);
-  };
-
+  const clear = () => { if (!canDraw || shapes.length === 0) return; commit([]); };
   const deleteSelected = () => {
     if (!canDraw || !selectedId) return;
     const next = shapes.filter((s) => s.id !== selectedId);
@@ -331,13 +392,10 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
     if (now - cursorThrottleRef.current < 60) return;
     cursorThrottleRef.current = now;
     try {
-      setDoc(doc(db, "lessons", lessonId, "cursors", userId),
-        { x: pt.x, y: pt.y, name: userName, color: userColor, updatedAt: serverTimestamp() },
-        { merge: true });
+      setDoc(doc(db, "lessons", lessonId, "cursors", userId), { x: pt.x, y: pt.y, name: userName, color: userColor, updatedAt: serverTimestamp() }, { merge: true });
     } catch (e) { /* ignore */ }
   }, [lessonId, userId, userName, userColor]);
 
-  // Страницы
   const addPage = () => {
     const newPages = [...pages, []];
     setCurrentPage(newPages.length - 1);
@@ -360,47 +418,21 @@ export function useWhiteboard(lessonId: string, role: "teacher" | "student" = "s
     writePages(newPages, newCurrent);
   };
 
-  const renamePage = (index: number, name: string) => {
-    const newPages = pages.map((p, i) => i === index ? { ...({} as any), _name: name, shapes: p } as any : p);
-    // Упрощённо — храним имена в отдельном массиве
-    patchBoard({ pageNames: pages.map((_, i) => i === index ? name : `Стр. ${i + 1}`) });
-  };
+  const startTimer = (seconds: number) => { setTimerDuration(seconds); setTimerStartAt(Date.now()); setTimerSeconds(seconds); setTimerRunning(true); };
+  const stopTimer = () => { setTimerRunning(false); setTimerStartAt(null); };
+  const resetTimer = () => { setTimerRunning(false); setTimerStartAt(null); setTimerSeconds(0); };
 
-  // Таймер
-  const startTimer = (seconds: number) => {
-    setTimerDuration(seconds);
-    setTimerStartAt(Date.now());
-    setTimerSeconds(seconds);
-    setTimerRunning(true);
-  };
-
-  const stopTimer = () => {
-    setTimerRunning(false);
-    setTimerStartAt(null);
-  };
-
-  const resetTimer = () => {
-    setTimerRunning(false);
-    setTimerStartAt(null);
-    setTimerSeconds(0);
-  };
-
-  const save = async () => {
-    await patchBoard({ pages, currentPage });
-  };
+  const save = async () => { await patchBoard({ pagesJson: JSON.stringify(pages), currentPage }); };
 
   return {
-    lessonId,
-    shapes, draft, tool, setTool, color, setColor, strokeWidth, setStrokeWidth,
+    lessonId, shapes, draft, tool, setTool, color, setColor, strokeWidth, setStrokeWidth,
     start, move, end, addText, undo, redo, clear, save, deleteSelected,
     role, canDraw, studentCanDraw, setStudentCanDraw: setStudentCanDrawRemote,
-    bgUrl, setBackground, clearBackground,
-    selectedId, cursors, patchCursor,
-    laserPoints,
+    bgUrls, currentBgPage, setBackgrounds, nextBgPage, prevBgPage, clearBackground,
+    selectedId, cursors, patchCursor, laserPoints,
     pages, currentPage, addPage, goToPage, deletePage,
     timerSeconds, timerRunning, timerDuration, startTimer, stopTimer, resetTimer,
-    canUndo: past.length > 0,
-    canRedo: future.length > 0,
+    canUndo: past.length > 0, canRedo: future.length > 0,
   };
 }
 

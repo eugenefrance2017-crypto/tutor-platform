@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { getAuth, signOut } from "firebase/auth";
 import toast, { Toaster } from "react-hot-toast";
+import BottomNav from "@/components/BottomNav";
 
 const NAVIGATION = [
   {
@@ -20,6 +21,7 @@ const NAVIGATION = [
     items: [
       { label: "Главная", href: "/dashboard", roles: ["tutor", "student", "parent"], icon: Home },
       { label: "Расписание", href: "/schedule", roles: ["tutor", "student", "parent"], icon: Calendar },
+      { label: "Уроки", href: "/lessons", roles: ["tutor", "student", "parent"], icon: BookOpen }, // 🔥 ДОБАВЛЕНО
       { label: "Чат", href: "/chat", roles: ["tutor", "student", "parent"], icon: MessageCircle },
     ]
   },
@@ -69,6 +71,8 @@ export default function Sidebar() {
   const [mounted, setMounted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
+  const SIDEBAR_WIDTH = 220; // 🔥 Компактная ширина
+
   // Авто-скрытие только на странице урока
   const isAutoHide = pathname?.startsWith("/lesson/") ?? false;
 
@@ -82,19 +86,16 @@ export default function Sidebar() {
     let hideTimeout: NodeJS.Timeout;
 
     const handleMouseMove = (e: MouseEvent) => {
-      // У левого края (0-20px) — показываем
       if (e.clientX <= 20) {
         clearTimeout(hideTimeout);
         setIsHovered(true);
         return;
       }
-      // Правее сайдбара (>300px) — запускаем таймер скрытия
-      if (e.clientX > 300) {
+      if (e.clientX > SIDEBAR_WIDTH + 20) {
         clearTimeout(hideTimeout);
         hideTimeout = setTimeout(() => setIsHovered(false), 500);
         return;
       }
-      // В зоне сайдбара (20-300px) — ничего не делаем, он виден
     };
 
     const handleMouseLeaveWindow = () => {
@@ -129,7 +130,6 @@ export default function Sidebar() {
       const deltaX = touch.clientX - startX;
       const deltaY = touch.clientY - startY;
 
-      // Свайп вправо от левого края
       if (startX < 20 && deltaX > 50 && Math.abs(deltaY) < 30) {
         setIsMobileOpen(true);
       }
@@ -147,9 +147,7 @@ export default function Sidebar() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const storedTheme = localStorage.getItem("theme") as 'dark' | 'light';
-      if (storedTheme) {
-        setTheme(storedTheme);
-      }
+      if (storedTheme) setTheme(storedTheme);
       
       const storedRole = localStorage.getItem("role");
       const storedName = localStorage.getItem("userName");
@@ -164,15 +162,11 @@ export default function Sidebar() {
 
     const handleThemeChange = (e: Event) => {
       const customEvent = e as CustomEvent;
-      if (customEvent.detail) {
-        setTheme(customEvent.detail as 'dark' | 'light');
-      }
+      if (customEvent.detail) setTheme(customEvent.detail as 'dark' | 'light');
     };
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'theme' && e.newValue) {
-        setTheme(e.newValue as 'dark' | 'light');
-      }
+      if (e.key === 'theme' && e.newValue) setTheme(e.newValue as 'dark' | 'light');
     };
 
     window.addEventListener('themechange', handleThemeChange);
@@ -203,7 +197,7 @@ export default function Sidebar() {
   const getRoleInfo = () => {
     switch (role) {
       case "tutor": return { icon: "👨‍🏫", label: "Репетитор", color: "from-emerald-500 to-teal-600" };
-      case "parent": return { icon: "👨‍‍", label: "Родитель", color: "from-purple-500 to-pink-600" };
+      case "parent": return { icon: "👨‍👩‍👧", label: "Родитель", color: "from-purple-500 to-pink-600" };
       default: return { icon: "🎓", label: "Ученик", color: "from-indigo-500 to-blue-600" };
     }
   };
@@ -215,12 +209,10 @@ export default function Sidebar() {
     try {
       const auth = getAuth();
       await signOut(auth);
-      
       localStorage.removeItem("uid");
       localStorage.removeItem("role");
       localStorage.removeItem("userName");
       localStorage.removeItem("userAvatar");
-      
       toast.success("Вы вышли из аккаунта");
       router.push("/auth");
     } catch (error) {
@@ -228,7 +220,6 @@ export default function Sidebar() {
     }
   };
 
-  // Видимость: мобильные — isMobileOpen; десктоп — авто-режим или всегда
   const desktopVisible = isAutoHide ? isHovered : true;
   const translateClass = isMobileOpen
     ? "translate-x-0"
@@ -238,36 +229,33 @@ export default function Sidebar() {
 
   const SidebarContent = () => (
     <aside 
-      className={`fixed top-0 left-0 h-full w-[280px] flex flex-col z-50 shadow-2xl overflow-hidden transition-transform duration-300 border-r ${translateClass} ${
+      className={`fixed top-0 left-0 h-full flex flex-col z-50 shadow-xl overflow-hidden transition-all duration-300 border-r ${translateClass} ${
         isDark 
           ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 text-slate-100 border-slate-700/50' 
           : 'bg-gradient-to-br from-white via-slate-50 to-slate-100 text-slate-900 border-slate-200'
       }`}
+      style={{ width: SIDEBAR_WIDTH }}
     >
       <Toaster position="top-center" />
       
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className={`absolute -top-20 -right-20 w-40 h-40 rounded-full blur-3xl ${
-          isDark ? 'bg-indigo-500/10' : 'bg-indigo-300/20'
-        }`}></div>
-        <div className={`absolute -bottom-20 -left-20 w-40 h-40 rounded-full blur-3xl ${
-          isDark ? 'bg-purple-500/10' : 'bg-purple-300/20'
-        }`}></div>
+        <div className={`absolute -top-10 -right-10 w-24 h-24 rounded-full blur-2xl ${isDark ? 'bg-indigo-500/10' : 'bg-indigo-300/20'}`}></div>
+        <div className={`absolute -bottom-10 -left-10 w-24 h-24 rounded-full blur-2xl ${isDark ? 'bg-purple-500/10' : 'bg-purple-300/20'}`}></div>
       </div>
 
-      <div className={`relative p-6 border-b backdrop-blur-sm ${isDark ? 'border-slate-700/50' : 'border-slate-200'}`}>
-        <Link href="/dashboard" className="flex items-center gap-3 mb-6 group" onClick={() => setIsMobileOpen(false)}>
-          <div className="relative w-10 h-10 flex-shrink-0">
+      <div className={`relative p-3 border-b backdrop-blur-sm ${isDark ? 'border-slate-700/50' : 'border-slate-200'}`}>
+        <Link href="/dashboard" className="flex items-center gap-2 mb-3 group" onClick={() => setIsMobileOpen(false)}>
+          <div className="relative w-7 h-7 flex-shrink-0">
             <Image
               src="/logo/logo.png"
               alt="Jenyawisch"
-              width={40}
-              height={40}
-              className="w-10 h-10 object-contain group-hover:scale-110 transition-transform duration-300"
+              width={28}
+              height={28}
+              className="w-7 h-7 object-contain group-hover:scale-110 transition-transform duration-300"
               priority
             />
           </div>
-          <span className="font-black text-xl bg-gradient-to-r from-indigo-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent group-hover:from-indigo-300 group-hover:via-purple-300 group-hover:to-emerald-300 transition-all duration-300">
+          <span className="font-black text-base bg-gradient-to-r from-indigo-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent group-hover:from-indigo-300 group-hover:via-purple-300 group-hover:to-emerald-300 transition-all duration-300">
             Jenyawisch
           </span>
         </Link>
@@ -276,13 +264,13 @@ export default function Sidebar() {
           <motion.div 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className={`flex items-center gap-3 p-3 rounded-xl border backdrop-blur-sm shadow-lg cursor-pointer transition-all duration-200 group ${
+            className={`flex items-center gap-2 p-2 rounded-lg border backdrop-blur-sm shadow-sm cursor-pointer transition-all duration-200 group ${
               isDark 
-                ? 'bg-gradient-to-br from-slate-800/80 to-slate-700/50 border-slate-600/30 hover:border-indigo-500/50 hover:shadow-indigo-500/20' 
-                : 'bg-gradient-to-br from-white to-slate-50 border-slate-200 hover:border-indigo-400 hover:shadow-indigo-200'
+                ? 'bg-gradient-to-br from-slate-800/80 to-slate-700/50 border-slate-600/30 hover:border-indigo-500/50' 
+                : 'bg-gradient-to-br from-white to-slate-50 border-slate-200 hover:border-indigo-400'
             }`}
           >
-            <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${roleInfo.color} flex items-center justify-center text-xl font-bold text-white shadow-lg ring-2 ring-white/10 group-hover:scale-110 transition-transform`}>
+            <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${roleInfo.color} flex items-center justify-center text-sm font-bold text-white shadow-sm ring-1 ring-white/10 group-hover:scale-105 transition-transform`}>
               {userAvatar ? (
                 <img src={userAvatar} alt={userName} className="w-full h-full rounded-full object-cover" />
               ) : (
@@ -290,46 +278,43 @@ export default function Sidebar() {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{userName}</p>
-              <p className={`text-xs flex items-center gap-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+              <p className={`text-xs font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{userName}</p>
+              <p className={`text-[10px] flex items-center gap-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                 <span>{roleInfo.icon}</span>
                 <span>{roleInfo.label}</span>
               </p>
             </div>
-            <ChevronRight className={`w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
           </motion.div>
         </Link>
       </div>
 
-      <nav className="relative flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+      <nav className="relative flex-1 overflow-y-auto p-3 space-y-4 custom-scrollbar">
         {filteredNavigation.map((group, groupIdx) => (
-          <motion.div key={groupIdx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: groupIdx * 0.1 }}>
-            <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 px-3 flex items-center gap-2 ${
-              isDark ? 'text-slate-500' : 'text-slate-500'
-            }`}>
-              <span className={`w-8 h-px ${isDark ? 'bg-gradient-to-r from-slate-600 to-transparent' : 'bg-gradient-to-r from-slate-300 to-transparent'}`}></span>
+          <motion.div key={groupIdx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: groupIdx * 0.05 }}>
+            <h3 className={`text-[10px] font-bold uppercase tracking-wider mb-2 px-2 flex items-center gap-2 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
+              <span className={`w-6 h-px ${isDark ? 'bg-gradient-to-r from-slate-600 to-transparent' : 'bg-gradient-to-r from-slate-300 to-transparent'}`}></span>
               {group.category}
             </h3>
-            <ul className="space-y-1">
+            <ul className="space-y-0.5">
               {group.items.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
                 const Icon = item.icon;
                 return (
-                  <motion.li key={item.href} whileHover={{ x: 4 }} transition={{ type: "spring", stiffness: 300 }}>
+                  <motion.li key={item.href} whileHover={{ x: 2 }} transition={{ type: "spring", stiffness: 300 }}>
                     <Link
                       href={item.href}
                       onClick={() => setIsMobileOpen(false)}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${
+                      className={`flex items-center gap-2 px-2 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 group ${
                         isActive
-                          ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30 ring-1 ring-white/10"
+                          ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20"
                           : isDark
-                            ? "text-slate-400 hover:bg-slate-800/50 hover:text-white hover:shadow-md"
-                            : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900 hover:shadow-md"
+                            ? "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                            : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
                       }`}
                     >
-                      <Icon className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                      <span className="flex-1">{item.label}</span>
-                      {isActive && <motion.div layoutId="activeIndicator" className="w-1.5 h-1.5 bg-white rounded-full" />}
+                      <Icon className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {isActive && <motion.div layoutId="activeIndicator" className="w-1 h-1 bg-white rounded-full" />}
                     </Link>
                   </motion.li>
                 );
@@ -339,51 +324,37 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className={`relative p-4 border-t backdrop-blur-sm ${isDark ? 'border-slate-700/50' : 'border-slate-200'}`}>
+      <div className={`relative p-3 border-t backdrop-blur-sm ${isDark ? 'border-slate-700/50' : 'border-slate-200'}`}>
         <button
           onClick={handleLogout}
-          className={`flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 border shadow-lg group ${
+          className={`flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-medium transition-all duration-300 border shadow-sm group ${
             isDark
-              ? 'bg-gradient-to-br from-slate-800 to-slate-700 hover:from-red-500/20 hover:to-red-600/20 hover:text-red-400 text-slate-400 border-slate-600/30 hover:border-red-500/30 shadow-lg hover:shadow-red-500/10'
-              : 'bg-gradient-to-br from-slate-100 to-slate-200 hover:from-red-50 hover:to-red-100 hover:text-red-600 text-slate-600 border-slate-300 hover:border-red-300'
+              ? 'bg-gradient-to-br from-slate-800 to-slate-700 hover:from-red-500/20 hover:to-red-600/20 hover:text-red-400 text-slate-400 border-slate-600/30'
+              : 'bg-gradient-to-br from-slate-100 to-slate-200 hover:from-red-50 hover:to-red-100 hover:text-red-600 text-slate-600 border-slate-300'
           }`}
         >
-          <LogOut className="w-4 h-4 group-hover:rotate-180 transition-transform duration-300" />
-          <span className="group-hover:font-bold transition-all">Выйти из аккаунта</span>
+          <LogOut className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-300" />
+          <span className="group-hover:font-bold transition-all">Выйти</span>
         </button>
       </div>
 
       <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: ${isDark ? 'linear-gradient(to bottom, #475569, #334155)' : 'linear-gradient(to bottom, #cbd5e1, #94a3b8)'}; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${isDark ? 'linear-gradient(to bottom, #64748b, #475569)' : 'linear-gradient(to bottom, #94a3b8, #64748b)'}; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: ${isDark ? '#475569' : '#cbd5e1'}; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${isDark ? '#64748b' : '#94a3b8'}; }
       `}</style>
     </aside>
   );
 
   return (
     <>
-      {/* Кнопка-гамбургер: на странице урока скрыта */}
-      <button
-        onClick={() => setIsMobileOpen(!isMobileOpen)}
-        className={`lg:hidden fixed top-4 left-4 z-[60] p-3 rounded-xl shadow-lg border transition-all duration-200 ${
-          isAutoHide ? "opacity-0 pointer-events-none" : ""
-        } ${
-          isDark 
-            ? 'bg-slate-900/90 backdrop-blur-sm text-white border-slate-700/50 hover:bg-slate-800' 
-            : 'bg-white/90 backdrop-blur-sm text-slate-900 border-slate-200 hover:bg-slate-50'
-        }`}
-        aria-label="Toggle menu"
-      >
-        <motion.div animate={{ rotate: isMobileOpen ? 90 : 0 }} transition={{ duration: 0.2 }}>
-          {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </motion.div>
-      </button>
+      {/* 🔥 Нижняя навигация для мобильных (заменяет верхний гамбургер) */}
+      <BottomNav onMenuClick={() => setIsMobileOpen(true)} />
 
-      {/* Индикатор свайпа для мобильных на странице урока */}
+      {/* Индикатор свайпа (для страницы урока) */}
       {isAutoHide && !isMobileOpen && (
-        <div className="lg:hidden fixed left-2 top-1/2 -translate-y-1/2 w-1 h-12 bg-indigo-500/50 rounded-full z-50 animate-pulse" />
+        <div className="lg:hidden fixed left-1.5 top-1/2 -translate-y-1/2 w-1 h-10 bg-[#8CC63F]/50 rounded-full z-50 animate-pulse" />
       )}
 
       <AnimatePresence>
@@ -413,10 +384,10 @@ export function MainContent({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  // На странице урока контент занимает всю ширину (сайдбар автоскрывается)
   if (isLessonPage) {
     return <div className="min-h-screen">{children}</div>;
   }
 
-  return <div className="lg:ml-[280px] min-h-screen">{children}</div>;
+  // 🔥 Обновлённый отступ под новую ширину (220px вместо 280px)
+  return <div className="lg:ml-[220px] min-h-screen">{children}</div>;
 }

@@ -7,33 +7,39 @@ export interface RemoteInfo {
   sid: string;
   name: string;
   isMicOn: boolean;
-  audioTrack?: RemoteTrack;
   videoTrack?: RemoteTrack;
-  screenTrack?: RemoteTrack;
+  audioTrack?: RemoteTrack;
 }
 
 export function useCall() {
   const roomRef = useRef<Room | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [status, setStatus] = useState<"idle" | "connecting" | "connected">("idle");
   const [error, setError] = useState<string | null>(null);
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenOn, setScreenOn] = useState(false);
   const [localVideo, setLocalVideo] = useState<LocalTrack | null>(null);
+  const [localAudio, setLocalAudio] = useState<LocalTrack | null>(null);
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
 
   const syncLocal = useCallback(() => {
     const room = roomRef.current;
     if (!room) return;
     let cam: LocalTrack | null = null;
+    let mic: LocalTrack | null = null;
+    let screen = false;
     room.localParticipant.trackPublications.forEach((pub) => {
-      if (pub.source === Track.Source.Camera && pub.track) cam = pub.track as LocalTrack;
+      if (pub.track) {
+        if (pub.source === Track.Source.Camera) cam = pub.track as LocalTrack;
+        if (pub.source === Track.Source.Microphone) mic = pub.track as LocalTrack;
+        if (pub.source === Track.Source.ScreenShare) screen = true;
+      }
     });
     setLocalVideo(cam);
+    setLocalAudio(mic);
     setMicOn(room.localParticipant.isMicrophoneEnabled);
     setCamOn(room.localParticipant.isCameraEnabled);
-    setScreenOn(room.localParticipant.isScreenShareEnabled);
+    setScreenOn(screen);
   }, []);
 
   const syncRemotes = useCallback(() => {
@@ -48,10 +54,13 @@ export function useCall() {
       };
       p.trackPublications.forEach((pub) => {
         if (!pub.track) return;
-        if (pub.kind === Track.Kind.Audio) info.audioTrack = pub.track as RemoteTrack;
-        if (pub.kind === Track.Kind.Video) {
-          if (pub.source === Track.Source.ScreenShare) info.screenTrack = pub.track as RemoteTrack;
-          else info.videoTrack = pub.track as RemoteTrack;
+        if (pub.subscribed === false) pub.setSubscribed(true);
+        if (pub.source === Track.Source.ScreenShare) {
+          info.videoTrack = pub.track as RemoteTrack;
+        } else if (pub.kind === Track.Kind.Video && !info.videoTrack) {
+          info.videoTrack = pub.track as RemoteTrack;
+        } else if (pub.kind === Track.Kind.Audio) {
+          info.audioTrack = pub.track as RemoteTrack;
         }
       });
       list.push(info);
@@ -59,22 +68,19 @@ export function useCall() {
     setRemotes(list);
   }, []);
 
-  const stopInterval = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = null;
-  }, []);
-
   const join = useCallback(async (lessonId: string, identity: string, name: string, role: string) => {
     try {
       setStatus("connecting");
       setError(null);
-      const res = await fetch(
-        `/api/lessons/${lessonId}/call-token?identity=${encodeURIComponent(identity)}&name=${encodeURIComponent(name)}&role=${encodeURIComponent(role)}`
-      );
+      const res = await fetch(`/api/lessons/${lessonId}/call-token?identity=${encodeURIComponent(identity)}&name=${encodeURIComponent(name)}&role=${encodeURIComponent(role)}`);
       if (!res.ok) throw new Error("token failed");
       const { token, url } = await res.json();
 
-      const room = new Room({ adaptiveStream: true, dynacast: true });
+      const room = new Room({ 
+        adaptiveStream: true, 
+        dynacast: true, 
+        videoCaptureDefaults: { resolution: VideoPresets.h360.resolution } 
+      });
       roomRef.current = room;
 
       room.on(RoomEvent.LocalTrackPublished, syncLocal);
@@ -87,45 +93,34 @@ export function useCall() {
       room.on(RoomEvent.TrackUnpublished, syncRemotes);
       room.on(RoomEvent.TrackMuted, syncRemotes);
       room.on(RoomEvent.TrackUnmuted, syncRemotes);
-      room.on(RoomEvent.Disconnected, () => { stopInterval(); setStatus("idle"); });
+      room.on(RoomEvent.Disconnected, () => { setStatus("idle"); });
 
       await room.connect(url, token);
       try { await room.localParticipant.setMicrophoneEnabled(true); } catch {}
-      try {
-        await room.localParticipant.setCameraEnabled(true, {
-          resolution: VideoPresets.h360.resolution,
-        });
-      } catch {}
+      try { await room.localParticipant.setCameraEnabled(true, { resolution: VideoPresets.h360.resolution }); } catch {}
+
       syncLocal();
       syncRemotes();
-
-      stopInterval();
-      intervalRef.current = setInterval(() => {
-        syncLocal();
-        syncRemotes();
-      }, 2000);
-
       setStatus("connected");
     } catch (e) {
       console.error(e);
-      setError("Не удалось подключиться к звонку");
+      setError("Не удалось подключиться");
       setStatus("idle");
     }
-  }, [syncLocal, syncRemotes, stopInterval]);
+  }, [syncLocal, syncRemotes]);
 
   const leave = useCallback(async () => {
-    stopInterval();
     await roomRef.current?.disconnect();
     roomRef.current = null;
     setLocalVideo(null);
+    setLocalAudio(null);
     setRemotes([]);
     setMicOn(false);
     setCamOn(false);
     setScreenOn(false);
     setStatus("idle");
-  }, [stopInterval]);
+  }, []);
 
-  // Ошибки больше не глотаем — кнопки покажут alert
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
@@ -143,20 +138,48 @@ export function useCall() {
   const toggleScreen = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
-    await room.localParticipant.setScreenShareEnabled(!room.localParticipant.isScreenShareEnabled);
-    syncLocal();
+    const isEnabled = room.localParticipant.isScreenShareEnabled;
+    if (!isEnabled) {
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: 30 },
+          audio: false,
+        });
+        const screenTrack = screenStream.getVideoTracks()[0];
+        if (screenTrack) {
+          await room.localParticipant.publishTrack(screenTrack, {
+            source: Track.Source.ScreenShare,
+            name: "screen",
+          });
+          screenTrack.onended = () => {
+            room.localParticipant.unpublishTrack(screenTrack);
+            syncLocal();
+          };
+          syncLocal();
+        }
+      } catch (err: any) {
+        console.error("Screen share error:", err);
+        if (err.name === "NotAllowedError") alert("Демонстрация экрана отменена");
+        else if (err.name === "NotFoundError") alert("Демонстрация экрана не поддерживается на этом устройстве. Используйте компьютер.");
+        else alert("Не удалось начать демонстрацию экрана: " + err.message);
+      }
+    } else {
+      room.localParticipant.trackPublications.forEach((pub) => {
+        if (pub.source === Track.Source.ScreenShare && pub.track) {
+          room.localParticipant.unpublishTrack(pub.track);
+        }
+      });
+      syncLocal();
+    }
   }, [syncLocal]);
 
-  useEffect(() => () => {
-    stopInterval();
-    roomRef.current?.disconnect();
-  }, [stopInterval]);
+  useEffect(() => () => { roomRef.current?.disconnect(); }, []);
 
-  return {
-    status, error, join, leave,
-    toggleMic, toggleCam, toggleScreen,
-    micOn, camOn, screenOn,
-    localVideo, remotes,
+  return { 
+    status, error, join, leave, 
+    toggleMic, toggleCam, toggleScreen, 
+    micOn, camOn, screenOn, 
+    localVideo, localAudio, remotes 
   };
 }
 

@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useCall } from "@/hooks/useCall";
+import { useEffect, useRef, useState, memo } from "react";
 import VideoPanel from "@/components/VideoPanel";
 import CallControls from "@/components/CallControls";
 import { auth } from "@/lib/firebase";
 import { Move, Minimize2, Maximize2 } from "lucide-react";
+import type { CallState } from "@/hooks/useCall";
 
-export default function VideoCall({ lessonId }: { lessonId: string }) {
-  const call = useCall();
+function VideoCallInner({ lessonId, lessonInfo, call }: { lessonId: string; lessonInfo?: any; call: CallState }) {
   const [role, setRole] = useState<"teacher" | "student">("student");
   const [collapsed, setCollapsed] = useState(false);
   const [pos, setPos] = useState({ x: 20, y: 100 });
@@ -34,15 +33,19 @@ export default function VideoCall({ lessonId }: { lessonId: string }) {
       y: dragRef.current.posY + (e.clientY - dragRef.current.startY),
     });
   };
-  const onPointerUp = () => {
-    dragRef.current = null;
-  };
+  const onPointerUp = () => { dragRef.current = null; };
+
+  useEffect(() => {
+    if (call.status === "idle" && !call.error) {
+      call.join(lessonId, identity, name, role);
+    }
+  }, []);
 
   if (call.status !== "connected") {
     return (
       <div
         style={{ left: pos.x, top: pos.y }}
-        className="fixed z-40 w-56 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden"
+        className="fixed z-40 w-52 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden"
       >
         <div
           onPointerDown={onPointerDown}
@@ -71,7 +74,7 @@ export default function VideoCall({ lessonId }: { lessonId: string }) {
   return (
     <div
       style={{ left: pos.x, top: pos.y }}
-      className={`fixed z-40 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden ${collapsed ? "w-48" : "w-56"}`}
+      className={`fixed z-40 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden ${collapsed ? "w-40" : "w-52"}`}
     >
       <div
         onPointerDown={onPointerDown}
@@ -99,7 +102,8 @@ export default function VideoCall({ lessonId }: { lessonId: string }) {
       {!collapsed && (
         <div className="flex flex-col gap-1.5 p-2 max-h-[50vh] overflow-y-auto">
           <VideoPanel
-            localVideo={call.localVideo ?? null}
+            localVideo={call.localVideo}
+            localAudio={call.localAudio}
             localName={name}
             localMicOn={call.micOn}
             remotes={call.remotes ?? []}
@@ -110,3 +114,5 @@ export default function VideoCall({ lessonId }: { lessonId: string }) {
     </div>
   );
 }
+
+export default memo(VideoCallInner);

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Circle, Square, Download, Loader2 } from "lucide-react";
+import { Circle, Square, Loader2 } from "lucide-react";
+import { doc, updateDoc, arrayUnion } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 interface Props {
   lessonId: string;
@@ -10,7 +12,7 @@ interface Props {
 
 export default function RecordingButton({ lessonId, lessonTitle }: Props) {
   const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   
@@ -30,36 +32,50 @@ export default function RecordingButton({ lessonId, lessonTitle }: Props) {
 
   const startRecording = async () => {
     setError(null);
-    try {
-      // 1. Запрашиваем экран
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: 30 },
-        audio: true, // звук системы (если браузер поддерживает)
-      });
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-      // 2. Запрашиваем микрофон
+    try {
+      let screenStream: MediaStream | null = null;
       let micStream: MediaStream | null = null;
-      try {
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (micErr) {
-        console.warn("Микрофон недоступен:", micErr);
-        // Продолжаем без микрофона
+
+      if (isMobile) {
+        // На мобильных — камера + микрофон
+        try {
+          screenStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment" },
+            audio: true 
+          });
+        } catch (camErr) {
+          throw new Error("Камера недоступна");
+        }
+      } else {
+        // На десктопе — экран + микрофон
+        try {
+          screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: 15 },
+            audio: true,
+          });
+        } catch (screenErr) {
+          throw new Error("Доступ к экрану отклонён");
+        }
+
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (micErr) {
+          console.warn("Микрофон недоступен:", micErr);
+        }
       }
 
-      // 3. Объединяем треки
+      // Объединяем треки
       const combinedStream = new MediaStream();
-      
-      // Видео с экрана
       screenStream.getVideoTracks().forEach(t => combinedStream.addTrack(t));
       
-      // Аудио: приоритет — микрофон, иначе звук системы
       if (micStream && micStream.getAudioTracks().length > 0) {
         micStream.getAudioTracks().forEach(t => combinedStream.addTrack(t));
       } else if (screenStream.getAudioTracks().length > 0) {
         screenStream.getAudioTracks().forEach(t => combinedStream.addTrack(t));
       }
 
-      // 4. Создаём рекордер
       const mimeTypes = [
         "video/webm;codecs=vp9,opus",
         "video/webm;codecs=vp8,opus",
@@ -75,7 +91,7 @@ export default function RecordingButton({ lessonId, lessonTitle }: Props) {
 
       const recorder = new MediaRecorder(combinedStream, {
         mimeType: mimeType || undefined,
-        videoBitsPerSecond: 2_500_000,
+        videoBitsPerSecond: 1_000_000,
       });
 
       mediaRecorderRef.current = recorder;
@@ -87,54 +103,73 @@ export default function RecordingButton({ lessonId, lessonTitle }: Props) {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "video/webm" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        const filename = `lesson-${lessonId}-${new Date().toISOString().slice(0, 16)}.webm`;
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
+      recorder.onstop = async () => {
+        setIsUploading(true);
         
-        // Очистка
-        screenStream.getTracks().forEach(t => t.stop());
-        if (micStream) micStream.getTracks().forEach(t => t.stop());
-        
-        setIsProcessing(false);
-        setIsRecording(false);
-        setDuration(0);
+        try {
+          const blob = new Blob(chunksRef.current, { type: "video/webm" });
+          
+          const formData = new FormData();
+          formData.append('file', blob);
+          formData.append('lessonId', lessonId);
+          formData.append('duration', duration.toString());
+
+          const uploadRes = await fetch('/api/upload-recording', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const uploadData = await uploadRes.json();
+          
+          if (!uploadRes.ok) throw new Error(uploadData.error);
+
+          const lessonRef = doc(db, "lessons", lessonId);
+          await updateDoc(lessonRef, {
+            recordings: arrayUnion({
+              url: uploadData.publicUrl,
+              filename: uploadData.filename,
+              createdAt: new Date().toISOString(),
+              duration: duration,
+            })
+          });
+
+          alert("✅ Запись загружена!");
+          
+        } catch (uploadErr: any) {
+          console.error("Upload error:", uploadErr);
+          alert("❌ Ошибка загрузки: " + uploadErr.message);
+        } finally {
+          screenStream.getTracks().forEach(t => t.stop());
+          if (micStream) micStream.getTracks().forEach(t => t.stop());
+          
+          setIsUploading(false);
+          setIsRecording(false);
+          setDuration(0);
+        }
       };
 
-      recorder.start(1000); // собираем данные каждую секунду
+      recorder.start(1000);
       setIsRecording(true);
       setDuration(0);
 
-      // Таймер
       timerRef.current = setInterval(() => {
         setDuration(d => d + 1);
       }, 1000);
 
-      // Если пользователь остановил шаринг экрана через браузер
-      screenStream.getVideoTracks()[0].onended = () => {
-        if (recorder.state !== "inactive") {
-          stopRecording();
-        }
-      };
+      if (!isMobile && screenStream.getVideoTracks()[0]) {
+        screenStream.getVideoTracks()[0].onended = () => {
+          if (recorder.state !== "inactive") stopRecording();
+        };
+      }
 
     } catch (err: any) {
       console.error("Recording error:", err);
-      if (err.name === "NotAllowedError") {
-        setError("Доступ к экрану отклонён");
-      } else {
-        setError("Ошибка: " + err.message);
-      }
+      setError(err.message || "Ошибка записи");
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      setIsProcessing(true);
       mediaRecorderRef.current.stop();
     }
     if (timerRef.current) {
@@ -156,35 +191,25 @@ export default function RecordingButton({ lessonId, lessonTitle }: Props) {
       {!isRecording ? (
         <button
           onClick={startRecording}
-          disabled={isProcessing}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 text-xs font-medium transition-colors"
-          title="Записать экран урока"
+          disabled={isUploading}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 text-xs font-medium"
         >
-          <Circle size={12} fill="currentColor" />
-          <span>Запись</span>
+          {isUploading ? (
+            <><Loader2 size={12} className="animate-spin" /><span>Загрузка...</span></>
+          ) : (
+            <><Circle size={12} fill="currentColor" /><span>Запись</span></>
+          )}
         </button>
       ) : (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
-            <span className="text-xs font-mono font-bold text-red-700 tabular-nums">
-              {formatDuration(duration)}
-            </span>
-          </div>
-          <button
-            onClick={stopRecording}
-            disabled={isProcessing}
-            className="p-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-            title="Остановить и скачать"
-          >
-            {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} fill="currentColor" />}
+          <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
+          <span className="text-xs font-mono font-bold text-red-700">{formatDuration(duration)}</span>
+          <button onClick={stopRecording} disabled={isUploading} className="p-1 bg-red-600 text-white rounded hover:bg-red-700">
+            {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} fill="currentColor" />}
           </button>
         </div>
       )}
-      
-      {error && (
-        <span className="text-xs text-red-500">{error}</span>
-      )}
+      {error && <span className="text-xs text-red-500">{error}</span>}
     </div>
   );
 }

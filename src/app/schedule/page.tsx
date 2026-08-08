@@ -14,7 +14,11 @@ import toast from "react-hot-toast";
 import { AnimatePresence, motion } from "framer-motion";
 import Sidebar from "../Sidebar";
 import NotificationBell from "../NotificationBell";
-import { Upload, File, X, Download, Clock, User, Users, BookOpen, Video, Palette, CheckCircle, Calendar, Archive, RotateCcw, Trash2, Sun, Moon, Hourglass } from "lucide-react";
+import {
+  Upload, File, X, Download, Clock, User, Users, BookOpen, Video, Palette,
+  CheckCircle, Calendar, Archive, RotateCcw, Trash2, Sun, Moon, Hourglass,
+  Beaker, Dna, Pencil, FileText, Link2, Send, Edit3, ChevronRight, Sparkles
+} from "lucide-react";
 import { renderBoardSnapshot } from "@/lib/boardSnapshot";
 
 const firebaseConfig = {
@@ -28,6 +32,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+
+// ===================== ВСПОМОГАТЕЛЬНЫЕ КОМПОНЕНТЫ =====================
 
 function RedTimer({ startTime, endTime }: { startTime: Date; endTime: Date }) {
   const [timeLeft, setTimeLeft] = useState("");
@@ -55,11 +61,15 @@ function RedTimer({ startTime, endTime }: { startTime: Date; endTime: Date }) {
     return () => clearInterval(interval);
   }, [startTime, endTime]);
 
-  const bgColor = status === 'active' ? 'bg-red-500 text-white' : status === 'before' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500';
-  
+  const bgColor = status === 'active'
+    ? 'bg-rose-500 text-white'
+    : status === 'before'
+      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
+      : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400';
+
   return (
-    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono ${bgColor}`}>
-      <span className={status === 'active' ? 'animate-spin inline-block' : ''}>⏱️</span>
+    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${bgColor}`}>
+      <Clock className={`w-3 h-3 ${status === 'active' ? 'animate-pulse' : ''}`} />
       {timeLeft}
     </div>
   );
@@ -88,7 +98,7 @@ function TopicChips({ topics, setTopics, theme }: { topics: string[]; setTopics:
     setTopics(topics.filter(t => t !== topic));
   };
 
-  const filteredPresets = PRESET_TOPICS.filter(t => 
+  const filteredPresets = PRESET_TOPICS.filter(t =>
     t.toLowerCase().includes(input.toLowerCase()) && !topics.includes(t)
   );
 
@@ -96,9 +106,9 @@ function TopicChips({ topics, setTopics, theme }: { topics: string[]; setTopics:
     <div>
       <div className="flex flex-wrap gap-2 mb-3 min-h-[32px]">
         {topics.map((topic) => (
-          <div key={topic} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${isDark ? 'bg-red-900/40 text-red-300' : 'bg-gradient-to-br from-red-100 to-rose-100 text-red-700'}`}>
+          <div key={topic} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold ${isDark ? 'bg-rose-950/40 text-rose-300 border border-rose-500/30' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
             <span>{topic}</span>
-            <button type="button" onClick={() => removeTopic(topic)} className="ml-1 hover:text-red-500 transition">✕</button>
+            <button type="button" onClick={() => removeTopic(topic)} className="ml-1 hover:text-rose-500 transition">✕</button>
           </div>
         ))}
       </div>
@@ -114,12 +124,12 @@ function TopicChips({ topics, setTopics, theme }: { topics: string[]; setTopics:
             }
           }}
           placeholder="Введите тему и нажмите Enter..."
-          className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-red-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-red-400`}
+          className={`w-full border-2 rounded-xl p-3 font-medium ${isDark ? 'bg-gray-800 border-rose-500/30 text-white' : 'bg-white border-gray-200 text-gray-800'} focus:border-rose-400 focus:outline-none transition`}
         />
         {input && filteredPresets.length > 0 && (
-          <div className={`absolute z-40 w-full mt-1 rounded-xl border shadow-lg overflow-hidden ${isDark ? 'bg-gray-800 border-red-500/30' : 'bg-white border-gray-200'}`} style={{ maxHeight: '150px', overflowY: 'auto' }}>
+          <div className={`absolute z-40 w-full mt-1 rounded-xl border shadow-lg overflow-hidden ${isDark ? 'bg-gray-800 border-rose-500/30' : 'bg-white border-gray-200'}`} style={{ maxHeight: '150px', overflowY: 'auto' }}>
             {filteredPresets.slice(0, 5).map(preset => (
-              <button key={preset} type="button" onClick={() => addTopic(preset)} className={`w-full text-left px-3 py-2 text-sm transition ${isDark ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-red-50 text-gray-700'}`}>
+              <button key={preset} type="button" onClick={() => addTopic(preset)} className={`w-full text-left px-3 py-2 text-sm transition ${isDark ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-rose-50 text-gray-700'}`}>
                 {preset}
               </button>
             ))}
@@ -130,12 +140,106 @@ function TopicChips({ topics, setTopics, theme }: { topics: string[]; setTopics:
   );
 }
 
+// ===================== КАРТОЧКИ УРОКОВ (МИНИМАЛИЗМ) =====================
+
+function LessonCardMobile({ lesson, isDark, onClick, isTodayCard = false }: any) {
+  const startTime = new Date(lesson.start_time);
+  const endTime = new Date(lesson.end_time);
+  const isChem = lesson.subject === "chemistry";
+  const isNow = new Date() >= startTime && new Date() <= endTime;
+
+  return (
+    <motion.button
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      className={`w-full text-left relative p-4 rounded-2xl border transition-all active:scale-95 ${
+        isNow
+          ? 'bg-gradient-to-br from-rose-500 to-rose-600 border-rose-500 text-white shadow-lg shadow-rose-500/30'
+          : isTodayCard
+            ? (isDark ? 'bg-rose-950/30 border-rose-500/40' : 'bg-rose-50/50 border-rose-200')
+            : (isDark ? 'bg-gray-900 border-gray-800 hover:border-rose-500/40' : 'bg-white border-gray-100 hover:border-rose-200 hover:shadow-md')
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
+          isNow
+            ? 'bg-white/20 text-white'
+            : isChem
+              ? (isDark ? 'bg-blue-950/40 text-blue-400' : 'bg-blue-50 text-blue-600')
+              : (isDark ? 'bg-emerald-950/40 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
+        }`}>
+          {isChem ? <Beaker className="w-5 h-5" /> : <Dna className="w-5 h-5" />}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className={`font-bold text-base ${isNow ? 'text-white' : isDark ? 'text-white' : 'text-gray-900'}`}>
+            {startTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+            <span className={`font-normal mx-1.5 ${isNow ? 'text-white/70' : 'text-gray-400'}`}>–</span>
+            <span className={`font-normal ${isNow ? 'text-white/90' : isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+              {endTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </div>
+          <div className={`text-sm mt-0.5 truncate ${isNow ? 'text-white/90' : isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+            {lesson.is_group && <span className="mr-1">👥</span>}
+            {lesson.is_group ? lesson.group_name : (lesson.student_name || "Ученик")}
+          </div>
+        </div>
+
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          {lesson.hw_template_id && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${isNow ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>ДЗ</span>
+          )}
+          {lesson.attached_file_url && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${isNow ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}></span>
+          )}
+        </div>
+      </div>
+
+      {isNow && (
+        <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-white animate-pulse" />
+      )}
+    </motion.button>
+  );
+}
+
+function LessonCardDesktop({ lesson, isDark, onClick }: any) {
+  const startTime = new Date(lesson.start_time);
+  const isChem = lesson.subject === "chemistry";
+  const isNow = new Date() >= startTime && new Date() <= new Date(lesson.end_time);
+  const statusColor = lesson.status === 'completed' ? 'bg-emerald-500' : lesson.status === 'cancelled' ? 'bg-rose-500' : 'bg-blue-500';
+
+  return (
+    <motion.button
+      whileHover={{ scale: 1.02, y: -1 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      className={`w-full text-left relative p-2.5 rounded-lg transition-all ${
+        isNow
+          ? 'bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-md'
+          : (isDark ? 'bg-gray-800 hover:bg-gray-750' : 'bg-white hover:shadow-md border border-gray-100')
+      }`}
+    >
+      <div className={`absolute left-0 top-2 bottom-2 w-1 rounded-r ${statusColor}`} />
+
+      <div className={`text-[11px] font-bold mb-0.5 ${isNow ? 'text-white/90' : isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+        {startTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+      </div>
+      <div className={`text-xs font-semibold truncate ${isNow ? 'text-white' : isDark ? 'text-white' : 'text-gray-900'}`}>
+        {lesson.is_group && <span className="mr-1 text-[10px]">👥</span>}
+        {lesson.is_group ? lesson.group_name : (lesson.student_name || "Ученик")}
+      </div>
+    </motion.button>
+  );
+}
+
+// ===================== ОСНОВНОЙ КОМПОНЕНТ =====================
+
 function ScheduleContent() {
   const searchParams = useSearchParams();
   const [uid, setUid] = useState("");
   const [role, setRole] = useState("student");
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
-  
+
   useEffect(() => {
     setUid(searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "");
     setRole(searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "student");
@@ -149,7 +253,7 @@ function ScheduleContent() {
   const [homeworks, setHomeworks] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState("");
-  
+
   const [showForm, setShowForm] = useState(false);
   const [editLesson, setEditLesson] = useState<any>(null);
   const [currentWeek, setCurrentWeek] = useState(0);
@@ -175,7 +279,7 @@ function ScheduleContent() {
   const [formHwTemplateId, setFormHwTemplateId] = useState("");
   const [formTopics, setFormTopics] = useState<string[]>([]);
   const [formGroupParticipants, setFormGroupParticipants] = useState<string[]>([]);
-  
+
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedFileUrl, setAttachedFileUrl] = useState("");
   const [attachedFileName, setAttachedFileName] = useState("");
@@ -192,6 +296,9 @@ function ScheduleContent() {
   const studentDropdownRef = useRef<HTMLDivElement>(null);
   const groupDropdownRef = useRef<HTMLDivElement>(null);
 
+  // 🔥 Флаг для предотвращения дублирования уведомлений
+  const hasSentRemindersRef = useRef(false);
+
   const isTutor = role === "tutor";
   const isDark = theme === 'dark';
 
@@ -200,6 +307,8 @@ function ScheduleContent() {
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
   };
+
+  // ===================== БИЗНЕС-ЛОГИКА =====================
 
   const sendTelegramToStudent = useCallback(async (studentId: string, message: string) => {
     try {
@@ -235,7 +344,7 @@ function ScheduleContent() {
     try {
       let targetChatId = null;
       let recipientName = "Ученик";
-      
+
       if (lesson.student_id) {
         const profileSnap = await getDoc(doc(db, "profiles", lesson.student_id));
         if (profileSnap.exists()) {
@@ -280,8 +389,13 @@ function ScheduleContent() {
     }
   };
 
+  // 🔥 ИСПРАВЛЕННАЯ ФУНКЦИЯ ПРОВЕРКИ НАПОМИНАНИЙ
   const checkUpcomingLessons = useCallback(async () => {
     if (lessons.length === 0) return;
+    
+    // 🔥 Проверка: уже отправляли в этой сессии?
+    if (hasSentRemindersRef.current) return;
+    
     const now = new Date();
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
     const upcomingLessons = lessons.filter(l => {
@@ -289,41 +403,56 @@ function ScheduleContent() {
       const lessonTime = new Date(l.start_time);
       return lessonTime > now && lessonTime <= oneHourLater;
     });
+    
     if (upcomingLessons.length === 0) return;
+    
     const lastCheckKey = 'last_reminder_check';
     const lastCheck = localStorage.getItem(lastCheckKey);
     const nowKey = now.toISOString().slice(0, 13);
-    if (lastCheck === nowKey) return;
+    
+    // Дополнительная проверка через localStorage (между перезагрузками)
+    if (lastCheck === nowKey) {
+      hasSentRemindersRef.current = true;
+      return;
+    }
+    
+    // 🔥 Ставим флаг ДО отправки
+    hasSentRemindersRef.current = true;
+    localStorage.setItem(lastCheckKey, nowKey);
+    
     let sentCount = 0;
     for (const lesson of upcomingLessons) {
       const lessonTime = new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      const subject = lesson.subject === 'chemistry' ? '🧪 Химия' : '🧬 Биология';
-      const zoomLink = lesson.zoom_link ? `\n Ссылка: ${lesson.zoom_link}` : '';
+      const subject = lesson.subject === 'chemistry' ? ' Химия' : '🧬 Биология';
+      const zoomLink = lesson.zoom_link ? `\n🔗 Ссылка: ${lesson.zoom_link}` : '';
       const topics = lesson.topics ? `\n🎯 Темы: ${lesson.topics}` : '';
       const boardLink = lesson.board_link ? `\n🖌️ Доска: ${lesson.board_link}` : '';
+      
       if (lesson.is_group) {
         const groupName = lesson.group_name || 'Группа';
-        const tutorMsg = ` Напоминание: групповое занятие через час!\n\n📚 ${subject}\n Группа: ${groupName}\n🕐 ${lessonTime}${zoomLink}${topics}${boardLink}\n\nУчастников: ${lesson.group_participants?.length || lesson.group_size || 0}`;
+        const tutorMsg = `⏰ Напоминание: групповое занятие через час!\n\n📚 ${subject}\n👥 Группа: ${groupName}\n🕐 ${lessonTime}${zoomLink}${topics}${boardLink}\n\nУчастников: ${lesson.group_participants?.length || lesson.group_size || 0}`;
         await sendTelegramToTutor(tutorMsg);
         sentCount++;
+        
         if (lesson.group_participants && lesson.group_participants.length > 0) {
           for (const participantId of lesson.group_participants) {
-            const studentMsg = `📅 Напоминание о групповом занятии через час!\n\n📚 ${subject}\n👥 Группа: ${groupName}\n🕐 ${lessonTime}${zoomLink}${topics}\n\nНе забудь подготовиться! 💪`;
+            const studentMsg = ` Напоминание о групповом занятии через час!\n\n📚 ${subject}\n👥 Группа: ${groupName}\n ${lessonTime}${zoomLink}${topics}\n\nНе забудь подготовиться! 💪`;
             await sendTelegramToStudent(participantId, studentMsg);
             sentCount++;
           }
         }
       } else {
         const studentName = lesson.student_name || 'Ученик';
-        const tutorMsg = `⏰ Напоминание: занятие через час!\n\n📚 ${subject}\n👤 ${studentName}\n🕐 ${lessonTime}${zoomLink}${topics}${boardLink}`;
+        const tutorMsg = `⏰ Напоминание: занятие через час!\n\n📚 ${subject}\n ${studentName}\n🕐 ${lessonTime}${zoomLink}${topics}${boardLink}`;
         await sendTelegramToTutor(tutorMsg);
         sentCount++;
-        const studentMsg = `📅 Напоминание о занятии через час!\n\n📚 ${subject}\n👤 ${studentName}\n ${lessonTime}${zoomLink}${topics}\n\nНе забудь подготовиться! 💪`;
+        
+        const studentMsg = ` Напоминание о занятии через час!\n\n📚 ${subject}\n ${studentName}\n🕐 ${lessonTime}${zoomLink}${topics}\n\nНе забудь подготовиться! 💪`;
         await sendTelegramToStudent(lesson.student_id, studentMsg);
         sentCount++;
       }
     }
-    localStorage.setItem(lastCheckKey, nowKey);
+    
     if (sentCount > 0) toast.success(`📤 Отправлено напоминаний: ${sentCount}`);
   }, [lessons, sendTelegramToStudent, sendTelegramToTutor]);
 
@@ -336,7 +465,7 @@ function ScheduleContent() {
   }, [lessons, filterStudent, filterSubject]);
 
   const cancelledLessons = useMemo(() => {
-    return lessons.filter(l => l.status === 'cancelled').sort((a, b) => 
+    return lessons.filter(l => l.status === 'cancelled').sort((a, b) =>
       new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
     );
   }, [lessons]);
@@ -407,17 +536,20 @@ function ScheduleContent() {
   }, [filteredLessons, showCancelled]);
 
   useEffect(() => {
-    if (!uid) return;
-    const dates = viewMode === 'week' ? getWeekDates() : getMonthDates();
-    const startDate = dates[0];
-    const endDate = dates[dates.length - 1];
-    const queryStart = new Date(startDate);
-    queryStart.setDate(queryStart.getDate() - 2);
-    const queryEnd = new Date(endDate);
-    queryEnd.setDate(queryEnd.getDate() + 2);
+  if (!uid) return;
+  const dates = viewMode === 'week' ? getWeekDates() : getMonthDates();
+  const startDate = dates[0];
+  const endDate = dates[dates.length - 1];
+  const queryStart = new Date(startDate);
+  queryStart.setDate(queryStart.getDate() - 2);
+  const queryEnd = new Date(endDate);
+  queryEnd.setDate(queryEnd.getDate() + 2);
+
+  if (isTutor) {
+    // Репетитор: все свои уроки
     const q = query(
-      collection(db, "lessons"), 
-      where(isTutor ? "tutor_id" : "student_id", "==", uid),
+      collection(db, "lessons"),
+      where("tutor_id", "==", uid),
       where("start_time", ">=", queryStart.toISOString()),
       where("start_time", "<=", queryEnd.toISOString())
     );
@@ -425,7 +557,41 @@ function ScheduleContent() {
       setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsub();
-  }, [uid, isTutor, viewMode, currentWeek]);
+  } else {
+    // Ученик: индивидуальные + групповые, где он участвует
+    const qIndividual = query(
+      collection(db, "lessons"),
+      where("student_id", "==", uid),
+      where("start_time", ">=", queryStart.toISOString()),
+      where("start_time", "<=", queryEnd.toISOString())
+    );
+
+    const qGroup = query(
+      collection(db, "lessons"),
+      where("is_group", "==", true),
+      where("group_participants", "array-contains", uid),
+      where("start_time", ">=", queryStart.toISOString()),
+      where("start_time", "<=", queryEnd.toISOString())
+    );
+
+    const unsubInd = onSnapshot(qIndividual, (snapInd) => {
+      const individual = snapInd.docs.map((d) => ({ id: d.id, ...d.data() }));
+      
+      const unsubGrp = onSnapshot(qGroup, (snapGrp) => {
+        const group = snapGrp.docs.map((d) => ({ id: d.id, ...d.data() }));
+        
+        // Объединяем и убираем дубликаты
+        const allMap = new Map();
+        [...individual, ...group].forEach(l => allMap.set(l.id, l));
+        setLessons(Array.from(allMap.values()));
+      });
+
+      return () => unsubGrp();
+    });
+
+    return () => unsubInd();
+  }
+}, [uid, isTutor, viewMode, currentWeek]);
 
   useEffect(() => {
     if (!uid || !isTutor) return;
@@ -449,18 +615,26 @@ function ScheduleContent() {
     return () => unsub();
   }, [uid, isTutor]);
 
+  // 🔥 ИСПРАВЛЕННЫЙ useEffect для напоминаний
   useEffect(() => {
-    if (lessons.length > 0) checkUpcomingLessons();
+    if (lessons.length > 0 && !hasSentRemindersRef.current) {
+      checkUpcomingLessons();
+    }
   }, [lessons, checkUpcomingLessons]);
+
+  // 🔥 Сброс флага при смене недели/режима просмотра
+  useEffect(() => {
+    hasSentRemindersRef.current = false;
+  }, [currentWeek, viewMode]);
 
   useEffect(() => {
     if (isTutor) {
       getDocs(query(collection(db, "profiles"), where("role", "==", "student"))).then((snap) => setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-      getDocs(query(collection(db, "library_items"), where("tutor_id", "==", uid))).then((snap) => setLibraryItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-      getDocs(query(collection(db, "homeworks"), where("tutor_id", "==", uid))).then((snap) => 
+      getDocs(query(collection(db, "library_items"), where("tutor_id", "==", uid))).then((snap) => setLibraryItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
+      getDocs(query(collection(db, "homeworks"), where("tutor_id", "==", uid))).then((snap) =>
         setHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       );
-      
+
       const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
         setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       });
@@ -554,13 +728,13 @@ function ScheduleContent() {
     const isGroup = isGroupLesson;
     const studentId = !isGroup ? formStudentId : null;
     if (!isGroup && !studentId) return toast.error("Выберите ученика!");
-    
+
     const selectedGroupData = groups.find(g => g.id === selectedGroupId);
     const groupName = isGroup ? (selectedGroupData?.name || groupSearch || "Группа") : null;
     const participants = isGroup ? (selectedGroupData?.student_ids || formGroupParticipants) : [];
-    
+
     if (isGroup && participants.length === 0) return toast.error("Добавьте хотя бы одного участника группы!");
-    
+
     const date = (form.elements.namedItem("date") as HTMLInputElement).value;
     const startTime = (form.elements.namedItem("start_time") as HTMLInputElement).value;
     const endTime = (form.elements.namedItem("end_time") as HTMLInputElement).value;
@@ -576,11 +750,11 @@ function ScheduleContent() {
     const subject = (form.elements.namedItem("subject") as HTMLSelectElement).value;
     const groupSize = isGroup ? participants.length : 0;
     const studentName = !isGroup ? (students.find((s) => s.id === studentId)?.full_name || "Ученик") : "Группа";
-    const subjectName = subject === "chemistry" ? "🧪 Химии" : "🧬 Биологии";
+    const subjectName = subject === "chemistry" ? " Химии" : "🧬 Биологии";
     const dateStr = new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
     const timeStr = `${startTime} – ${endTime}`;
     const topicsStr = formTopics.join(", ");
-    
+
     const baseData: any = {
       tutor_id: uid,
       student_id: studentId,
@@ -600,7 +774,7 @@ function ScheduleContent() {
       notes: (form.elements.namedItem("notes") as HTMLTextAreaElement)?.value || "",
       topics: topicsStr,
     };
-    
+
     if (editLesson) {
       if (attachedFile) {
         if (editLesson.attached_file_url) await deleteFileFromStorage(editLesson.attached_file_url);
@@ -625,13 +799,13 @@ function ScheduleContent() {
         }
       }
       if (!isGroup) {
-        const msg = ` Привет, ${studentName}!\n\nУ нас запланировано новое занятие по ${subjectName}.\n Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n🎯 Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
+        const msg = `Привет, ${studentName}!\n\nУ нас запланировано новое занятие по ${subjectName}.\n📅 Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n🔗 Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
         sendTelegramToStudent(studentId!, msg);
       } else {
         for (const participantId of participants) {
           const participant = students.find(s => s.id === participantId);
           const participantName = participant?.full_name || 'Ученик';
-          const msg = ` Привет, ${participantName}!\n\nУ нас запланировано групповое занятие по ${subjectName}.\n👥 Группа: ${groupName}\n Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n🎯 Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
+          const msg = `Привет, ${participantName}!\n\nУ нас запланировано групповое занятие по ${subjectName}.\n👥 Группа: ${groupName}\n📅 Дата: ${dateStr}\n⏰ Время: ${timeStr}${zoomLink ? `\n🔗 Ссылка: ${zoomLink}` : ''}${topicsStr ? `\n🎯 Темы: ${topicsStr}` : ''}\n\nДо встречи! 🧪🧬`;
           sendTelegramToStudent(participantId, msg);
         }
       }
@@ -693,7 +867,7 @@ function ScheduleContent() {
 
   async function saveLessonNotes() {
     if (!selectedLessonForNotes) return;
-    
+
     const topicsStr = lessonTopics.join(", ");
     const updateData: any = {
       post_notes: lessonNotes,
@@ -742,7 +916,7 @@ function ScheduleContent() {
     }
 
     await updateDoc(doc(db, "lessons", selectedLessonForNotes.id), updateData);
-    
+
     if (!selectedLessonForNotes.is_group && selectedLessonForNotes.student_id) {
       try {
         const resultId = `lesson_${selectedLessonForNotes.id}_${selectedLessonForNotes.student_id}`;
@@ -769,9 +943,9 @@ function ScheduleContent() {
     await sendAIReportToTelegram(selectedLessonForNotes, lessonNotes, topicsStr);
 
     if (!selectedLessonForNotes.is_group && selectedLessonForNotes.student_id) {
-      const topicsText = topicsStr ? `\n Темы: ${topicsStr}` : '';
+      const topicsText = topicsStr ? `\n🎯 Темы: ${topicsStr}` : '';
       const notesText = lessonNotes ? `\n📝 Заметки: ${lessonNotes}` : '';
-      const msg = `✅ Занятие проведено!\n\n📅 ${new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}${topicsText}${notesText}\n\nОтличная работа! 🚀`;
+      const msg = `✅ Занятие проведено!\n\n ${new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}${topicsText}${notesText}\n\nОтличная работа! 🚀`;
       sendTelegramToStudent(selectedLessonForNotes.student_id, msg);
     }
 
@@ -795,12 +969,12 @@ function ScheduleContent() {
     if (!lesson.is_group && lesson.student_id) {
       const dateStr = new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
       const timeStr = new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      sendTelegramToStudent(lesson.student_id, `🥀 Привет, ${lesson.student_name}.\n\nК сожалению, занятие на ${dateStr} в ${timeStr} отменено.\nПричина: ${reason}.\n\nМы скоро свяжемся для переноса.`);
+      sendTelegramToStudent(lesson.student_id, ` Привет, ${lesson.student_name}.\n\nК сожалению, занятие на ${dateStr} в ${timeStr} отменено.\nПричина: ${reason}.\n\nМы скоро свяжемся для переноса.`);
     } else if (lesson.is_group && lesson.group_participants) {
       const dateStr = new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
       const timeStr = new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       for (const participantId of lesson.group_participants) {
-        sendTelegramToStudent(participantId, `🥀 Групповое занятие "${lesson.group_name}" на ${dateStr} в ${timeStr} отменено.\nПричина: ${reason}.`);
+        sendTelegramToStudent(participantId, `🥺 Групповое занятие "${lesson.group_name}" на ${dateStr} в ${timeStr} отменено.\nПричина: ${reason}.`);
       }
     }
     toast.success("Занятие отменено и перемещено в архив!");
@@ -834,152 +1008,140 @@ function ScheduleContent() {
     return stats;
   }, [filteredLessons]);
 
+  // ===================== РЕНДЕР =====================
+
   return (
-    <div className={`min-h-screen relative ${isDark ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-black' : 'bg-gradient-to-br from-rose-50 via-pink-50 to-amber-50'}`}>
+    <div className={`min-h-screen relative ${isDark ? 'bg-gray-950' : 'bg-rose-50/30'}`}>
       <Sidebar theme={theme} />
-      
+
       <motion.button
         onClick={toggleTheme}
-        className={`fixed top-4 right-24 z-50 w-12 h-12 rounded-2xl shadow-lg transition-all flex items-center justify-center ${
-          isDark 
-            ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-white shadow-orange-500/30 hover:shadow-orange-500/50' 
-            : 'bg-gradient-to-br from-indigo-600 to-purple-700 text-white shadow-indigo-500/30 hover:shadow-indigo-500/50'
-        }`}
-        whileHover={{ scale: 1.1 }}
+        className={`fixed top-4 right-20 z-40 w-11 h-11 rounded-xl shadow-lg transition-all flex items-center justify-center ${isDark ? 'bg-yellow-500 text-gray-900' : 'bg-gray-900 text-white'}`}
         whileTap={{ scale: 0.9 }}
-        title={isDark ? 'Светлая тема' : 'Тёмная тема'}
       >
-        {isDark ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
+        {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
       </motion.button>
 
-      <div className="fixed top-4 right-4 z-50"><NotificationBell uid={uid} role={role} isDark={isDark} /></div>
-      
+      <div className="fixed top-4 right-4 z-40"><NotificationBell uid={uid} role={role} isDark={isDark} /></div>
+
       {showNotifications && notifications.length > 0 && (
         <div className="fixed top-20 right-4 z-50 space-y-2">
           {notifications.map(n => (
-            <motion.div key={n.id} initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 100 }} className="relative bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-2xl p-4 shadow-2xl max-w-sm">
+            <motion.div key={n.id} initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 100 }} className="relative bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-2xl p-4 shadow-2xl max-w-sm">
               <p className="text-sm font-medium pr-6">{n.message}</p>
-              <button onClick={() => setNotifications(notifications.filter(x => x.id !== n.id))} className="absolute top-2 right-2 text-white/60 hover:text-white text-lg"></button>
+              <button onClick={() => setNotifications(notifications.filter(x => x.id !== n.id))} className="absolute top-2 right-2 text-white/60 hover:text-white text-lg">×</button>
             </motion.div>
           ))}
         </div>
       )}
 
-      <div className="relative z-20 max-w-6xl mx-auto p-2 sm:p-4 md:p-6 pt-20">
-        <h1 className={`text-2xl sm:text-3xl md:text-4xl font-bold text-center mb-2 ${isDark ? 'text-red-400' : 'bg-gradient-to-r from-red-600 via-rose-500 to-red-700 bg-clip-text text-transparent'}`}>
-          Расписание
-        </h1>
-        <p className={`text-center text-sm mb-6 ${isDark ? 'text-rose-400' : 'text-rose-600'}`}>
-          ✨ Организованное обучение — залог успеха!
-        </p>
+      <div className="relative z-20 max-w-7xl mx-auto p-4 md:p-6 pt-20 pb-24 md:pb-6">
+        <div className="text-center mb-6">
+          <h1 className={`text-3xl md:text-4xl font-extrabold mb-2 ${isDark ? 'text-rose-400' : 'bg-gradient-to-r from-rose-600 to-red-600 bg-clip-text text-transparent'}`}>
+            Расписание
+          </h1>
+          <p className={`text-sm md:text-base ${isDark ? 'text-rose-300/70' : 'text-rose-600/80'}`}>
+            Организованное обучение — залог успеха
+          </p>
+        </div>
 
-        <div className={`rounded-2xl p-2 sm:p-3 mb-4 shadow-lg ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-red-500/30' : 'bg-gradient-to-br from-white to-rose-50/50 border border-red-200 shadow-rose-200/50'}`}>
-          <div className="flex flex-wrap gap-2 items-center overflow-x-auto pb-2">
-            <div className={`flex rounded-xl overflow-hidden border flex-shrink-0 ${isDark ? 'border-red-500/30' : 'border-red-200'}`}>
-              <button onClick={() => { setViewMode('week'); setCurrentWeek(0); }} className={`px-2 sm:px-3 py-1.5 text-xs font-medium transition whitespace-nowrap ${viewMode === 'week' ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-md' : isDark ? 'bg-gray-800 text-red-300' : 'bg-white text-red-600'}`}>📅 Неделя</button>
-              <button onClick={() => { setViewMode('month'); setCurrentWeek(0); }} className={`px-2 sm:px-3 py-1.5 text-xs font-medium transition whitespace-nowrap ${viewMode === 'month' ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-md' : isDark ? 'bg-gray-800 text-red-300' : 'bg-white text-red-600'}`}>🗓️ Месяц</button>
-            </div>
-            {isTutor && (
-              <select value={filterStudent} onChange={(e) => setFilterStudent(e.target.value)} className={`px-2 sm:px-3 py-1.5 text-xs rounded-xl border flex-shrink-0 ${isDark ? 'bg-gray-800 border-red-500/30 text-red-300' : 'bg-white border-red-200 text-red-700'}`}>
-                <option value="all">👤 Все ученики</option>
-                {students.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+        <div className={`rounded-2xl p-3 md:p-4 mb-6 shadow-sm border ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
+          <div className="flex flex-col md:flex-row gap-3 md:items-center justify-between">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+              <div className={`flex rounded-xl p-1 border ${isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'}`}>
+                <button onClick={() => { setViewMode('week'); setCurrentWeek(0); }} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'week' ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md' : isDark ? 'text-gray-300' : 'text-gray-700'}`}>Неделя</button>
+                <button onClick={() => { setViewMode('month'); setCurrentWeek(0); }} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'month' ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md' : isDark ? 'text-gray-300' : 'text-gray-700'}`}>Месяц</button>
+              </div>
+
+              {isTutor && (
+                <select value={filterStudent} onChange={(e) => setFilterStudent(e.target.value)} className={`h-10 px-3 rounded-xl border text-sm font-medium outline-none ${isDark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-700'}`}>
+                  <option value="all">Все ученики</option>
+                  {students.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                </select>
+              )}
+
+              <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className={`h-10 px-3 rounded-xl border text-sm font-medium outline-none ${isDark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-700'}`}>
+                <option value="all">Все предметы</option>
+                <option value="chemistry">🧪 Химия</option>
+                <option value="biology"> Биология</option>
               </select>
-            )}
-            <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className={`px-2 sm:px-3 py-1.5 text-xs rounded-xl border flex-shrink-0 ${isDark ? 'bg-gray-800 border-red-500/30 text-red-300' : 'bg-white border-red-200 text-red-700'}`}>
-              <option value="all">📚 Все предметы</option>
-              <option value="chemistry">🧪 Химия</option>
-              <option value="biology">🧬 Биология</option>
-            </select>
-            <button onClick={() => setShowArchive(true)} className={`px-2 sm:px-3 py-1.5 text-xs rounded-xl border transition flex items-center gap-1 flex-shrink-0 whitespace-nowrap ${isDark ? 'bg-gray-800 border-red-500/30 text-red-300 hover:bg-gray-700' : 'bg-gradient-to-br from-white to-rose-50 border-red-200 text-red-700 hover:shadow-md'}`}>
-              <Archive className="w-3 h-3" />
-              Архив ({cancelledLessons.length})
-            </button>
-            <div className="flex-1"></div>
-            <span className={`text-xs flex-shrink-0 ${isDark ? 'text-red-400' : 'text-red-500 font-medium'}`}>{getLessonsForDate(new Date()).length} сегодня</span>
-            <div className="flex gap-2 flex-shrink-0">
-              <button onClick={() => setShowStats(!showStats)} className={`text-xl transition ${isDark ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-700'}`} title="Статистика">📊</button>
-              {isTutor && <button onClick={() => { setShowForm(true); setEditLesson(null); setSelectedGroupId(""); setFormStudentId(""); setFormHwTemplateId(""); setFormTopics([]); setFormGroupParticipants([]); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }} className="px-3 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-500/30 hover:shadow-xl hover:shadow-rose-500/40 hover:scale-105 active:scale-95 transition-all text-xs sm:text-sm whitespace-nowrap">+ Занятие</button>}
+
+              <button onClick={() => setShowArchive(true)} className={`h-10 px-4 rounded-xl border text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all active:scale-95 ${isDark ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+                <Archive className="w-4 h-4" /> Архив ({cancelledLessons.length})
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className={`text-sm font-semibold ${isDark ? 'text-rose-400' : 'text-rose-600'}`}>
+                {getLessonsForDate(new Date()).length} сегодня
+              </span>
+              {isTutor && (
+                <button
+                  onClick={() => { setShowForm(true); setEditLesson(null); setSelectedGroupId(""); setFormStudentId(""); setFormHwTemplateId(""); setFormTopics([]); setFormGroupParticipants([]); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }}
+                  className="h-11 px-5 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 active:scale-95 transition-all flex items-center gap-2"
+                >
+                  <span className="text-lg leading-none">+</span> Занятие
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        {showStats && isTutor && (
-          <motion.div className={`rounded-2xl p-3 sm:p-4 mb-4 shadow-lg ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-red-500/30' : 'bg-gradient-to-br from-white to-rose-50/50 border border-red-200 shadow-rose-200/50'}`} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-            <h3 className={`font-semibold mb-3 flex items-center gap-2 ${isDark ? 'text-red-300' : 'text-red-700'}`}> Статистика по ученикам</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-              {students.map((s, idx) => {
-                const stat = studentStats[s.id] || { total: 0, completed: 0, cancelled: 0, hours: 0 };
-                const balance = lessonBalances[s.id] || 0;
-                return (
-                  <div key={s.id} className={`rounded-xl p-3 border ${isDark ? 'bg-gradient-to-br from-gray-700 to-gray-800 border-red-500/20' : 'bg-gradient-to-br from-red-50 to-rose-50 border-red-100 shadow-sm'}`}>
-                    <p className={`font-medium text-sm truncate ${isDark ? 'text-white' : 'text-gray-800'}`}>{s.full_name}</p>
-                    <div className={`flex gap-2 mt-1 text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      <span>✅ {stat.completed}</span>
-                      <span>📋 {stat.total}</span>
-                      <span>⏱️ {stat.hours.toFixed(1)}ч</span>
-                      <span className={`font-bold ${balance === 0 ? 'text-red-500' : 'text-green-600'}`}>📦 {balance}</span>
-                    </div>
+        <div className={`flex items-center justify-between rounded-2xl p-3 mb-6 border shadow-sm ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
+          <button onClick={() => setCurrentWeek(currentWeek - 1)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 transition active:scale-95">←</button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setCurrentWeek(0)} className="px-4 py-2 rounded-lg text-sm font-semibold bg-rose-100 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 hover:bg-rose-200 transition active:scale-95">Сегодня</button>
+            <span className={`font-bold text-base ${isDark ? 'text-white' : 'text-gray-900'}`}>{weekStr}</span>
+          </div>
+          <button onClick={() => setCurrentWeek(currentWeek + 1)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 transition active:scale-95">→</button>
+        </div>
+
+        {/* МОБИЛЬНЫЙ ВИД */}
+        <div className="md:hidden space-y-4">
+          {weekDates.map((date: Date, idx: number) => {
+            const dateLessons = getLessonsForDate(date);
+            const isToday = date.toDateString() === new Date().toDateString();
+            if (dateLessons.length === 0 && !isToday) return null;
+
+            return (
+              <div key={idx} className={`rounded-2xl p-4 border shadow-sm ${isToday ? 'bg-gradient-to-br from-rose-50 to-white border-rose-300 dark:from-rose-950/40 dark:to-gray-900 dark:border-rose-500/50' : isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
+                <div className={`text-sm font-bold mb-3 flex items-center gap-2 ${isToday ? 'text-rose-600 dark:text-rose-400' : isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {date.toLocaleDateString("ru-RU", { weekday: 'long', day: 'numeric', month: 'long' })}
+                  {isToday && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />}
+                </div>
+
+                {dateLessons.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic py-2">Нет занятий</p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {dateLessons.map((l: any) => (
+                      <LessonCardMobile key={l.id} lesson={l} isDark={isDark} onClick={() => setSelectedLesson(l)} isTodayCard={isToday} />
+                    ))}
                   </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        <div className="mb-4">
-          <div className={`flex items-center justify-between rounded-2xl p-2 sm:p-3 shadow-lg ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-red-500/30' : 'bg-gradient-to-br from-white to-rose-50/50 border border-red-200 shadow-rose-200/50'}`}>
-            <button onClick={() => setCurrentWeek(currentWeek - 1)} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-medium transition ${isDark ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'bg-gradient-to-br from-white to-rose-50 text-red-600 hover:shadow-md shadow-sm'}`}>←</button>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setCurrentWeek(0)} className={`px-2 sm:px-3 py-1 rounded-lg text-xs font-medium transition ${isDark ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'bg-gradient-to-br from-red-100 to-rose-100 text-red-700 hover:shadow-md shadow-sm'}`}>Сегодня</button>
-              <span className={`font-semibold text-xs sm:text-sm ${isDark ? 'text-red-300' : 'text-red-700'}`}>{weekStr}</span>
-            </div>
-            <button onClick={() => setCurrentWeek(currentWeek + 1)} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-medium transition ${isDark ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'bg-gradient-to-br from-white to-rose-50 text-red-600 hover:shadow-md shadow-sm'}`}>→</button>
-          </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        <div className="overflow-x-auto pb-2 -mx-2 px-2">
-          <div className="grid grid-cols-7 gap-1 sm:gap-2 md:gap-3 min-w-[500px] sm:min-w-[600px]">
-            {["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"].map((day, idx) => (
-              <div key={day} className={`text-center font-semibold text-[10px] sm:text-xs md:text-sm py-2 ${isDark ? 'text-red-400' : 'text-red-500'}`}>{day}</div>
+        {/* ДЕСКТОПНЫЙ ВИД */}
+        <div className="hidden md:block overflow-x-auto pb-4">
+          <div className="grid grid-cols-7 gap-3 min-w-[900px]">
+            {["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"].map((day) => (
+              <div key={day} className={`text-center font-bold text-sm py-2 ${isDark ? 'text-rose-400' : 'text-rose-600'}`}>{day}</div>
             ))}
             {weekDates.map((date: Date, idx: number) => {
               const dateLessons = getLessonsForDate(date);
               const isToday = date.toDateString() === new Date().toDateString();
-              const isCurrentMonth = date.getMonth() === new Date().getMonth();
               return (
-                <div key={idx} style={{ minHeight: viewMode === 'month' ? '60px' : '120px' }} className={`rounded-xl sm:rounded-2xl p-1 sm:p-2 transition-all duration-300 ${isToday ? (isDark ? "bg-gradient-to-br from-red-900/50 to-rose-900/50 ring-2 ring-red-400 shadow-lg" : "bg-gradient-to-br from-red-100 to-rose-100 ring-2 ring-red-400 shadow-lg shadow-rose-300/50") : viewMode === 'month' && !isCurrentMonth ? (isDark ? "bg-gray-900/30 opacity-50" : "bg-gray-50/50 opacity-50") : isDark ? "bg-gradient-to-br from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800" : "bg-gradient-to-br from-white to-rose-50/30 hover:shadow-md"} ${isDark ? 'border border-red-500/20' : 'border border-red-200 shadow-sm'}`} onDragOver={handleDragOver} onDrop={() => handleDrop(date)}>
-                  <div className={`text-center text-xs sm:text-sm font-bold mb-1 sm:mb-2 ${isToday ? (isDark ? "text-red-300" : "text-red-600") : (isDark ? "text-gray-400" : "text-gray-500")}`}>{date.getDate()}{isToday && <span className="ml-1 text-[10px]">✨</span>}</div>
-                  <div className={`space-y-1 ${viewMode === 'month' ? 'max-h-[50px]' : 'max-h-[180px]'} overflow-y-auto`}>
-                    {dateLessons.slice(0, viewMode === 'month' ? 2 : 10).map((l: any, li: number) => {
-                      const startTime = new Date(l.start_time);
-                      const endTime = new Date(l.end_time);
-                      const balance = lessonBalances[l.student_id] || 0;
-                      const isGroup = l.is_group;
-                      const statusStyles = { scheduled: isDark ? "border-l-4 border-blue-400 bg-gradient-to-br from-blue-900/30 to-blue-800/20" : "border-l-4 border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100/50", completed: isDark ? "border-l-4 border-green-400 bg-gradient-to-br from-green-900/30 to-green-800/20 opacity-75" : "border-l-4 border-green-500 bg-gradient-to-br from-green-50 to-green-100/50 opacity-75", cancelled: isDark ? "border-l-4 border-rose-800 bg-gradient-to-br from-rose-950/30 to-rose-900/20 line-through opacity-50" : "border-l-4 border-rose-200 bg-gradient-to-br from-rose-50 to-rose-100/50 line-through opacity-50" };
-                      return (
-                        <motion.div key={l.id} draggable onDragStart={() => handleDragStart(l)} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.1 + li * 0.05 }} whileHover={{ scale: 1.03, x: 2 }} onClick={(e) => { if (!(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('a')) setSelectedLesson(l); }} className={`group relative p-1 sm:p-1.5 rounded-lg text-[10px] sm:text-xs cursor-grab active:cursor-grabbing transition shadow-sm break-words ${statusStyles[l.status as keyof typeof statusStyles]} cursor-pointer hover:brightness-95`}>
-                          {isGroup && <span className="absolute top-0 right-0 text-[8px] sm:text-[10px] bg-gradient-to-r from-purple-500 to-purple-600 text-white px-1 rounded-bl-lg">👥</span>}
-                          <div className="font-medium flex items-center gap-1 justify-between">
-                            <span className="text-[10px] sm:text-[11px] flex items-center gap-1 min-w-0 flex-1">
-                              <span className="flex-shrink-0">{l.subject === "chemistry" ? "🧪" : "🧬"}</span>
-                              <span className="truncate">{isGroup ? l.group_name : (l.student_name || "Ученик")}</span>
-                            </span>
-                            {!isGroup && <span className={`text-[8px] sm:text-[9px] px-1 rounded font-bold flex-shrink-0 ${balance > 0 ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-700' : 'bg-gradient-to-r from-red-100 to-red-200 text-red-700'}`}>{balance}</span>}
-                          </div>
-                          {viewMode === 'week' && <div className={`text-[9px] sm:text-[10px] opacity-70 ${isDark ? 'text-gray-300' : ''}`}>{startTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div>}
-                          {l.hw_template_id && <div className="mt-1 text-[8px] sm:text-[10px] bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800 px-1 py-0.5 rounded inline-block font-bold">📎ДЗ</div>}
-                          {l.attached_file_url && <div className="mt-1 text-[8px] sm:text-[10px] bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 px-1 py-0.5 rounded inline-block font-bold flex items-center gap-1"><File className="w-2 h-2 sm:w-3 sm:h-3" /><span className="truncate max-w-[60px] sm:max-w-[80px]">{l.attached_file_name || "Файл"}</span></div>}
-                          <div className={`flex gap-0.5 mt-1 ${isDark ? 'bg-gray-800/90' : 'bg-white/90'} rounded-lg p-0.5 shadow z-10 md:opacity-0 md:group-hover:opacity-100 transition-opacity`}>
-                            <a href={`/lesson/${l.id}`} onClick={(e) => e.stopPropagation()} className="p-0.5 text-xs hover:scale-110 transition" title="Комната урока"></a>
-                            {l.status === "scheduled" && (<><button onClick={(e) => { e.stopPropagation(); setStatus(l); }} className="p-0.5 text-xs hover:scale-110 transition">✅</button><button onClick={(e) => { e.stopPropagation(); cancelLesson(l.id); }} className="p-0.5 text-xs hover:scale-110 transition">❌</button></>)}
-                            <button onClick={(e) => { e.stopPropagation(); setSelectedLessonForNotes(l); setLessonNotes(l.post_notes || ''); setLessonTopics(l.topics ? l.topics.split(",").map((t: string) => t.trim()) : []); setShowNotesModal(true); setSelectedLesson(null); }} className="p-0.5 text-xs hover:scale-110 transition">📝</button>
-                            <button onClick={(e) => { e.stopPropagation(); exportToCalendar(l); }} className="p-0.5 text-xs hover:scale-110 transition">📅</button>
-                            {isTutor && (<><button onClick={(e) => { e.stopPropagation(); setEditLesson(l); setShowForm(true); setFormStudentId(l.student_id || ""); setFormHwTemplateId(l.hw_template_id || ""); setFormTopics(l.topics ? l.topics.split(",").map((t: string) => t.trim()) : []); setFormGroupParticipants(l.group_participants || []); setSelectedGroupId(l.group_id || ""); setAttachedFile(null); setAttachedFileName(l.attached_file_name || ""); setAttachedFileUrl(l.attached_file_url || ""); setIsGroupLesson(l.is_group || false); setStudentSearch(students.find(s => s.id === l.student_id)?.full_name || ""); setSelectedLesson(null); }} className="p-0.5 text-xs hover:scale-110 transition">✏️</button><button onClick={(e) => { e.stopPropagation(); deleteLesson(l.id); }} className="p-0.5 text-xs hover:scale-110 transition">🗑️</button></>)}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                    {dateLessons.length > (viewMode === 'month' ? 2 : 10) && <div className={`text-[9px] sm:text-[10px] text-center ${isDark ? 'text-red-400' : 'text-red-500'}`}>+{dateLessons.length - (viewMode === 'month' ? 2 : 10)} ещё</div>}
+                <div key={idx} className={`rounded-2xl p-3 transition-all ${isToday ? (isDark ? "bg-rose-950/30 ring-2 ring-rose-500/50" : "bg-rose-50 ring-2 ring-rose-300") : isDark ? "bg-gray-900 border border-gray-800" : "bg-white border border-gray-100 shadow-sm"}`} onDragOver={handleDragOver} onDrop={() => handleDrop(date)}>
+                  <div className={`text-center text-sm font-bold mb-3 ${isToday ? (isDark ? "text-rose-400" : "text-rose-600") : (isDark ? "text-gray-400" : "text-gray-500")}`}>
+                    {date.getDate()}
+                  </div>
+                  <div className="space-y-2 max-h-[280px] overflow-y-auto lesson-scroll">
+                    {dateLessons.map((l: any) => (
+                      <LessonCardDesktop key={l.id} lesson={l} isDark={isDark} onClick={() => setSelectedLesson(l)} />
+                    ))}
                   </div>
                 </div>
               );
@@ -987,110 +1149,199 @@ function ScheduleContent() {
           </div>
         </div>
 
-        <div className={`mt-4 sm:mt-6 rounded-2xl p-3 sm:p-4 shadow-lg ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border border-red-500/30' : 'bg-gradient-to-br from-white to-rose-50/50 border border-red-200 shadow-rose-200/50'}`}>
-          <h3 className={`font-semibold mb-3 flex items-center gap-2 text-sm sm:text-base ${isDark ? 'text-red-300' : 'text-red-700'}`}>🍂 Сегодня ({new Date().getDate()} {["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"][new Date().getMonth()]})</h3>
+        {/* Блок "Сегодня" */}
+        <div className={`mt-8 rounded-2xl p-4 md:p-6 border shadow-sm ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`}>
+          <h3 className={`font-bold text-lg mb-4 flex items-center gap-2 ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
+            <Clock className="w-5 h-5" /> Сегодня
+          </h3>
           {(() => {
             const todayLessons = getLessonsForDate(new Date());
-            if (todayLessons.length === 0) return <p className={`text-sm text-center py-4 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Нет занятий на сегодня 🎉</p>;
+            if (todayLessons.length === 0) return <p className="text-sm text-gray-400 text-center py-4">Нет занятий на сегодня 🎉</p>;
             return (
-              <div className="space-y-2">
-                {todayLessons.map((l: any, idx: number) => {
-                  const startTime = new Date(l.start_time);
-                  const endTime = new Date(l.end_time);
-                  const balance = lessonBalances[l.student_id] || 0;
-                  return (
-                    <motion.div key={l.id} className={`flex flex-wrap items-center justify-between p-2 sm:p-3 rounded-xl hover:shadow-lg transition cursor-pointer gap-2 ${l.subject === "chemistry" ? (isDark ? "bg-gradient-to-br from-red-900/30 to-red-800/20 border-l-4 border-red-500" : "bg-gradient-to-br from-red-50 to-rose-50 border-l-4 border-red-500") : (isDark ? "bg-gradient-to-br from-rose-900/30 to-rose-800/20 border-l-4 border-rose-500" : "bg-gradient-to-br from-rose-50 to-pink-50 border-l-4 border-rose-500")}`} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.1 }} whileHover={{ scale: 1.01, x: 3 }} onClick={() => setSelectedLesson(l)}>
-                      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                        <span className="text-lg flex-shrink-0">{l.subject === "chemistry" ? "🧪" : ""}</span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className={`font-medium text-xs sm:text-sm truncate ${isDark ? 'text-white' : 'text-gray-800'}`}>{l.is_group ? `👥 ${l.group_name}` : (l.student_name || "Ученик")}</p>
-                            {!l.is_group && <span className={`text-[9px] sm:text-[10px] px-1.5 rounded font-bold flex-shrink-0 ${balance > 0 ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-700' : 'bg-gradient-to-r from-red-100 to-red-200 text-red-700'}`}>📦 {balance} ост.</span>}
-                            {l.hw_template_id && <span className="text-[9px] sm:text-[10px] px-1.5 rounded font-bold bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800 flex-shrink-0">📎 ДЗ</span>}
-                            {l.attached_file_url && <div className="text-[9px] sm:text-[10px] px-1.5 rounded font-bold bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 flex items-center gap-1 flex-shrink-0"><File className="w-2 h-2 sm:w-3 sm:h-3" /><span className="truncate max-w-[80px] sm:max-w-[100px]">{l.attached_file_name || "Файл"}</span></div>}
-                          </div>
-                          <p className={`text-[10px] sm:text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{startTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} – {endTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>
-                          {l.topics && <p className={`text-[10px] sm:text-xs mt-0.5 truncate ${isDark ? 'text-red-400' : 'text-red-500'}`}>🎯 {l.topics}</p>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <RedTimer startTime={startTime} endTime={endTime} />
-                        {l.zoom_link && <a href={l.zoom_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] sm:text-xs bg-gradient-to-r from-red-500 to-rose-600 text-white px-2 sm:px-3 py-1 rounded-lg hover:shadow-md transition flex items-center gap-1">🎥 Zoom</a>}
-                        <a href={`/lesson/${l.id}`} onClick={(e) => e.stopPropagation()} className="text-[10px] sm:text-xs bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-2 sm:px-3 py-1 rounded-lg hover:shadow-md transition flex items-center gap-1">▶ Занятие</a>
-                        <button onClick={(e) => { e.stopPropagation(); exportToCalendar(l); }} className={`text-[10px] sm:text-xs px-2 py-1 rounded-lg transition ${isDark ? 'bg-rose-900/30 text-rose-300 hover:bg-rose-900/50' : 'bg-gradient-to-br from-rose-100 to-rose-200 text-rose-600 hover:shadow-md'}`} title="Экспорт"></button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {todayLessons.map((l: any) => (
+                  <LessonCardMobile key={l.id} lesson={l} isDark={isDark} onClick={() => setSelectedLesson(l)} isTodayCard />
+                ))}
               </div>
             );
           })()}
         </div>
       </div>
 
+      {/* ===================== МОДАЛКА УРОКА ===================== */}
       <AnimatePresence>
         {selectedLesson && (
           <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/60' : 'bg-black/40'}`} onClick={() => setSelectedLesson(null)} />
-            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-white to-rose-50/30'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
-              <div className={`p-4 sm:p-5 rounded-t-3xl sticky top-0 z-10 ${selectedLesson.subject === 'chemistry' ? 'bg-gradient-to-r from-emerald-500 to-green-600' : 'bg-gradient-to-r from-purple-500 to-indigo-600'}`}>
+            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/50'}`} onClick={() => setSelectedLesson(null)} />
+            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto ${isDark ? 'bg-gray-900' : 'bg-white'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
+              <div className={`p-5 sm:p-6 rounded-t-3xl sticky top-0 z-10 ${selectedLesson.subject === 'chemistry' ? 'bg-gradient-to-r from-blue-500 to-indigo-600' : 'bg-gradient-to-r from-emerald-500 to-teal-600'}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl">{selectedLesson.subject === 'chemistry' ? '🧪' : '🧬'}</div>
+                    <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center">
+                      {selectedLesson.subject === 'chemistry' ? <Beaker className="w-6 h-6 text-white" /> : <Dna className="w-6 h-6 text-white" />}
+                    </div>
                     <div>
-                      <h2 className="font-bold text-lg sm:text-xl text-white">{selectedLesson.is_group ? selectedLesson.group_name : selectedLesson.student_name}</h2>
-                      <p className="text-white/80 text-xs sm:text-sm">{selectedLesson.subject === 'chemistry' ? 'Химия' : 'Биология'} • {selectedLesson.is_group ? 'Групповое' : 'Индивидуальное'}</p>
+                      <h2 className="font-bold text-lg sm:text-xl text-white">
+                        {selectedLesson.is_group ? selectedLesson.group_name : selectedLesson.student_name}
+                      </h2>
+                      <p className="text-white/80 text-xs sm:text-sm">
+                        {selectedLesson.subject === 'chemistry' ? 'Химия' : 'Биология'} • {selectedLesson.is_group ? 'Групповое' : 'Индивидуальное'}
+                      </p>
                     </div>
                   </div>
                   <button onClick={() => setSelectedLesson(null)} className="text-white/80 hover:text-white text-3xl leading-none transition">×</button>
                 </div>
               </div>
-              <div className="p-4 sm:p-6 space-y-4">
-                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${selectedLesson.status === 'scheduled' ? 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700' : selectedLesson.status === 'completed' ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-700' : 'bg-gradient-to-r from-rose-100 to-rose-200 text-rose-700'}`}>
+
+              <div className="p-5 sm:p-6 space-y-4">
+                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
+                  selectedLesson.status === 'scheduled' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                    : selectedLesson.status === 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                      : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
+                }`}>
                   {selectedLesson.status === 'scheduled' && '📅 Запланировано'}
                   {selectedLesson.status === 'completed' && '✅ Проведено'}
                   {selectedLesson.status === 'cancelled' && '❌ Отменено'}
                 </div>
-                <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}>
-                  <div className="flex items-center gap-2 mb-2"><Calendar className="w-4 h-4 text-rose-500" /><span className={`text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ДАТА И ВРЕМЯ</span></div>
-                  <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-800'}`}>{new Date(selectedLesson.start_time).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                  <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>{new Date(selectedLesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – {new Date(selectedLesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}{selectedLesson.duration && ` • ${selectedLesson.duration} мин`}</p>
+
+                <div className={`rounded-2xl p-4 ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-4 h-4 text-rose-500" />
+                    <span className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Дата и время</span>
+                  </div>
+                  <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {new Date(selectedLesson.start_time).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                  <p className={`text-sm mt-1 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                    {new Date(selectedLesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – {new Date(selectedLesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    {selectedLesson.duration && ` • ${selectedLesson.duration} мин`}
+                  </p>
                 </div>
+
                 {selectedLesson.topics && (
-                  <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}>
-                    <div className="flex items-center gap-2 mb-2"><BookOpen className="w-4 h-4 text-rose-500" /><span className={`text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ТЕМЫ УРОКА</span></div>
-                    <div className="flex flex-wrap gap-1.5">{selectedLesson.topics.split(',').map((topic: string, i: number) => (<span key={i} className={`px-2 py-1 rounded-lg text-xs font-medium ${isDark ? 'bg-gradient-to-br from-red-900/40 to-red-800/30 text-red-300' : 'bg-gradient-to-br from-red-100 to-rose-100 text-red-700'}`}>{topic.trim()}</span>))}</div>
+                  <div className={`rounded-2xl p-4 ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <BookOpen className="w-4 h-4 text-rose-500" />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Темы урока</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedLesson.topics.split(',').map((topic: string, i: number) => (
+                        <span key={i} className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${isDark ? 'bg-rose-950/40 text-rose-300 border border-rose-500/30' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                          {topic.trim()}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
-                {selectedLesson.zoom_link && <a href={selectedLesson.zoom_link} target="_blank" rel="noopener noreferrer" className="block rounded-xl p-3 bg-gradient-to-r from-red-500 to-rose-500 text-white hover:from-red-600 hover:to-rose-600 transition shadow-md hover:shadow-lg"><div className="flex items-center gap-2 mb-1"><Video className="w-4 h-4" /><span className="text-xs font-bold">ПОДКЛЮЧИТЬСЯ К ZOOM</span></div><p className="text-xs text-white/80 truncate">{selectedLesson.zoom_link}</p></a>}
-                {selectedLesson.board_link && <a href={selectedLesson.board_link} target="_blank" rel="noopener noreferrer" className={`block rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-purple-900/30 to-purple-800/20 border border-purple-500/30' : 'bg-gradient-to-br from-purple-50 to-purple-100/50 border border-purple-200'} hover:shadow-md transition`}><div className="flex items-center gap-2 mb-1"><Palette className="w-4 h-4 text-purple-500" /><span className={`text-xs font-bold ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>ОТКРЫТЬ ДОСКУ</span></div><p className={`text-xs truncate ${isDark ? 'text-purple-400' : 'text-purple-600'}`}>{selectedLesson.board_link}</p></a>}
-                {selectedLesson.attached_file_url && <a href={selectedLesson.attached_file_url} target="_blank" rel="noopener noreferrer" className={`block rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-blue-900/30 to-blue-800/20 border border-blue-500/30' : 'bg-gradient-to-br from-blue-50 to-blue-100/50 border border-blue-200'} hover:shadow-md transition`}><div className="flex items-center gap-2 mb-1"><File className="w-4 h-4 text-blue-500" /><span className={`text-xs font-bold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>СКАЧАТЬ ФАЙЛ</span></div><p className={`text-xs truncate ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{selectedLesson.attached_file_name || 'Материалы к уроку'}</p></a>}
-                {selectedLesson.board_snapshot_url && (
-                  <a href={selectedLesson.board_snapshot_url} target="_blank" rel="noopener noreferrer" className={`block rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-emerald-900/30 to-emerald-800/20 border border-emerald-500/30' : 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200'} hover:shadow-md transition`}>
-                    <div className="flex items-center gap-2 mb-1"><CheckCircle className="w-4 h-4 text-emerald-500" /><span className={`text-xs font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>📸 СНИМОК ДОСКИ</span></div>
-                    <p className={`text-xs truncate ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>Как выглядела доска на занятии</p>
+
+                {selectedLesson.zoom_link && (
+                  <a href={selectedLesson.zoom_link} target="_blank" rel="noopener noreferrer" className="block rounded-2xl p-4 bg-gradient-to-r from-rose-500 to-red-600 text-white hover:from-rose-600 hover:to-red-700 transition shadow-md hover:shadow-lg active:scale-[0.98]">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Video className="w-5 h-5" />
+                      <span className="text-sm font-bold">ПОДКЛЮЧИТЬСЯ К ZOOM</span>
+                    </div>
+                    <p className="text-xs text-white/80 truncate">{selectedLesson.zoom_link}</p>
                   </a>
                 )}
-                {selectedLesson.hw_template_id && <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-amber-900/30 to-amber-800/20 border border-amber-500/30' : 'bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200'}`}><div className="flex items-center gap-2 mb-1"><CheckCircle className="w-4 h-4 text-amber-500" /><span className={`text-xs font-bold ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>ДОМАШНЕЕ ЗАДАНИЕ</span></div><p className={`text-xs ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>ДЗ будет создано автоматически после проведения занятия</p></div>}
+
+                {selectedLesson.board_link && (
+                  <a href={selectedLesson.board_link} target="_blank" rel="noopener noreferrer" className={`block rounded-2xl p-4 ${isDark ? 'bg-purple-950/30 border border-purple-500/30' : 'bg-purple-50 border border-purple-200'} hover:shadow-md transition active:scale-[0.98]`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Palette className="w-5 h-5 text-purple-500" />
+                      <span className={`text-sm font-bold ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>ОТКРЫТЬ ДОСКУ</span>
+                    </div>
+                    <p className={`text-xs truncate ${isDark ? 'text-purple-400' : 'text-purple-600'}`}>{selectedLesson.board_link}</p>
+                  </a>
+                )}
+
+                {selectedLesson.attached_file_url && (
+                  <a href={selectedLesson.attached_file_url} target="_blank" rel="noopener noreferrer" className={`block rounded-2xl p-4 ${isDark ? 'bg-blue-950/30 border border-blue-500/30' : 'bg-blue-50 border border-blue-200'} hover:shadow-md transition active:scale-[0.98]`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <File className="w-5 h-5 text-blue-500" />
+                      <span className={`text-sm font-bold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>СКАЧАТЬ ФАЙЛ</span>
+                    </div>
+                    <p className={`text-xs truncate ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{selectedLesson.attached_file_name || 'Материалы к уроку'}</p>
+                  </a>
+                )}
+
+                {selectedLesson.board_snapshot_url && (
+                  <a href={selectedLesson.board_snapshot_url} target="_blank" rel="noopener noreferrer" className={`block rounded-2xl p-4 ${isDark ? 'bg-emerald-950/30 border border-emerald-500/30' : 'bg-emerald-50 border border-emerald-200'} hover:shadow-md transition active:scale-[0.98]`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle className="w-5 h-5 text-emerald-500" />
+                      <span className={`text-sm font-bold ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>📸 СНИМОК ДОСКИ</span>
+                    </div>
+                    <p className={`text-xs ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>Как выглядела доска на занятии</p>
+                  </a>
+                )}
+
+                {selectedLesson.hw_template_id && (
+                  <div className={`rounded-2xl p-4 ${isDark ? 'bg-amber-950/30 border border-amber-500/30' : 'bg-amber-50 border border-amber-200'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle className="w-5 h-5 text-amber-500" />
+                      <span className={`text-sm font-bold ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>ДОМАШНЕЕ ЗАДАНИЕ</span>
+                    </div>
+                    <p className={`text-xs ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>ДЗ будет создано автоматически после проведения занятия</p>
+                  </div>
+                )}
+
                 {!selectedLesson.is_group && selectedLesson.student_id && lessonBalances[selectedLesson.student_id] !== undefined && (
-                  <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}>
-                    <div className="flex items-center gap-2 mb-1"><User className="w-4 h-4 text-rose-500" /><span className={`text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>БАЛАНС УЧЕНИКА</span></div>
-                    <p className={`text-lg font-bold ${lessonBalances[selectedLesson.student_id] > 0 ? 'text-green-600' : 'text-red-500'}`}>📦 {lessonBalances[selectedLesson.student_id]} занятий</p>
+                  <div className={`rounded-2xl p-4 ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <User className="w-4 h-4 text-rose-500" />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Баланс ученика</span>
+                    </div>
+                    <p className={`text-lg font-bold ${lessonBalances[selectedLesson.student_id] > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>
+                      📦 {lessonBalances[selectedLesson.student_id]} занятий
+                    </p>
                   </div>
                 )}
+
                 {selectedLesson.is_group && selectedLesson.group_participants && selectedLesson.group_participants.length > 0 && (
-                  <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}>
-                    <div className="flex items-center gap-2 mb-2"><Users className="w-4 h-4 text-rose-500" /><span className={`text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>УЧАСТНИКИ ГРУППЫ ({selectedLesson.group_participants.length})</span></div>
-                    <div className="space-y-1.5">{selectedLesson.group_participants.map((participantId: string) => { const participant = students.find(s => s.id === participantId); return (<div key={participantId} className={`flex items-center gap-2 p-2 rounded-lg ${isDark ? 'bg-gradient-to-br from-gray-700 to-gray-600' : 'bg-gradient-to-br from-white to-purple-50/50'}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isDark ? 'bg-gradient-to-br from-purple-900/40 to-purple-800/30 text-purple-300' : 'bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700'}`}>{(participant?.full_name || '?')[0]}</div><span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-800'}`}>{participant?.full_name || 'Неизвестно'}</span></div>); })}</div>
+                  <div className={`rounded-2xl p-4 ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Users className="w-4 h-4 text-rose-500" />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Участники группы ({selectedLesson.group_participants.length})</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {selectedLesson.group_participants.map((participantId: string) => {
+                        const participant = students.find(s => s.id === participantId);
+                        return (
+                          <div key={participantId} className={`flex items-center gap-2 p-2 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-white'}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isDark ? 'bg-rose-950/40 text-rose-300' : 'bg-rose-100 text-rose-700'}`}>
+                              {(participant?.full_name || '?')[0]}
+                            </div>
+                            <span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-800'}`}>{participant?.full_name || 'Неизвестно'}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
-                {selectedLesson.post_notes && <div className={`rounded-xl p-3 ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-700' : 'bg-gradient-to-br from-gray-50 to-gray-100/50'}`}><div className="flex items-center gap-2 mb-2"><span className="text-rose-500"></span><span className={`text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ЗАМЕТКИ ПОСЛЕ УРОКА</span></div><p className={`text-sm whitespace-pre-wrap ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{selectedLesson.post_notes}</p></div>}
+
+                {selectedLesson.post_notes && (
+                  <div className={`rounded-2xl p-4 ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Pencil className="w-4 h-4 text-rose-500" />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Заметки после урока</span>
+                    </div>
+                    <p className={`text-sm whitespace-pre-wrap ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{selectedLesson.post_notes}</p>
+                  </div>
+                )}
+
                 {isTutor && selectedLesson.status === 'scheduled' && (
                   <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button onClick={() => setStatus(selectedLesson)} className="py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-bold text-sm hover:from-green-600 hover:to-emerald-700 transition shadow-md hover:shadow-lg">✅ Проведено</button>
-                    <button onClick={() => cancelLesson(selectedLesson.id)} className="py-2.5 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-700 transition shadow-md hover:shadow-lg">❌ Отменить</button>
-                    <button onClick={() => { setEditLesson(selectedLesson); setShowForm(true); setFormStudentId(selectedLesson.student_id || ""); setFormHwTemplateId(selectedLesson.hw_template_id || ""); setFormTopics(selectedLesson.topics ? selectedLesson.topics.split(",").map((t: string) => t.trim()) : []); setFormGroupParticipants(selectedLesson.group_participants || []); setSelectedGroupId(selectedLesson.group_id || ""); setAttachedFile(null); setAttachedFileName(selectedLesson.attached_file_name || ""); setAttachedFileUrl(selectedLesson.attached_file_url || ""); setIsGroupLesson(selectedLesson.is_group || false); setStudentSearch(students.find(s => s.id === selectedLesson.student_id)?.full_name || ""); setSelectedLesson(null); }} className="py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-600 hover:to-indigo-700 transition shadow-md hover:shadow-lg">✏️ Редактировать</button>
-                    <button onClick={() => exportToCalendar(selectedLesson)} className={`py-2.5 rounded-xl font-bold text-sm transition shadow-md hover:shadow-lg ${isDark ? 'bg-gradient-to-br from-gray-700 to-gray-600 text-white' : 'bg-gradient-to-br from-gray-200 to-gray-300 text-gray-800'}`}>📅 В календарь</button>
+                    <button onClick={() => setStatus(selectedLesson)} className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold text-sm hover:from-emerald-600 hover:to-teal-700 transition shadow-md active:scale-95 flex items-center justify-center gap-2">
+                      <CheckCircle className="w-4 h-4" /> Проведено
+                    </button>
+                    <button onClick={() => cancelLesson(selectedLesson.id)} className="h-11 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-700 transition shadow-md active:scale-95 flex items-center justify-center gap-2">
+                      <X className="w-4 h-4" /> Отменить
+                    </button>
+                    <button onClick={() => { setEditLesson(selectedLesson); setShowForm(true); setFormStudentId(selectedLesson.student_id || ""); setFormHwTemplateId(selectedLesson.hw_template_id || ""); setFormTopics(selectedLesson.topics ? selectedLesson.topics.split(",").map((t: string) => t.trim()) : []); setFormGroupParticipants(selectedLesson.group_participants || []); setSelectedGroupId(selectedLesson.group_id || ""); setAttachedFile(null); setAttachedFileName(selectedLesson.attached_file_name || ""); setAttachedFileUrl(selectedLesson.attached_file_url || ""); setIsGroupLesson(selectedLesson.is_group || false); setStudentSearch(students.find(s => s.id === selectedLesson.student_id)?.full_name || ""); setSelectedLesson(null); }} className="h-11 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-600 hover:to-indigo-700 transition shadow-md active:scale-95 flex items-center justify-center gap-2">
+                      <Edit3 className="w-4 h-4" /> Редактировать
+                    </button>
+                    <button onClick={() => exportToCalendar(selectedLesson)} className={`h-11 rounded-xl font-bold text-sm transition shadow-md active:scale-95 flex items-center justify-center gap-2 ${isDark ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}>
+                      <Calendar className="w-4 h-4" /> В календарь
+                    </button>
                   </div>
                 )}
               </div>
@@ -1099,24 +1350,27 @@ function ScheduleContent() {
         )}
       </AnimatePresence>
 
+      {/* ===================== АРХИВ ===================== */}
       <AnimatePresence>
         {showArchive && (
           <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/60' : 'bg-black/40'}`} onClick={() => setShowArchive(false)} />
-            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-white to-gray-50/50'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
-              <div className="p-4 sm:p-5 rounded-t-3xl sticky top-0 z-10 bg-gradient-to-r from-gray-700 to-gray-800">
+            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/50'}`} onClick={() => setShowArchive(false)} />
+            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gray-900' : 'bg-white'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
+              <div className="p-5 sm:p-6 rounded-t-3xl sticky top-0 z-10 bg-gradient-to-r from-gray-700 to-gray-800">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl"><Archive className="w-6 h-6 text-white" /></div>
+                    <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center">
+                      <Archive className="w-6 h-6 text-white" />
+                    </div>
                     <div>
-                      <h2 className="font-bold text-lg sm:text-xl text-white"> Архив отменённых занятий</h2>
+                      <h2 className="font-bold text-lg sm:text-xl text-white">Архив отменённых занятий</h2>
                       <p className="text-white/80 text-xs sm:text-sm">{cancelledLessons.length} занятий в архиве</p>
                     </div>
                   </div>
                   <button onClick={() => setShowArchive(false)} className="text-white/80 hover:text-white text-3xl leading-none transition">×</button>
                 </div>
               </div>
-              <div className="p-4 sm:p-6 space-y-3">
+              <div className="p-5 sm:p-6 space-y-3">
                 {cancelledLessons.length === 0 ? (
                   <div className="text-center py-12">
                     <Archive className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -1125,11 +1379,11 @@ function ScheduleContent() {
                   </div>
                 ) : (
                   cancelledLessons.map((lesson: any) => (
-                    <motion.div key={lesson.id} className={`rounded-xl p-4 border-2 border-dashed ${isDark ? 'bg-gradient-to-br from-gray-800/50 to-gray-700/30 border-gray-600' : 'bg-gradient-to-br from-gray-50 to-gray-100/30 border-gray-300'}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+                    <motion.div key={lesson.id} className={`rounded-2xl p-4 border-2 border-dashed ${isDark ? 'bg-gray-800/50 border-gray-600' : 'bg-gray-50 border-gray-300'}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-2">
-                            <span className="text-2xl">{lesson.subject === 'chemistry' ? '🧪' : ''}</span>
+                            <span className="text-2xl">{lesson.subject === 'chemistry' ? '🧪' : '🧬'}</span>
                             <div>
                               <h3 className={`font-bold text-sm sm:text-base ${isDark ? 'text-white' : 'text-gray-800'}`}>{lesson.is_group ? lesson.group_name : lesson.student_name}</h3>
                               <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{lesson.subject === 'chemistry' ? 'Химия' : 'Биология'} • {lesson.is_group ? 'Групповое' : 'Индивидуальное'}</p>
@@ -1139,12 +1393,12 @@ function ScheduleContent() {
                             <div className={`flex items-center gap-1.5 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}><Calendar className="w-3.5 h-3.5 text-rose-500" /><span>{new Date(lesson.start_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</span></div>
                             <div className={`flex items-center gap-1.5 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}><Clock className="w-3.5 h-3.5 text-rose-500" /><span>{new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} – {new Date(lesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span></div>
                           </div>
-                          {lesson.cancel_reason && <div className={`mt-2 p-2 rounded-lg ${isDark ? 'bg-gradient-to-br from-red-900/20 to-red-800/10' : 'bg-gradient-to-br from-red-50 to-red-100/50'}`}><p className={`text-xs ${isDark ? 'text-red-300' : 'text-red-600'}`}><span className="font-bold">Причина отмены:</span> {lesson.cancel_reason}</p></div>}
-                          {lesson.topics && <div className="mt-2 flex flex-wrap gap-1">{lesson.topics.split(',').map((topic: string, i: number) => (<span key={i} className={`px-2 py-0.5 rounded text-[10px] ${isDark ? 'bg-gradient-to-br from-red-900/40 to-red-800/30 text-red-300' : 'bg-gradient-to-br from-red-100 to-rose-100 text-red-700'}`}>{topic.trim()}</span>))}</div>}
+                          {lesson.cancel_reason && <div className={`mt-2 p-2 rounded-lg ${isDark ? 'bg-rose-950/20' : 'bg-rose-50'}`}><p className={`text-xs ${isDark ? 'text-rose-300' : 'text-rose-600'}`}><span className="font-bold">Причина отмены:</span> {lesson.cancel_reason}</p></div>}
+                          {lesson.topics && <div className="mt-2 flex flex-wrap gap-1">{lesson.topics.split(',').map((topic: string, i: number) => (<span key={i} className={`px-2 py-0.5 rounded text-[10px] ${isDark ? 'bg-rose-950/40 text-rose-300' : 'bg-rose-100 text-rose-700'}`}>{topic.trim()}</span>))}</div>}
                         </div>
                         <div className="flex flex-col gap-2 flex-shrink-0">
-                          <button onClick={() => restoreLesson(lesson.id)} className="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg text-xs font-bold hover:from-green-600 hover:to-emerald-700 transition shadow-md hover:shadow-lg flex items-center gap-1"><RotateCcw className="w-3 h-3" /><span className="hidden sm:inline">Восстановить</span></button>
-                          <button onClick={() => deleteFromArchive(lesson.id)} className="px-3 py-2 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-lg text-xs font-bold hover:from-rose-600 hover:to-red-700 transition shadow-md hover:shadow-lg flex items-center gap-1"><Trash2 className="w-3 h-3" /><span className="hidden sm:inline">Удалить</span></button>
+                          <button onClick={() => restoreLesson(lesson.id)} className="h-10 px-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg text-xs font-bold hover:from-emerald-600 hover:to-teal-700 transition shadow-md active:scale-95 flex items-center gap-1"><RotateCcw className="w-3 h-3" /><span className="hidden sm:inline">Восстановить</span></button>
+                          <button onClick={() => deleteFromArchive(lesson.id)} className="h-10 px-3 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-lg text-xs font-bold hover:from-rose-600 hover:to-red-700 transition shadow-md active:scale-95 flex items-center gap-1"><Trash2 className="w-3 h-3" /><span className="hidden sm:inline">Удалить</span></button>
                         </div>
                       </div>
                     </motion.div>
@@ -1156,59 +1410,19 @@ function ScheduleContent() {
         )}
       </AnimatePresence>
 
+      {/* ===================== ФОРМА СОЗДАНИЯ/РЕДАКТИРОВАНИЯ ===================== */}
       <AnimatePresence>
         {showForm && (
-          <motion.div 
-            className="fixed inset-0 z-50 flex items-center justify-center p-4" 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }}
-          >
-            <div 
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
-              onClick={() => { 
-                setShowForm(false); 
-                setEditLesson(null); 
-                setSelectedGroupId(""); 
-                setAttachedFile(null); 
-                setAttachedFileName(""); 
-                setAttachedFileUrl("");
-                setIsGroupLesson(false);
-                setStudentSearch("");
-                setGroupSearch("");
-              }} 
-            />
-            <motion.div 
-              className="relative rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white" 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-              animate={{ opacity: 1, scale: 1, y: 0 }} 
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }} />
+            <motion.div className="relative rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={(e) => e.stopPropagation()}>
               <div className="sticky top-0 z-10 p-6 bg-white border-b border-gray-200 rounded-t-2xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="font-bold text-xl text-gray-900">
-                      {editLesson ? "Редактировать занятие" : "Создать занятие"}
-                    </h2>
+                    <h2 className="font-bold text-xl text-gray-900">{editLesson ? "Редактировать занятие" : "Создать занятие"}</h2>
                     <p className="text-gray-500 text-sm mt-1">Заполните основные поля</p>
                   </div>
-                  <button 
-                    onClick={() => { 
-                      setShowForm(false); 
-                      setEditLesson(null); 
-                      setSelectedGroupId(""); 
-                      setAttachedFile(null); 
-                      setAttachedFileName(""); 
-                      setAttachedFileUrl("");
-                      setIsGroupLesson(false);
-                      setStudentSearch("");
-                      setGroupSearch("");
-                    }} 
-                    className="text-gray-400 hover:text-gray-600 text-3xl leading-none transition"
-                  >
-                    ×
-                  </button>
+                  <button onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }} className="text-gray-400 hover:text-gray-600 text-3xl leading-none transition">×</button>
                 </div>
               </div>
 
@@ -1216,25 +1430,11 @@ function ScheduleContent() {
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-3">Тип занятия</label>
                   <div className="flex bg-gray-100 rounded-xl p-1">
-                    <button
-                      type="button"
-                      onClick={() => setIsGroupLesson(false)}
-                      className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg transition-all ${
-                        !isGroupLesson ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      <span className="text-lg">👤</span>
-                      <span className="font-medium">Индивидуальное</span>
+                    <button type="button" onClick={() => setIsGroupLesson(false)} className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg transition-all ${!isGroupLesson ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                      <span className="text-lg">👤</span><span className="font-medium">Индивидуальное</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsGroupLesson(true)}
-                      className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg transition-all ${
-                        isGroupLesson ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      <span className="text-lg">👥</span>
-                      <span className="font-medium">Групповое</span>
+                    <button type="button" onClick={() => setIsGroupLesson(true)} className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg transition-all ${isGroupLesson ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                      <span className="text-lg">👥</span><span className="font-medium">Групповое</span>
                     </button>
                   </div>
                   <input type="hidden" name="is_group" value={isGroupLesson ? "true" : "false"} />
@@ -1244,45 +1444,16 @@ function ScheduleContent() {
                   <div ref={studentDropdownRef}>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Ученик</label>
                     <div className="relative">
-                      <input 
-                        type="text"
-                        value={studentSearch}
-                        onChange={(e) => {
-                          setStudentSearch(e.target.value);
-                          setShowStudentDropdown(true);
-                          const student = students.find(s => s.full_name === e.target.value);
-                          if (!student) setFormStudentId("");
-                        }}
-                        onFocus={() => setShowStudentDropdown(true)}
-                        placeholder={formStudentId ? students.find(s => s.id === formStudentId)?.full_name : "Выберите ученика..."}
-                        className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none transition-all"
-                      />
+                      <input type="text" value={studentSearch} onChange={(e) => { setStudentSearch(e.target.value); setShowStudentDropdown(true); const student = students.find(s => s.full_name === e.target.value); if (!student) setFormStudentId(""); }} onFocus={() => setShowStudentDropdown(true)} placeholder={formStudentId ? students.find(s => s.id === formStudentId)?.full_name : "Выберите ученика..."} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-rose-400 focus:outline-none transition-all" />
                       {showStudentDropdown && (
                         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-auto">
-                          {students
-                            .filter(s => s.full_name.toLowerCase().includes(studentSearch.toLowerCase()))
-                            .map(student => (
-                              <button
-                                key={student.id}
-                                type="button"
-                                onClick={() => {
-                                  setFormStudentId(student.id);
-                                  setStudentSearch(student.full_name);
-                                  setShowStudentDropdown(false);
-                                }}
-                                className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3 ${
-                                  formStudentId === student.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''
-                                }`}
-                              >
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
-                                  {student.full_name.charAt(0)}
-                                </div>
-                                <span className="text-gray-900 font-medium">{student.full_name}</span>
-                              </button>
-                            ))}
-                          {students.filter(s => s.full_name.toLowerCase().includes(studentSearch.toLowerCase())).length === 0 && (
-                            <div className="px-4 py-3 text-gray-500 text-center">Ученик не найден</div>
-                          )}
+                          {students.filter(s => s.full_name.toLowerCase().includes(studentSearch.toLowerCase())).map(student => (
+                            <button key={student.id} type="button" onClick={() => { setFormStudentId(student.id); setStudentSearch(student.full_name); setShowStudentDropdown(false); }} className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3 ${formStudentId === student.id ? 'bg-rose-50 border-l-4 border-rose-500' : ''}`}>
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-red-500 flex items-center justify-center text-white text-sm font-bold">{student.full_name.charAt(0)}</div>
+                              <span className="text-gray-900 font-medium">{student.full_name}</span>
+                            </button>
+                          ))}
+                          {students.filter(s => s.full_name.toLowerCase().includes(studentSearch.toLowerCase())).length === 0 && <div className="px-4 py-3 text-gray-500 text-center">Ученик не найден</div>}
                         </div>
                       )}
                     </div>
@@ -1293,49 +1464,18 @@ function ScheduleContent() {
                   <div ref={groupDropdownRef}>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Группа</label>
                     <div className="relative">
-                      <input 
-                        type="text"
-                        value={groupSearch}
-                        onChange={(e) => {
-                          setGroupSearch(e.target.value);
-                          setShowGroupDropdown(true);
-                          const group = groups.find(g => g.name === e.target.value);
-                          if (!group) {
-                            setSelectedGroupId("");
-                            setFormGroupParticipants([]);
-                          }
-                        }}
-                        onFocus={() => setShowGroupDropdown(true)}
-                        placeholder={selectedGroupId ? groups.find(g => g.id === selectedGroupId)?.name : "Выберите группу..."}
-                        className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none transition-all"
-                      />
+                      <input type="text" value={groupSearch} onChange={(e) => { setGroupSearch(e.target.value); setShowGroupDropdown(true); const group = groups.find(g => g.name === e.target.value); if (!group) { setSelectedGroupId(""); setFormGroupParticipants([]); } }} onFocus={() => setShowGroupDropdown(true)} placeholder={selectedGroupId ? groups.find(g => g.id === selectedGroupId)?.name : "Выберите группу..."} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-rose-400 focus:outline-none transition-all" />
                       {showGroupDropdown && (
                         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-auto">
-                          {groups
-                            .filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase()))
-                            .map(group => (
-                              <button
-                                key={group.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedGroupId(group.id);
-                                  setGroupSearch(group.name);
-                                  setFormGroupParticipants(group.student_ids || []);
-                                  setShowGroupDropdown(false);
-                                }}
-                                className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
-                                  selectedGroupId === group.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''
-                                }`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-gray-900 font-medium">{group.name}</span>
-                                  <span className="text-gray-500 text-sm">{group.student_ids?.length || 0} уч.</span>
-                                </div>
-                              </button>
-                            ))}
-                          {groups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase())).length === 0 && (
-                            <div className="px-4 py-3 text-gray-500 text-center">Группа не найдена</div>
-                          )}
+                          {groups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase())).map(group => (
+                            <button key={group.id} type="button" onClick={() => { setSelectedGroupId(group.id); setGroupSearch(group.name); setFormGroupParticipants(group.student_ids || []); setShowGroupDropdown(false); }} className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${selectedGroupId === group.id ? 'bg-rose-50 border-l-4 border-rose-500' : ''}`}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-900 font-medium">{group.name}</span>
+                                <span className="text-gray-500 text-sm">{group.student_ids?.length || 0} уч.</span>
+                              </div>
+                            </button>
+                          ))}
+                          {groups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase())).length === 0 && <div className="px-4 py-3 text-gray-500 text-center">Группа не найдена</div>}
                         </div>
                       )}
                     </div>
@@ -1345,44 +1485,24 @@ function ScheduleContent() {
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Дата *</label>
-                    <input type="date" name="date" required defaultValue={editLesson?.start_time?.slice(0, 10) || ""} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all" />
+                    <input type="date" name="date" required defaultValue={editLesson?.start_time?.slice(0, 10) || ""} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-rose-400 focus:outline-none transition-all" />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Начало *</label>
-                    <input type="time" name="start_time" required defaultValue={editLesson?.start_time?.slice(11, 16) || ""} onChange={(e) => {
-                      const startTime = e.target.value;
-                      const endTimeInput = document.querySelector('input[name="end_time"]') as HTMLInputElement;
-                      if (endTimeInput && endTimeInput.value) {
-                        const start = new Date(`2000-01-01T${startTime}`);
-                        const end = new Date(`2000-01-01T${endTimeInput.value}`);
-                        const duration = Math.round((end.getTime() - start.getTime()) / 60000);
-                        const durationInput = document.querySelector('input[name="duration"]') as HTMLInputElement;
-                        if (durationInput && duration > 0) durationInput.value = duration.toString();
-                      }
-                    }} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all" />
+                    <input type="time" name="start_time" required defaultValue={editLesson?.start_time?.slice(11, 16) || ""} onChange={(e) => { const startTime = e.target.value; const endTimeInput = document.querySelector('input[name="end_time"]') as HTMLInputElement; if (endTimeInput && endTimeInput.value) { const start = new Date(`2000-01-01T${startTime}`); const end = new Date(`2000-01-01T${endTimeInput.value}`); const duration = Math.round((end.getTime() - start.getTime()) / 60000); const durationInput = document.querySelector('input[name="duration"]') as HTMLInputElement; if (durationInput && duration > 0) durationInput.value = duration.toString(); } }} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-rose-400 focus:outline-none transition-all" />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Конец *</label>
-                    <input type="time" name="end_time" required defaultValue={editLesson?.end_time?.slice(11, 16) || ""} onChange={(e) => {
-                      const endTime = e.target.value;
-                      const startTimeInput = document.querySelector('input[name="start_time"]') as HTMLInputElement;
-                      if (startTimeInput && startTimeInput.value) {
-                        const start = new Date(`2000-01-01T${startTimeInput.value}`);
-                        const end = new Date(`2000-01-01T${endTime}`);
-                        const duration = Math.round((end.getTime() - start.getTime()) / 60000);
-                        const durationInput = document.querySelector('input[name="duration"]') as HTMLInputElement;
-                        if (durationInput && duration > 0) durationInput.value = duration.toString();
-                      }
-                    }} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all" />
+                    <input type="time" name="end_time" required defaultValue={editLesson?.end_time?.slice(11, 16) || ""} onChange={(e) => { const endTime = e.target.value; const startTimeInput = document.querySelector('input[name="start_time"]') as HTMLInputElement; if (startTimeInput && startTimeInput.value) { const start = new Date(`2000-01-01T${startTimeInput.value}`); const end = new Date(`2000-01-01T${endTime}`); const duration = Math.round((end.getTime() - start.getTime()) / 60000); const durationInput = document.querySelector('input[name="duration"]') as HTMLInputElement; if (durationInput && duration > 0) durationInput.value = duration.toString(); } }} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-rose-400 focus:outline-none transition-all" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Предмет *</label>
-                    <select name="subject" required defaultValue={editLesson?.subject || "chemistry"} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-gray-400 focus:outline-none transition-all bg-white">
-                      <option value="chemistry"> Химия</option>
-                      <option value="biology">🧬 Биология</option>
+                    <select name="subject" required defaultValue={editLesson?.subject || "chemistry"} className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 focus:border-rose-400 focus:outline-none transition-all bg-white">
+                      <option value="chemistry">🧪 Химия</option>
+                      <option value="biology"> Биология</option>
                     </select>
                   </div>
                   <div>
@@ -1398,13 +1518,13 @@ function ScheduleContent() {
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Прикрепить файл</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-gray-400 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-rose-400 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                     <input ref={fileInputRef} type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.zip" className="hidden" />
                     {attachedFile || attachedFileName ? (
                       <div className="flex items-center justify-center gap-2 text-gray-700">
                         <span className="text-2xl">📎</span>
                         <span className="font-medium">{attachedFile?.name || attachedFileName}</span>
-                        <button type="button" onClick={(e) => { e.stopPropagation(); setAttachedFile(null); setAttachedFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="ml-2 text-red-500 hover:text-red-700">×</button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setAttachedFile(null); setAttachedFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="ml-2 text-rose-500 hover:text-rose-700">×</button>
                       </div>
                     ) : (
                       <div className="text-gray-500">
@@ -1416,15 +1536,10 @@ function ScheduleContent() {
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button type="submit" disabled={fileUploading} className="flex-1 bg-gray-900 text-white py-3.5 rounded-xl font-semibold text-base hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                    {fileUploading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        Загрузка...
-                      </span>
-                    ) : (editLesson ? " Сохранить" : "✅ Создать")}
+                  <button type="submit" disabled={fileUploading} className="flex-1 h-12 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold text-base hover:from-rose-600 hover:to-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 flex items-center justify-center gap-2">
+                    {fileUploading ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>Загрузка...</>) : (editLesson ? "💾 Сохранить" : "✅ Создать")}
                   </button>
-                  <button type="button" onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }} className="px-6 py-3.5 rounded-xl font-semibold text-gray-700 hover:bg-gray-100 transition-all">Отмена</button>
+                  <button type="button" onClick={() => { setShowForm(false); setEditLesson(null); setSelectedGroupId(""); setAttachedFile(null); setAttachedFileName(""); setAttachedFileUrl(""); setIsGroupLesson(false); setStudentSearch(""); setGroupSearch(""); }} className="px-6 h-12 rounded-xl font-semibold text-gray-700 hover:bg-gray-100 transition-all active:scale-95">Отмена</button>
                 </div>
               </form>
             </motion.div>
@@ -1432,32 +1547,17 @@ function ScheduleContent() {
         )}
       </AnimatePresence>
 
+      {/* ===================== МОДАЛКА ЗАМЕТОК ПОСЛЕ УРОКА ===================== */}
       <AnimatePresence>
         {showNotesModal && selectedLessonForNotes && (
-          <motion.div 
-            className="fixed inset-0 z-50 flex items-center justify-center p-4" 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }}
-          >
-            <div 
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
-              onClick={() => setShowNotesModal(false)} 
-            />
-            <motion.div 
-              className="relative rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white" 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-              animate={{ opacity: 1, scale: 1, y: 0 }} 
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowNotesModal(false)} />
+            <motion.div className="relative rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={(e) => e.stopPropagation()}>
               <div className="sticky top-0 z-10 p-6 bg-white border-b border-gray-200 rounded-t-2xl">
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="font-bold text-xl text-gray-900">✅ Занятие проведено</h2>
-                    <p className="text-gray-500 text-sm mt-1">
-                      {selectedLessonForNotes.student_name} • {new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU')}
-                    </p>
+                    <p className="text-gray-500 text-sm mt-1">{selectedLessonForNotes.student_name} • {new Date(selectedLessonForNotes.start_time).toLocaleDateString('ru-RU')}</p>
                   </div>
                   <button onClick={() => setShowNotesModal(false)} className="text-gray-400 hover:text-gray-600 text-3xl leading-none transition">×</button>
                 </div>
@@ -1466,13 +1566,7 @@ function ScheduleContent() {
               <div className="p-6 space-y-5">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Обратная связь по занятию</label>
-                  <textarea 
-                    value={lessonNotes} 
-                    onChange={(e) => setLessonNotes(e.target.value)} 
-                    rows={4} 
-                    placeholder="Как прошло занятие? Что получилось хорошо, над чем нужно поработать..." 
-                    className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none transition-all resize-none"
-                  />
+                  <textarea value={lessonNotes} onChange={(e) => setLessonNotes(e.target.value)} rows={4} placeholder="Как прошло занятие? Что получилось хорошо, над чем нужно поработать..." className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-gray-900 placeholder-gray-400 focus:border-rose-400 focus:outline-none transition-all resize-none" />
                 </div>
 
                 <div>
@@ -1482,30 +1576,21 @@ function ScheduleContent() {
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Прикрепить домашнее задание</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowHomeworkModal(true)}
-                    className="w-full border-2 border-gray-200 rounded-xl p-3.5 text-left hover:border-gray-400 transition-all flex items-center justify-between"
-                  >
-                    <span className={formHwTemplateId ? "text-gray-900 font-medium" : "text-gray-400"}>
-                      {formHwTemplateId 
-                        ? homeworks.find(h => h.id === formHwTemplateId)?.title || "ДЗ выбрано"
-                        : "Выбрать ДЗ из списка..."
-                      }
-                    </span>
+                  <button type="button" onClick={() => setShowHomeworkModal(true)} className="w-full h-12 border-2 border-gray-200 rounded-xl px-4 text-left hover:border-rose-400 transition-all flex items-center justify-between active:scale-[0.98]">
+                    <span className={formHwTemplateId ? "text-gray-900 font-medium" : "text-gray-400"}>{formHwTemplateId ? homeworks.find(h => h.id === formHwTemplateId)?.title || "ДЗ выбрано" : "Выбрать ДЗ из списка..."}</span>
                     <span className="text-gray-400">→</span>
                   </button>
                 </div>
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Прикрепить файл</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-gray-400 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-rose-400 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                     <input ref={fileInputRef} type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.zip" className="hidden" />
                     {attachedFile || attachedFileName ? (
                       <div className="flex items-center justify-center gap-2 text-gray-700">
                         <span className="text-2xl">📎</span>
                         <span className="font-medium">{attachedFile?.name || attachedFileName}</span>
-                        <button type="button" onClick={(e) => { e.stopPropagation(); setAttachedFile(null); setAttachedFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="ml-2 text-red-500 hover:text-red-700">×</button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setAttachedFile(null); setAttachedFileName(""); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="ml-2 text-rose-500 hover:text-rose-700">×</button>
                       </div>
                     ) : (
                       <div className="text-gray-500">
@@ -1517,8 +1602,8 @@ function ScheduleContent() {
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button onClick={saveLessonNotes} className="flex-1 bg-gray-900 text-white py-3.5 rounded-xl font-semibold text-base hover:bg-gray-800 transition-all">💾 Сохранить</button>
-                  <button onClick={() => setShowNotesModal(false)} className="px-6 py-3.5 rounded-xl font-semibold text-gray-700 hover:bg-gray-100 transition-all">Отмена</button>
+                  <button onClick={saveLessonNotes} className="flex-1 h-12 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold text-base hover:from-rose-600 hover:to-red-700 transition-all active:scale-95">💾 Сохранить</button>
+                  <button onClick={() => setShowNotesModal(false)} className="px-6 h-12 rounded-xl font-semibold text-gray-700 hover:bg-gray-100 transition-all active:scale-95">Отмена</button>
                 </div>
               </div>
             </motion.div>
@@ -1526,87 +1611,68 @@ function ScheduleContent() {
         )}
       </AnimatePresence>
 
+      {/* ===================== МОДАЛКА ВЫБОРА ДЗ ===================== */}
       <AnimatePresence>
         {showHomeworkModal && (
-          <motion.div 
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4" 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }}
-          >
-            <div 
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
-              onClick={() => setShowHomeworkModal(false)} 
-            />
-            <motion.div 
-              className="relative rounded-2xl shadow-xl w-full max-w-md bg-white overflow-hidden" 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-              animate={{ opacity: 1, scale: 1, y: 0 }} 
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <motion.div className="fixed inset-0 z-[60] flex items-center justify-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowHomeworkModal(false)} />
+            <motion.div className="relative rounded-2xl shadow-xl w-full max-w-md bg-white overflow-hidden" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={(e) => e.stopPropagation()}>
               <div className="p-4 border-b border-gray-200 flex items-center justify-between">
                 <h3 className="font-bold text-lg text-gray-900">Выбрать ДЗ</h3>
                 <button onClick={() => setShowHomeworkModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
               </div>
-              
+
               <div className="max-h-80 overflow-y-auto p-2">
                 {homeworks.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    <p className="text-4xl mb-2">📭</p>
+                    <p className="text-4xl mb-2"></p>
                     <p>Нет назначенных ДЗ</p>
                   </div>
                 ) : (
                   <div className="space-y-1">
                     {homeworks.map(hw => (
-                      <button
-                        key={hw.id}
-                        type="button"
-                        onClick={() => {
-                          setFormHwTemplateId(hw.id);
-                          setShowHomeworkModal(false);
-                        }}
-                        className={`w-full text-left p-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-3 ${
-                          formHwTemplateId === hw.id ? 'bg-indigo-50 border-2 border-indigo-500' : 'border-2 border-transparent'
-                        }`}
-                      >
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-lg flex-shrink-0">📚</div>
+                      <button key={hw.id} type="button" onClick={() => { setFormHwTemplateId(hw.id); setShowHomeworkModal(false); }} className={`w-full text-left p-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-3 ${formHwTemplateId === hw.id ? 'bg-rose-50 border-2 border-rose-500' : 'border-2 border-transparent'}`}>
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-red-500 flex items-center justify-center text-white text-lg flex-shrink-0">📚</div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">{hw.title || "Без названия"}</p>
-                          <p className="text-xs text-gray-500">
-                            {hw.student_name || "Не назначено"} • {hw.sections?.length || 0} заданий
-                          </p>
+                          <p className="text-xs text-gray-500">{hw.student_name || "Не назначено"} • {hw.sections?.length || 0} заданий</p>
                         </div>
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-              
+
               <div className="p-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormHwTemplateId("");
-                    setShowHomeworkModal(false);
-                  }}
-                  className="w-full py-2.5 rounded-xl text-gray-700 hover:bg-gray-100 transition-all font-medium"
-                >
-                  Не назначать ДЗ
-                </button>
+                <button type="button" onClick={() => { setFormHwTemplateId(""); setShowHomeworkModal(false); }} className="w-full h-11 rounded-xl text-gray-700 hover:bg-gray-100 transition-all font-medium active:scale-95">Не назначать ДЗ</button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* ===================== МОДАЛКА ОТЧЁТА ===================== */}
       <AnimatePresence>
         {showReport && (
           <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/60' : 'bg-black/40'}`} onClick={() => setShowReport(false)} />
-            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gradient-to-br from-gray-900 to-gray-800' : 'bg-gradient-to-br from-white to-rose-50/30'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
-              <div className="p-3 sm:p-4 rounded-t-3xl bg-gradient-to-r from-red-500 to-rose-500"><div className="flex items-center justify-between"><div className="flex items-center gap-2 sm:gap-3"><span className="text-2xl sm:text-3xl">🧣</span><h2 className="font-bold text-base sm:text-xl text-white">📋 Отчёт о занятии</h2></div><button onClick={() => setShowReport(false)} className="text-white/80 hover:text-white text-2xl sm:text-3xl leading-none transition">×</button></div></div>
-              <div className="p-3 sm:p-6"><pre className={`text-xs sm:text-sm whitespace-pre-wrap rounded-xl p-3 sm:p-4 mb-3 sm:mb-4 border max-h-[250px] sm:max-h-[300px] overflow-auto ${isDark ? 'bg-red-900/20 border-red-500/30 text-gray-200' : 'bg-red-50 border-red-100 text-gray-700'}`}>{reportText}</pre><div className="flex gap-2 sm:gap-3"><button onClick={() => { navigator.clipboard.writeText(reportText); toast.success("Скопировано!"); }} className="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white py-2 sm:py-3 rounded-xl font-bold text-xs sm:text-sm hover:from-red-600 hover:to-rose-700 transition shadow-lg shadow-rose-500/30 hover:shadow-xl">📋 Копировать</button><button onClick={() => { window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(reportText)}`, '_blank'); }} className="flex-1 bg-gradient-to-r from-rose-500 to-rose-600 text-white py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-medium hover:from-rose-600 hover:to-rose-700 transition shadow-md hover:shadow-lg">✈️ Telegram</button></div></div>
+            <div className={`absolute inset-0 backdrop-blur-sm ${isDark ? 'bg-black/70' : 'bg-black/50'}`} onClick={() => setShowReport(false)} />
+            <motion.div className={`relative rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gray-900' : 'bg-white'}`} initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} onClick={(e) => e.stopPropagation()}>
+              <div className="p-4 sm:p-5 rounded-t-3xl bg-gradient-to-r from-rose-500 to-red-600">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <span className="text-2xl sm:text-3xl">📋</span>
+                    <h2 className="font-bold text-base sm:text-xl text-white">Отчёт о занятии</h2>
+                  </div>
+                  <button onClick={() => setShowReport(false)} className="text-white/80 hover:text-white text-2xl sm:text-3xl leading-none transition">×</button>
+                </div>
+              </div>
+              <div className="p-4 sm:p-6">
+                <pre className={`text-xs sm:text-sm whitespace-pre-wrap rounded-xl p-3 sm:p-4 mb-3 sm:mb-4 border max-h-[250px] sm:max-h-[300px] overflow-auto ${isDark ? 'bg-rose-950/20 border-rose-500/30 text-gray-200' : 'bg-rose-50 border-rose-100 text-gray-700'}`}>{reportText}</pre>
+                <div className="flex gap-2 sm:gap-3">
+                  <button onClick={() => { navigator.clipboard.writeText(reportText); toast.success("Скопировано!"); }} className="flex-1 h-11 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold text-xs sm:text-sm hover:from-rose-600 hover:to-red-700 transition shadow-lg active:scale-95">📋 Копировать</button>
+                  <button onClick={() => { window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(reportText)}`, '_blank'); }} className="flex-1 h-11 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl text-xs sm:text-sm font-medium hover:from-rose-600 hover:to-red-700 transition shadow-md active:scale-95">✈️ Telegram</button>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -1617,7 +1683,7 @@ function ScheduleContent() {
 
 export default function SchedulePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-rose-50"><div className="text-red-500 animate-pulse font-bold">Загрузка расписания...</div></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-red-50"><div className="text-rose-500 animate-pulse font-bold">Загрузка расписания...</div></div>}>
       <ScheduleContent />
     </Suspense>
   );
