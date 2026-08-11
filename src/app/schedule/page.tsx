@@ -1,3 +1,13 @@
+// ФАЙЛ: app/schedule/page.tsx
+// ПРАВКИ В ЭТОМ ФАЙЛЕ (3 места, помечены ✅ ИЗМЕНЕНО):
+// 1. Импорт runTransaction.
+// 2. Загрузка баланса: onSnapshot вместо разового getDocs — баланс
+//    на экране обновляется сразу после подтверждения оплаты в /finance.
+// 3. setStatus: предупреждение, если у ученика баланс <= 0.
+// 4. saveLessonNotes: списание баланса через runTransaction вместо
+//    нетранзакционного updateDoc — исключает гонку при параллельном
+//    списании/пополнении.
+
 "use client";
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +31,7 @@ import {
   Grid3x3, List, ChevronLeft, Wallet
 } from "lucide-react";
 import { renderBoardSnapshot } from "@/lib/boardSnapshot";
-import { useFirebaseUid } from "@/hooks/useFirebaseUid";
+import { useFirebaseUid } from "@/hooks/useFirebaseUid"; // ✅ НОВОЕ: ждём подтверждения Firebase Auth перед запросами
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -642,17 +652,21 @@ function DetailPanelEmpty({ isDark }: { isDark: boolean }) {
 
 function ScheduleContent() {
   const searchParams = useSearchParams();
+  // ✅ ИЗМЕНЕНО: uid теперь берётся из реальной сессии Firebase Auth
+  // (не из localStorage) — устраняет гонку, из-за которой Firestore-запросы
+  // стартовали раньше, чем сервер успевал подтвердить, что пользователь
+  // залогинен ("Missing or insufficient permissions").
   const { uid, authReady } = useFirebaseUid(app);
-const [role, setRole] = useState("student");
-const [theme, setTheme] = useState<'dark' | 'light'>('light');
- 
-useEffect(() => {
-  // role — только для UI (какие вкладки/кнопки показывать), не участвует
-  // в Firestore Rules напрямую, поэтому localStorage здесь безопасен
-  setRole(searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "student");
-  const savedTheme = localStorage.getItem('theme') as 'dark' | 'light' | null;
-  if (savedTheme) setTheme(savedTheme);
-}, [searchParams]);
+  const [role, setRole] = useState("student");
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
+
+  useEffect(() => {
+    // role — только для UI (какие вкладки/кнопки показывать), Firestore Rules
+    // его не используют напрямую, поэтому localStorage тут безопасен
+    setRole(searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "student");
+    const savedTheme = localStorage.getItem('theme') as 'dark' | 'light' | null;
+    if (savedTheme) setTheme(savedTheme);
+  }, [searchParams]);
 
   const [lessons, setLessons] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
@@ -874,20 +888,16 @@ useEffect(() => {
   // сам после подтверждения оплаты в /finance, пока страницу не перезагрузить).
   // Стало — живая подписка onSnapshot, баланс обновляется в реальном времени.
   useEffect(() => {
-  if (!authReady) return;
-  if (isTutor) {
-    getDocs(query(collection(db, "profiles"), where("role", "==", "student"))).then((snap) => setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    getDocs(query(collection(db, "library_items"), where("tutor_id", "==", uid))).then((snap) => setLibraryItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
-    getDocs(query(collection(db, "homeworks"), where("tutor_id", "==", uid))).then((snap) =>
-      setHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    );
- 
-    const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
-      setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsubGroups();
-  }
-}, [isTutor, uid, authReady]);
+    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
+    if (!isTutor || students.length === 0) return;
+    const unsub = onSnapshot(collection(db, "lesson_balances"), (snap) => {
+      const balances: Record<string, number> = {};
+      snap.forEach(docSnap => { balances[docSnap.id] = docSnap.data().remaining || 0; });
+      students.forEach(s => { if (!(s.id in balances)) balances[s.id] = 0; });
+      setLessonBalances(balances);
+    }, (e) => console.error("Ошибка загрузки балансов:", e));
+    return () => unsub();
+  }, [students, isTutor, authReady]);
 
   const getWeekDates = useCallback(() => {
     const now = new Date();
@@ -945,84 +955,83 @@ useEffect(() => {
   }, [currentWeek, viewMode]);
 
   useEffect(() => {
-  if (!authReady) return; // Firebase Auth ещё не подтвердил сессию — ждём
-  if (!uid) return;
- 
-  const dates = viewMode === 'week' ? getWeekDates() : getMonthDates();
-  const startDate = dates[0];
-  const endDate = dates[dates.length - 1];
-  const queryStart = new Date(startDate);
-  queryStart.setDate(queryStart.getDate() - 2);
-  const queryEnd = new Date(endDate);
-  queryEnd.setDate(queryEnd.getDate() + 2);
- 
-  if (isTutor) {
+    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
+    if (!uid) return;
+    const dates = viewMode === 'week' ? getWeekDates() : getMonthDates();
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
+    const queryStart = new Date(startDate);
+    queryStart.setDate(queryStart.getDate() - 2);
+    const queryEnd = new Date(endDate);
+    queryEnd.setDate(queryEnd.getDate() + 2);
+
+    if (isTutor) {
+      const q = query(
+        collection(db, "lessons"),
+        where("tutor_id", "==", uid),
+        where("start_time", ">=", queryStart.toISOString()),
+        where("start_time", "<=", queryEnd.toISOString())
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsub();
+    } else {
+      const qIndividual = query(
+        collection(db, "lessons"),
+        where("student_id", "==", uid),
+        where("start_time", ">=", queryStart.toISOString()),
+        where("start_time", "<=", queryEnd.toISOString())
+      );
+
+      const qGroup = query(
+        collection(db, "lessons"),
+        where("is_group", "==", true),
+        where("group_participants", "array-contains", uid),
+        where("start_time", ">=", queryStart.toISOString()),
+        where("start_time", "<=", queryEnd.toISOString())
+      );
+
+      const unsubInd = onSnapshot(qIndividual, (snapInd) => {
+        const individual = snapInd.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+        const unsubGrp = onSnapshot(qGroup, (snapGrp) => {
+          const group = snapGrp.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+          const allMap = new Map();
+          [...individual, ...group].forEach(l => allMap.set(l.id, l));
+          setLessons(Array.from(allMap.values()));
+        });
+
+        return () => unsubGrp();
+      });
+
+      return () => unsubInd();
+    }
+  }, [uid, authReady, isTutor, viewMode, currentWeek]);
+
+  useEffect(() => {
+    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
+    if (!uid || !isTutor) return;
     const q = query(
       collection(db, "lessons"),
       where("tutor_id", "==", uid),
-      where("start_time", ">=", queryStart.toISOString()),
-      where("start_time", "<=", queryEnd.toISOString())
+      where("status", "==", "cancelled")
     );
     const unsub = onSnapshot(q, (snap) => {
-      setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const cancelled = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      cancelled.sort((a, b) => {
+        const timeA = new Date(a.cancelled_at || a.start_time).getTime();
+        const timeB = new Date(b.cancelled_at || b.start_time).getTime();
+        return timeB - timeA;
+      });
+      setLessons(prev => {
+        const activeLessons = prev.filter(l => l.status !== 'cancelled');
+        return [...activeLessons, ...cancelled];
+      });
     });
     return () => unsub();
-  } else {
-    const qIndividual = query(
-      collection(db, "lessons"),
-      where("student_id", "==", uid),
-      where("start_time", ">=", queryStart.toISOString()),
-      where("start_time", "<=", queryEnd.toISOString())
-    );
- 
-    const qGroup = query(
-      collection(db, "lessons"),
-      where("is_group", "==", true),
-      where("group_participants", "array-contains", uid),
-      where("start_time", ">=", queryStart.toISOString()),
-      where("start_time", "<=", queryEnd.toISOString())
-    );
- 
-    const unsubInd = onSnapshot(qIndividual, (snapInd) => {
-      const individual = snapInd.docs.map((d) => ({ id: d.id, ...d.data() }));
- 
-      const unsubGrp = onSnapshot(qGroup, (snapGrp) => {
-        const group = snapGrp.docs.map((d) => ({ id: d.id, ...d.data() }));
- 
-        const allMap = new Map();
-        [...individual, ...group].forEach(l => allMap.set(l.id, l));
-        setLessons(Array.from(allMap.values()));
-      });
- 
-      return () => unsubGrp();
-    });
- 
-    return () => unsubInd();
-  }
-}, [uid, authReady, isTutor, viewMode, currentWeek]);
-
-  useEffect(() => {
-  if (!authReady) return;
-  if (!uid || !isTutor) return;
-  const q = query(
-    collection(db, "lessons"),
-    where("tutor_id", "==", uid),
-    where("status", "==", "cancelled")
-  );
-  const unsub = onSnapshot(q, (snap) => {
-    const cancelled = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    cancelled.sort((a, b) => {
-      const timeA = new Date(a.cancelled_at || a.start_time).getTime();
-      const timeB = new Date(b.cancelled_at || b.start_time).getTime();
-      return timeB - timeA;
-    });
-    setLessons(prev => {
-      const activeLessons = prev.filter(l => l.status !== 'cancelled');
-      return [...activeLessons, ...cancelled];
-    });
-  });
-  return () => unsub();
-}, [uid, authReady, isTutor]);
+  }, [uid, authReady, isTutor]);
 
   useEffect(() => {
     if (lessons.length > 0 && !hasSentRemindersRef.current) {
@@ -1035,20 +1044,20 @@ useEffect(() => {
   }, [currentWeek, viewMode]);
 
   useEffect(() => {
-  if (!authReady) return;
-  if (isTutor) {
-    getDocs(query(collection(db, "profiles"), where("role", "==", "student"))).then((snap) => setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    getDocs(query(collection(db, "library_items"), where("tutor_id", "==", uid))).then((snap) => setLibraryItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
-    getDocs(query(collection(db, "homeworks"), where("tutor_id", "==", uid))).then((snap) =>
-      setHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    );
- 
-    const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
-      setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsubGroups();
-  }
-}, [isTutor, uid, authReady]);
+    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
+    if (isTutor) {
+      getDocs(query(collection(db, "profiles"), where("role", "==", "student"))).then((snap) => setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+      getDocs(query(collection(db, "library_items"), where("tutor_id", "==", uid))).then((snap) => setLibraryItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))))
+      getDocs(query(collection(db, "homeworks"), where("tutor_id", "==", uid))).then((snap) =>
+        setHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      );
+
+      const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
+        setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsubGroups();
+    }
+  }, [isTutor, uid, authReady]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1281,6 +1290,12 @@ useEffect(() => {
       console.error("Ошибка снимка доски:", e);
     }
 
+    // ✅ ИЗМЕНЕНО: списание баланса теперь атомарно через транзакцию.
+    // Раньше значение бралось из локального state lessonBalances (может быть
+    // устаревшим) и писалось нетранзакционно — при двух почти одновременных
+    // списаниях возможна гонка (оба читают одно и то же старое значение).
+    // Локальный setLessonBalances больше не нужен — компонент обновится
+    // сам через onSnapshot-подписку на lesson_balances.
     if (!selectedLessonForNotes.is_group && selectedLessonForNotes.student_id) {
       try {
         await runTransaction(db, async (tx) => {

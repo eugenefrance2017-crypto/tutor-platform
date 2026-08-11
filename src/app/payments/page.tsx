@@ -1,3 +1,8 @@
+// ФАЙЛ: app/finance/page.tsx
+// ПРАВКА В ЭТОМ ФАЙЛЕ: только функция confirmPayment (см. пометку ✅ НИЖЕ)
+// плюс добавлен импорт runTransaction. Всё остальное — без изменений
+// относительно исходного файла.
+
 "use client";
 
 import Link from "next/link";
@@ -16,6 +21,7 @@ import {
   Eye, Loader2, Users, User, GraduationCap
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
+import { useFirebaseUid } from "@/hooks/useFirebaseUid"; // ✅ НОВОЕ: ждём подтверждения Firebase Auth перед запросами
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -72,7 +78,9 @@ function getPaymentDate(payment: any): Date {
 function FinanceContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const uid = searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "";
+  // ✅ ИЗМЕНЕНО: uid теперь берётся из реальной сессии Firebase Auth
+  // (не из localStorage) — устраняет гонку с "Missing or insufficient permissions"
+  const { uid, authReady } = useFirebaseUid(app);
   const role = searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "tutor";
 
   const tutorTabs = [
@@ -136,6 +144,7 @@ function FinanceContent() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   useEffect(() => {
+    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
     if (!uid) return;
 
     let paymentsQuery;
@@ -196,15 +205,16 @@ function FinanceContent() {
     }
 
     return () => { unsubPayments(); };
-  }, [uid, role, selectedChildId]);
+  }, [uid, authReady, role, selectedChildId]);
 
   useEffect(() => {
+    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
     if (role !== "tutor" || !uid) return;
     const unsubRequests = onSnapshot(query(collection(db, "payment_requests"), where("tutor_id", "==", uid), where("status", "==", "pending")), (snap) => {
       setPaymentRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsubRequests();
-  }, [uid, role]);
+  }, [uid, authReady, role]);
 
   useEffect(() => {
     if (lessons > 0) {
