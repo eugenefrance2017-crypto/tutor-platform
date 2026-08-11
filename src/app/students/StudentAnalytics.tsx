@@ -17,95 +17,83 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-export default function StudentAnalytics({ studentId, darkMode = false }: { studentId: string; darkMode?: boolean }) {
-  const [results, setResults] = useState<any[]>([]);
-  const [lessons, setLessons] = useState<any[]>([]);
-  const [dailyAnswers, setDailyAnswers] = useState<any[]>([]); // ✅ НОВОЕ: Ответы на ежедневные задания
+interface StudentAnalyticsProps {
+  studentId: string;
+  homeworks: any[];
+  submissions: any[];
+  lessons: any[];
+  darkMode?: boolean;
+}
+
+export default function StudentAnalytics({ studentId, homeworks, submissions, lessons, darkMode = false }: StudentAnalyticsProps) {
+  const [dailyAnswers, setDailyAnswers] = useState<any[]>([]);
   const [profile, setProfile] = useState<any>(null);
   const [dailyTasks, setDailyTasks] = useState<any[]>([]);
-  
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!studentId) return;
     setLoading(true);
 
-    // 1. Снимки результатов (ДЗ + пробники)
-    const unsubResults = onSnapshot(
-      query(collection(db, "student_results"), where("student_id", "==", studentId)),
-      (snap) => {
-        setResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setLoading(false);
-      },
-      (err) => {
-        console.error('❌ Ошибка загрузки student_results:', err);
-        setLoading(false);
-      }
-    );
-
-    // 2. Уроки — для посещаемости
-    const unsubLessons = onSnapshot(collection(db, "lessons"), (snap) => {
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const studentLessons = all.filter(l => 
-        l.student_id === studentId || l.group_participants?.includes(studentId)
-      );
-      setLessons(studentLessons);
-    });
-
-    // 3. Профиль ученика (XP, уровень, серия)
+    // Профиль ученика (XP, уровень, серия)
     const unsubProfile = onSnapshot(doc(db, "profiles", studentId), (snap) => {
       if (snap.exists()) setProfile(snap.data());
+      setLoading(false);
     });
 
-    // 4. Ежедневные задания (для анализа слабых тем)
+    // Ежедневные задания (для анализа слабых тем)
     const unsubDailyTasks = onSnapshot(
       query(collection(db, "daily_tasks"), where("user_id", "==", studentId)),
       (snap) => setDailyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     );
 
-    // ✅ 5. НОВОЕ: Ответы на ежедневные задания (для графика и средних баллов)
+    // Ответы на ежедневные задания (для графика и средних баллов)
     const unsubDailyAnswers = onSnapshot(
       query(collection(db, "daily_answers"), where("user_id", "==", studentId)),
       (snap) => setDailyAnswers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     );
 
-    return () => { 
-      unsubResults(); 
-      unsubLessons(); 
-      unsubProfile(); 
-      unsubDailyTasks(); 
-      unsubDailyAnswers(); // ✅ Не забываем отписаться
+    return () => {
+      unsubProfile();
+      unsubDailyTasks();
+      unsubDailyAnswers();
     };
   }, [studentId]);
 
-  // ✅ ОБНОВЛЁННАЯ СТАТИСТИКА: Учитываем ежедневные задания в общем среднем балле
+  // ✅ ИСПРАВЛЕНО: основная статистика считается из homeworks+submissions (пропсы),
+  // без дублирующего чтения lessons — используется тот же массив, что и на "Статистике"
   const stats = useMemo(() => {
     const totalLessons = lessons.length;
-    const completedLessons = lessons.filter(l => l.status === "completed").length;
+    const completedLessons = lessons.filter((l: any) => l.status === "completed").length;
     const attendance = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-    // Обычные ДЗ
-    const hwResults = results.filter(r => r.homework_type === "regular" || !r.homework_type);
-    const totalHw = hwResults.length;
-    const doneHw = hwResults.length;
-    
-    // ✅ Объединяем баллы обычных ДЗ и ежедневных заданий для общего среднего
-    // В daily_answers score обычно 0 или 10. Приводим к 100-балльной шкале (умножаем на 10)
-    const allScores = [
-      ...hwResults.map(r => r.percentage || 0),
-      ...dailyAnswers.map(a => (a.score || 0) * 10)
-    ];
+    const totalHw = homeworks.length;
+    const doneHw = submissions.filter((s: any) => s.status === "approved").length;
 
+    // Баллы обычных ДЗ (из submissions/homeworks) в шкале 0-100
+    const hwScores = submissions
+      .filter((s: any) => s.status === "approved" && s.score !== undefined && s.homework_id)
+      .map((s: any) => {
+        const hw = homeworks.find((h: any) => h.id === s.homework_id);
+        return hw?.max_score ? Math.round((s.score / hw.max_score) * 100) : 0;
+      });
+
+    // Ежедневные задания: score обычно 0-10 → приводим к шкале 0-100
+    const dailyScores = dailyAnswers.map((a: any) => (a.score || 0) * 10);
+
+    const allScores = [...hwScores, ...dailyScores];
+
+    // ✅ ИСПРАВЛЕН БАГ: раньше здесь было "/ 10" лишний раз — allScores уже в шкале 0-100
     const avgScore = allScores.length > 0
-      ? Math.round(allScores.reduce((sum: number, score: number) => sum + score, 0) / allScores.length) / 10
+      ? Math.round(allScores.reduce((sum: number, score: number) => sum + score, 0) / allScores.length)
       : 0;
 
-    const completionRate = totalHw > 0 ? 100 : 0;
+    const completionRate = totalHw > 0 ? Math.round((doneHw / totalHw) * 100) : 0;
 
     return { totalLessons, completedLessons, attendance, totalHw, doneHw, completionRate, avgScore };
-  }, [lessons, results, dailyAnswers]);
+  }, [lessons, homeworks, submissions, dailyAnswers]);
 
-  // Статистика ежедневной активности (геймификация и ИИ)
+  // Статистика ежедневной активности (геймификация и ИИ) — без изменений
   const dailyStats = useMemo(() => {
     const streak = profile?.daily_streak || 0;
     const xp = profile?.xp || 0;
@@ -130,53 +118,80 @@ export default function StudentAnalytics({ studentId, darkMode = false }: { stud
     return { streak, xp, level, xpProgress, xpForNextLevel, aiInterventions, topWeakTopics };
   }, [profile, dailyTasks]);
 
+  // ✅ ИСПРАВЛЕНО: пробники теперь считаются из homeworks (type: 'trial_exam') + submissions,
+  // как и вкладка "Пробники" в page.tsx — раньше бралось из отдельной, несинхронной
+  // коллекции student_results, что давало другие числа на разных вкладках.
   const trialStats = useMemo(() => {
-    const trialResults = results
-      .filter(r => r.homework_type === "trial_exam")
-      .sort((a: any, b: any) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime());
+    const trials = homeworks.filter((hw: any) => hw.type === 'trial_exam');
 
-    if (trialResults.length === 0) return null;
+    const graded = trials
+      .map((trial: any) => {
+        const sub = submissions.find((s: any) => s.homework_id === trial.id && s.status === 'approved');
+        if (!sub) return null;
+        const maxScore = trial.max_score || 100;
+        const percentage = Math.round((sub.score / maxScore) * 100);
+        const reviewedAt = sub.reviewed_at || sub.submitted_at;
+        return { percentage, reviewedAt };
+      })
+      .filter((x: any) => x !== null)
+      .sort((a: any, b: any) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime());
 
-    const recent = trialResults.slice(0, 3);
-    const avgScore = Math.round(recent.reduce((sum: number, r: any) => sum + (r.percentage || 0), 0) / recent.length);
+    if (graded.length === 0) return null;
+
+    const recent = graded.slice(0, 3);
+    const avgScore = Math.round(recent.reduce((sum: number, r: any) => sum + r.percentage, 0) / recent.length);
+    // ✅ ИСПРАВЛЕНО: "Последний" результат — это результат самого свежего пробника,
+    // раньше здесь по ошибке дублировался avgScore
+    const lastScore = recent[0].percentage;
     const prediction = Math.min(100, Math.round(avgScore * 1.05));
     const level = prediction >= 85 ? "Отлично 🎉" : prediction >= 65 ? "Хорошо 👍" : prediction >= 40 ? "Подтянуть 📚" : "Усиленная подготовка 💪";
 
     return {
-      count: trialResults.length,
+      count: graded.length,
       avgScore,
+      lastScore,
       prediction,
       level,
-      lastDate: new Date(recent[0].reviewed_at).toLocaleDateString("ru-RU")
+      lastDate: new Date(recent[0].reviewedAt).toLocaleDateString("ru-RU"),
     };
-  }, [results]);
+  }, [homeworks, submissions]);
 
-  // ✅ ОБНОВЛЁННЫЙ ГРАФИК: Объединяет обычные ДЗ и ежедневные задания в одну хронологическую ленту
+  // График: объединяет обычные ДЗ и ежедневные задания в одну хронологическую ленту
   const scoreData = useMemo(() => {
-    const hwData = results
-      .filter(r => (r.homework_type === "regular" || !r.homework_type) && r.reviewed_at)
-      .map((r: any) => ({
-        ts: new Date(r.reviewed_at).getTime(),
-        date: new Date(r.reviewed_at).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
-        балл: r.percentage || 0,
-        type: "ДЗ"
-      }));
+    const hwData = submissions
+      .filter((s: any) => s.status === "approved" && s.score !== undefined && s.homework_id)
+      .map((s: any) => {
+        const hw = homeworks.find((h: any) => h.id === s.homework_id);
+        const reviewedAt = s.reviewed_at || s.submitted_at;
+        const ts = new Date(reviewedAt).getTime();
+        return {
+          ts,
+          date: new Date(reviewedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
+          балл: hw?.max_score ? Math.round((s.score / hw.max_score) * 100) : 0,
+          type: "ДЗ",
+        };
+      })
+      .filter((d: any) => !isNaN(d.ts));
 
+    // ✅ ИСПРАВЛЕНО: добавлена проверка на невалидную дату (NaN ломал сортировку/срез)
     const dailyData = dailyAnswers
-      .filter(a => a.created_at || a.date)
-      .map((a: any) => ({
-        ts: new Date(a.created_at || a.date).getTime(),
-        date: new Date(a.created_at || a.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
-        балл: (a.score || 0) * 10, // Конвертируем 0/10 в 0/100 для графика
-        type: "Ежедневное"
-      }));
+      .filter((a: any) => a.created_at || a.date)
+      .map((a: any) => {
+        const ts = new Date(a.created_at || a.date).getTime();
+        return {
+          ts,
+          date: new Date(a.created_at || a.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
+          балл: (a.score || 0) * 10,
+          type: "Ежедневное",
+        };
+      })
+      .filter((d: any) => !isNaN(d.ts));
 
-    // Объединяем, сортируем по времени и берём последние 15 активностей
     return [...hwData, ...dailyData]
       .sort((a, b) => a.ts - b.ts)
       .slice(-15)
-      .map(({ ts, ...rest }) => rest); // Убираем timestamp, оставляем чистые данные для Recharts
-  }, [results, dailyAnswers]);
+      .map(({ ts, ...rest }) => rest);
+  }, [submissions, homeworks, dailyAnswers]);
 
   if (loading) {
     return (
@@ -222,9 +237,9 @@ export default function StudentAnalytics({ studentId, darkMode = false }: { stud
                 <span className="text-amber-500">{dailyStats.xp} / {dailyStats.xpForNextLevel} XP</span>
               </div>
               <div className={`w-full rounded-full h-3 overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                <div 
-                  className="bg-gradient-to-r from-amber-400 to-orange-500 h-3 rounded-full transition-all duration-1000 ease-out" 
-                  style={{ width: `${(dailyStats.xpProgress / 100) * 100}%` }} 
+                <div
+                  className="bg-gradient-to-r from-amber-400 to-orange-500 h-3 rounded-full transition-all duration-1000 ease-out"
+                  style={{ width: `${(dailyStats.xpProgress / 100) * 100}%` }}
                 />
               </div>
             </div>
@@ -240,7 +255,7 @@ export default function StudentAnalytics({ studentId, darkMode = false }: { stud
 
         <div className={`${bgCard} backdrop-blur rounded-2xl p-5 border-2 shadow-sm`}>
           <h3 className={`font-serif font-bold mb-4 flex items-center gap-2 ${textPrimary}`}>🤖 Адаптация и слабые места</h3>
-          
+
           <div className="flex items-center justify-between mb-4 p-3 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
             <span className={`text-sm font-medium ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>
               Заданий сгенерировано ИИ под пробелы:
@@ -280,7 +295,8 @@ export default function StudentAnalytics({ studentId, darkMode = false }: { stud
           <div className="grid grid-cols-3 gap-4 mb-3 text-center">
             <div>
               <p className={`text-xs ${textSecondary}`}>Последний</p>
-              <p className={`font-bold ${textPrimary}`}>{trialStats.avgScore} / 100</p>
+              {/* ✅ ИСПРАВЛЕНО: раньше здесь дублировался avgScore, теперь свой lastScore */}
+              <p className={`font-bold ${textPrimary}`}>{trialStats.lastScore} / 100</p>
               <p className="text-[10px] text-gray-500">{trialStats.lastDate}</p>
             </div>
             <div>
@@ -299,7 +315,7 @@ export default function StudentAnalytics({ studentId, darkMode = false }: { stud
         </div>
       )}
 
-      {/* 4. Динамика успеваемости (ОБЪЕДИНЕННАЯ) */}
+      {/* 4. Динамика успеваемости (ДЗ + ежедневные) */}
       {scoreData.length > 0 ? (
         <div className={`${bgCard} backdrop-blur rounded-3xl p-5 border-2 shadow-sm`}>
           <h3 className={`font-serif font-bold mb-4 flex items-center gap-2 ${textPrimary}`}>📈 Динамика активности (ДЗ + Ежедневные)</h3>
@@ -314,12 +330,11 @@ export default function StudentAnalytics({ studentId, darkMode = false }: { stud
               <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "rgba(56, 189, 248, 0.1)" : "rgba(14, 165, 233, 0.1)"} vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: darkMode ? '#38bdf8' : '#0369a1', fontWeight: 500 }} axisLine={false} tickLine={false} />
               <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: darkMode ? '#38bdf8' : '#0369a1', fontWeight: 500 }} axisLine={false} tickLine={false} />
-              <Tooltip 
-                contentStyle={{ backgroundColor: darkMode ? '#1f2937' : 'white', border: `1px solid ${darkMode ? '#38bdf8' : '#0ea5e9'}`, borderRadius: '12px' }} 
+              <Tooltip
+                contentStyle={{ backgroundColor: darkMode ? '#1f2937' : 'white', border: `1px solid ${darkMode ? '#38bdf8' : '#0ea5e9'}`, borderRadius: '12px' }}
                 itemStyle={{ color: darkMode ? '#38bdf8' : '#0284c7', fontWeight: 'bold' }}
-                // ✅ Показываем тип задания во всплывающей подсказке
                 formatter={(value: any, name: any, props: any) => [
-                  `${value} / 100`, 
+                  `${value} / 100`,
                   props.payload.type === "Ежедневное" ? "Ежедневное задание" : "Домашнее задание"
                 ]}
               />

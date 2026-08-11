@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, collection, addDoc, deleteDoc, query, where, 
-  onSnapshot, doc, getDoc, updateDoc, serverTimestamp, setDoc, getDocs 
+import {
+  getFirestore, collection, addDoc, deleteDoc, query, where,
+  onSnapshot, doc, getDoc, updateDoc, serverTimestamp, setDoc, getDocs,
+  runTransaction // ✅ НОВОЕ: нужен для атомарного пополнения lesson_balances
 } from "firebase/firestore";
 import toast from "react-hot-toast";
-import { 
-  ChevronLeft, Wallet, Receipt, Plus, Trash2, 
+import {
+  ChevronLeft, Wallet, Receipt, Plus, Trash2,
   TrendingUp, CheckCircle, Search, Save, AlertTriangle, Settings,
   Eye, Loader2, Users, User, GraduationCap
 } from "lucide-react";
@@ -73,7 +74,7 @@ function FinanceContent() {
   const router = useRouter();
   const uid = searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "";
   const role = searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "tutor";
-  
+
   const tutorTabs = [
     { id: "stats", label: "📊 Статистика и Учет", icon: TrendingUp },
     { id: "requests", label: "📥 Заявки с чеками", icon: Receipt },
@@ -94,18 +95,18 @@ function FinanceContent() {
 
   const [payments, setPayments] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]); // ✅ НОВОЕ: список групп
+  const [groups, setGroups] = useState<any[]>([]);
   const [children, setChildren] = useState<any[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string>("");
-  
+
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending" | "overdue">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   const [paymentType, setPaymentType] = useState<"individual" | "group">("individual");
   const [selectedStudent, setSelectedStudent] = useState("");
-  const [selectedGroup, setSelectedGroup] = useState(""); // ✅ НОВОЕ: выбранная группа
+  const [selectedGroup, setSelectedGroup] = useState("");
   const [amount, setAmount] = useState(0);
   const [lessons, setLessons] = useState(4);
   const [tariff, setTariff] = useState("start");
@@ -116,7 +117,7 @@ function FinanceContent() {
   const [paymentRequests, setPaymentRequests] = useState<any[]>([]);
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [selectedReceiptImage, setSelectedReceiptImage] = useState<string | null>(null);
-  
+
   const [financeSettings, setFinanceSettings] = useState<any>({
     price_individual: 2000,
     price_group: 1500,
@@ -134,10 +135,9 @@ function FinanceContent() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-  // ✅ ЗАГРУЗКА ЦЕН ИЗ НАСТРОЕК + ГРУПП
   useEffect(() => {
     if (!uid) return;
-    
+
     let paymentsQuery;
     if (role === "tutor") {
       paymentsQuery = query(collection(db, "payments"), where("tutor_id", "==", uid));
@@ -158,12 +158,11 @@ function FinanceContent() {
       const unsubStudents = onSnapshot(query(collection(db, "profiles"), where("role", "==", "student")), (snap) => {
         setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       });
-      
-      // ✅ НОВОЕ: Загрузка групп
+
       const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
         setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       });
-      
+
       getDoc(doc(db, "settings", "global")).then((snap) => {
         if (snap.exists()) {
           const data = snap.data();
@@ -176,14 +175,14 @@ function FinanceContent() {
           }));
         }
       });
-      
+
       getDoc(doc(db, "settings", "finance")).then((snap) => {
         if (snap.exists()) {
           setFinanceSettings((prev: any) => ({ ...prev, ...snap.data() }));
         }
         setSettingsLoaded(true);
       });
-      
+
       return () => { unsubPayments(); unsubStudents(); unsubGroups(); };
     }
 
@@ -207,24 +206,21 @@ function FinanceContent() {
     return () => unsubRequests();
   }, [uid, role]);
 
-  // ✅ АВТОРАСЧЁТ СУММЫ ПРИ ИЗМЕНЕНИИ ТИПА, ГРУППЫ ИЛИ КОЛИЧЕСТВА
   useEffect(() => {
     if (lessons > 0) {
       let pricePerLesson = 0;
       let autoComment = "";
-      
+
       if (selectedGroup) {
-        // Если выбрана группа — берём цену из группы
         const group = groups.find(g => g.id === selectedGroup);
         if (group) {
           pricePerLesson = group.price_per_lesson || 0;
           autoComment = `Оплата за группу "${group.name}"`;
         }
       } else {
-        // Иначе — из настроек
         pricePerLesson = paymentType === "individual" ? financeSettings.price_individual : financeSettings.price_group;
       }
-      
+
       if (amount === 0 || !selectedGroup) {
         setAmount(pricePerLesson * lessons);
       }
@@ -234,19 +230,17 @@ function FinanceContent() {
     }
   }, [paymentType, lessons, selectedGroup, financeSettings.price_individual, financeSettings.price_group, groups]);
 
-  // ✅ ОБРАБОТКА ПАРАМЕТРОВ ИЗ URL (при переходе из Groups)
   useEffect(() => {
     const groupIdFromUrl = searchParams.get("groupId");
     const groupNameFromUrl = searchParams.get("groupName");
     const groupPriceFromUrl = searchParams.get("groupPrice");
-    
+
     if (groupIdFromUrl && groupPriceFromUrl && groups.length > 0) {
       setSelectedGroup(groupIdFromUrl);
       setPaymentType("group");
       setAmount(parseInt(groupPriceFromUrl) * 4);
       setComment(`Оплата за группу: ${groupNameFromUrl}`);
       setShowAddForm(true);
-      // Очищаем URL
       router.replace(`/finance?uid=${uid}&role=${role}&tab=stats`);
       toast.success("Данные группы загружены! ✨");
     }
@@ -262,27 +256,26 @@ function FinanceContent() {
       toast.error("Укажите количество занятий");
       return;
     }
-    
-    const finalAmount = amount > 0 ? amount : 
-      (selectedGroup 
+
+    const finalAmount = amount > 0 ? amount :
+      (selectedGroup
         ? (groups.find(g => g.id === selectedGroup)?.price_per_lesson || 0) * lessons
         : (paymentType === "individual" ? financeSettings.price_individual : financeSettings.price_group) * lessons);
-    
+
     if (finalAmount <= 0) {
       toast.error("Сумма должна быть больше 0");
       return;
     }
-    
+
     setSavingPayment(true);
     try {
       let studentName = "Ученик";
       let studentId = selectedStudent;
-      
+
       if (selectedGroup) {
         const group = groups.find(g => g.id === selectedGroup);
         if (group) {
           studentName = `Группа: ${group.name}`;
-          // Если не выбран конкретный ученик, берём первого из группы
           if (!studentId && group.student_ids?.length > 0) {
             studentId = group.student_ids[0];
           }
@@ -291,15 +284,15 @@ function FinanceContent() {
         const student = students.find(s => s.id === selectedStudent);
         if (student) studentName = student.full_name;
       }
-      
+
       const deadlineTimestamp = deadline ? new Date(deadline) : null;
-      
+
       await addDoc(collection(db, "payments"), {
         tutor_id: uid,
         student_id: studentId,
         student_name: studentName,
         type: paymentType,
-        group_id: selectedGroup || null, // ✅ НОВОЕ: связь с группой
+        group_id: selectedGroup || null,
         amount: finalAmount,
         lessons_count: lessons,
         lessons_used: 0,
@@ -319,19 +312,36 @@ function FinanceContent() {
     }
   }
 
+  // ✅ ИЗМЕНЕНО: раньше эта функция нетранзакционно читала и перезаписывала
+  // profiles.paid_lessons — поле, которое нигде не тратилось при проведении
+  // урока (списание в Schedule.tsx работает с коллекцией lesson_balances).
+  // Из-за этого "Родитель и оплата" на карточке ученика, "Мой абонемент" на
+  // /finance и баланс в /schedule могли показывать три разных числа.
+  //
+  // Теперь: подтверждение платежа атомарно (через транзакцию) увеличивает
+  // именно lesson_balances/{studentId}.remaining — тот же счётчик, который
+  // Schedule.tsx уменьшает при отметке занятия "Проведено". Это делает
+  // lesson_balances единым источником правды по остатку занятий ученика.
   async function confirmPayment(payment: any) {
     if (!window.confirm(`Подтвердить оплату ${payment.amount} ₽ от ${payment.student_name}?`)) return;
     try {
-      await updateDoc(doc(db, "payments", payment.id), { confirmed: true, confirmed_at: serverTimestamp() });
-      if (payment.student_id) {
-        const studentSnap = await getDoc(doc(db, "profiles", payment.student_id));
-        if (studentSnap.exists()) {
-          const currentPaid = studentSnap.data().paid_lessons || 0;
-          await updateDoc(doc(db, "profiles", payment.student_id), { 
-            paid_lessons: currentPaid + (payment.lessons_count || payment.lessons || 0) 
-          });
-        }
-      }
+      const lessonsCount = payment.lessons_count || payment.lessons || 0;
+
+      await runTransaction(db, async (tx) => {
+        const paymentRef = doc(db, "payments", payment.id);
+        const balanceRef = doc(db, "lesson_balances", payment.student_id);
+
+        // Сначала все чтения, потом все записи — требование Firestore-транзакций
+        const balanceSnap = await tx.get(balanceRef);
+        const currentBalance = balanceSnap.exists() ? (balanceSnap.data().remaining || 0) : 0;
+
+        tx.update(paymentRef, { confirmed: true, confirmed_at: serverTimestamp() });
+        tx.set(balanceRef, {
+          remaining: currentBalance + lessonsCount,
+          last_updated: new Date().toISOString(),
+        }, { merge: true });
+      });
+
       toast.success(`✅ Оплата подтверждена!`);
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
@@ -425,8 +435,8 @@ function FinanceContent() {
           {role === "parent" && children.length > 0 && (
             <div className="bg-white rounded-2xl p-4 shadow-md border border-indigo-100 mb-6">
               <label className="text-sm font-bold text-indigo-800 block mb-2">👦 Вы просматриваете данные для:</label>
-              <select 
-                value={selectedChildId} 
+              <select
+                value={selectedChildId}
                 onChange={(e) => setSelectedChildId(e.target.value)}
                 className="w-full bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-indigo-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-400"
               >
@@ -480,9 +490,9 @@ function FinanceContent() {
                         </p>
                       </div>
                     </div>
-                    
+
                     <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
-                      <div 
+                      <div
                         className="bg-gradient-to-r from-indigo-500 to-purple-500 h-4 rounded-full transition-all duration-1000"
                         style={{ width: `${((activeSubscription.lessons_count - activeSubscription.lessons_remaining) / activeSubscription.lessons_count) * 100}%` }}
                       />
@@ -503,7 +513,7 @@ function FinanceContent() {
                 ) : (
                   <div className="text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
                     <p className="text-gray-500 mb-4">У вас пока нет оплаченных занятий</p>
-                    <Link 
+                    <Link
                       href={`/pricing?uid=${uid}&role=${role}${selectedChildId ? `&childId=${selectedChildId}` : ''}`}
                       className="inline-flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition"
                     >
@@ -519,7 +529,7 @@ function FinanceContent() {
             <div className="bg-white rounded-3xl shadow-lg border border-indigo-100 overflow-hidden">
               <div className="p-5 border-b border-indigo-100 flex items-center justify-between">
                 <h2 className="font-bold text-indigo-900">История платежей</h2>
-                <Link 
+                <Link
                   href={`/pricing?uid=${uid}&role=${role}`}
                   className="text-sm bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-200 transition"
                 >
@@ -568,7 +578,7 @@ function FinanceContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100">
       <div className="max-w-7xl mx-auto p-4 sm:p-6 relative z-10">
-        
+
         <div className="grid grid-cols-3 items-center mb-6">
           <Link href={`/dashboard?uid=${uid}&role=${role}`} className="text-amber-600 hover:text-amber-700 transition font-medium flex items-center gap-1">
             <ChevronLeft size={18} /> Назад
@@ -640,13 +650,12 @@ function FinanceContent() {
                         </button>
                       </div>
                     </div>
-                    
-                    {/* ✅ НОВОЕ: Выбор группы */}
+
                     {paymentType === "group" && (
                       <div>
                         <label className="text-xs text-amber-600 font-medium">Выбрать группу</label>
-                        <select 
-                          value={selectedGroup} 
+                        <select
+                          value={selectedGroup}
                           onChange={(e) => {
                             setSelectedGroup(e.target.value);
                             const group = groups.find(g => g.id === e.target.value);
@@ -667,7 +676,6 @@ function FinanceContent() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Ученик (только для индивидуальных) */}
                     {paymentType === "individual" && (
                       <div>
                         <label className="text-xs text-amber-600 font-medium">Ученик</label>
@@ -677,23 +685,23 @@ function FinanceContent() {
                         </select>
                       </div>
                     )}
-                    
+
                     <div>
                       <label className="text-xs text-amber-600 font-medium">
                         Сумма (₽)
                         <span className="text-stone-400 ml-1 text-[10px]">
-                          {selectedGroup 
+                          {selectedGroup
                             ? `(группа: ${groups.find(g => g.id === selectedGroup)?.price_per_lesson} ₽/зан × ${lessons})`
                             : `(по умолчанию: ${paymentType === "individual" ? financeSettings.price_individual : financeSettings.price_group} ₽/зан × ${lessons})`
                           }
                         </span>
                       </label>
-                      <input 
-                        type="number" 
-                        value={amount} 
-                        onChange={(e) => setAmount(parseInt(e.target.value) || 0)} 
+                      <input
+                        type="number"
+                        value={amount}
+                        onChange={(e) => setAmount(parseInt(e.target.value) || 0)}
                         min={0}
-                        className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" 
+                        className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white"
                       />
                     </div>
                   </div>
@@ -711,12 +719,12 @@ function FinanceContent() {
 
                   <div>
                     <label className="text-xs text-amber-600 font-medium">Комментарий</label>
-                    <input 
-                      type="text" 
-                      value={comment} 
-                      onChange={(e) => setComment(e.target.value)} 
+                    <input
+                      type="text"
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
                       placeholder="Например: Оплата за март"
-                      className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white" 
+                      className="w-full border border-amber-200 rounded-xl p-2.5 text-sm mt-1 bg-white"
                     />
                   </div>
 
@@ -891,20 +899,20 @@ function FinanceContent() {
               <h3 className="font-bold text-xl text-amber-700 mb-4 flex items-center gap-2">
                 📝 Инструкция для учеников
               </h3>
-              <textarea 
+              <textarea
                 rows={5}
                 value={financeSettings.manual_instructions}
                 onChange={(e) => setFinanceSettings({...financeSettings, manual_instructions: e.target.value})}
-                className="w-full border border-amber-200 rounded-lg p-3 text-sm bg-white/80 focus:border-amber-500 focus:outline-none resize-none" 
+                className="w-full border border-amber-200 rounded-lg p-3 text-sm bg-white/80 focus:border-amber-500 focus:outline-none resize-none"
               />
             </div>
 
-            <button 
+            <button
               onClick={saveFinanceSettings}
               disabled={savingSettings}
               className="w-full py-4 bg-gradient-to-r from-amber-500 to-yellow-600 text-white rounded-xl font-bold hover:from-amber-600 hover:to-yellow-700 transition shadow-lg flex items-center justify-center gap-2 text-lg disabled:opacity-50"
             >
-              {savingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save size={20} />} 
+              {savingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save size={20} />}
               {savingSettings ? "Сохранение..." : "💾 Сохранить настройки"}
             </button>
           </div>

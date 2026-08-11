@@ -4,13 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, Suspense, useMemo } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, query, where, onSnapshot, doc, getDoc, updateDoc, addDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import StudentAnalytics from "./StudentAnalytics"; // Убедись, что этот файл обновлён кодом из прошлого сообщения!
+import StudentAnalytics from "./StudentAnalytics";
 import AuthGuard from "@/components/AuthGuard";
+import { useFirebaseUid } from "@/hooks/useFirebaseUid"; // ✅ НОВОЕ
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -23,15 +23,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const ACHIEVEMENTS = [
-  { key: "first_sub", icon: "🎯", title: "Первое задание" },
-  { key: "five_subs", icon: "📸", title: "5 заданий" },
-  { key: "perfect", icon: "💯", title: "Идеальный результат" },
-  { key: "ten_subs", icon: "🔟", title: "10 заданий" },
-  { key: "streak_7", icon: "⚡", title: "7 дней подряд" },
-  { key: "master", icon: "👑", title: "Мастер темы" },
-];
-
 const AVATARS = [
   "from-sky-400 to-blue-600",
   "from-pink-400 to-rose-500",
@@ -42,26 +33,23 @@ const AVATARS = [
 ];
 
 function StudentsContent() {
-  const searchParams = useSearchParams();
-  const uid = searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "";
-  
+  // ✅ ИЗМЕНЕНО: uid больше не берётся синхронно из localStorage/searchParams.
+  // authReady === true означает, что Firebase Auth уже проверил сессию
+  // (успешно или нет) — до этого момента никакие Firestore-запросы не идут.
+  const { uid, authReady } = useFirebaseUid(app);
+
   const [students, setStudents] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
   const [studentProfile, setStudentProfile] = useState<any>(null);
   const [studentLessons, setStudentLessons] = useState<any[]>([]);
   const [studentHomeworks, setStudentHomeworks] = useState<any[]>([]);
   const [studentSubmissions, setStudentSubmissions] = useState<any[]>([]);
-  
-  const [editingLinks, setEditingLinks] = useState(false);
-  const [editZoomLink, setEditZoomLink] = useState("");
-  const [editBoardLink, setEditBoardLink] = useState("");
-  const [editHolstLink, setEditHolstLink] = useState("");
-  
+
+  const [studentBalance, setStudentBalance] = useState<number>(0);
+
   const [editingParent, setEditingParent] = useState(false);
   const [editParentEmail, setEditParentEmail] = useState("");
-  const [editPaidLessons, setEditPaidLessons] = useState(0);
-  
-  // ✅ УБРАНА вкладка "notes", так как заметки уже есть в расписании
+
   const [activeTab, setActiveTab] = useState<"stats" | "analytics" | "trials">("stats");
   const [chartData, setChartData] = useState<any[]>([]);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -74,8 +62,11 @@ function StudentsContent() {
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
 
+  // ✅ ИЗМЕНЕНО: запрос списка учеников ждёт authReady, а не стартует по
+  // localStorage.uid сразу при монтировании компонента.
   useEffect(() => {
-    if (!uid) {
+    if (!authReady) return;      // Firebase Auth ещё не проверил сессию — ждём
+    if (!uid) {                  // Auth проверил — пользователь не залогинен
       setLoadingStudents(false);
       return;
     }
@@ -87,16 +78,17 @@ function StudentsContent() {
     }, (error) => {
       console.error("Ошибка загрузки учеников:", error);
       setLoadingStudents(false);
+      toast.error("Не удалось загрузить учеников — проверьте авторизацию");
     });
     return () => unsub();
-  }, [uid]);
+  }, [uid, authReady]);
 
   useEffect(() => {
     if (!selected) {
       setStudentProfile(null);
-      setEditingLinks(false);
       setEditingParent(false);
       setAiReport(null);
+      setStudentBalance(0);
       return;
     }
 
@@ -104,19 +96,19 @@ function StudentsContent() {
       if (snap.exists()) {
         const data = snap.data();
         setStudentProfile(data);
-        setEditZoomLink(data.zoom_link || "");
-        setEditBoardLink(data.board_link || "");
-        setEditHolstLink(data.holst_link || "");
         setEditParentEmail(data.parent_email || "");
-        setEditPaidLessons(data.paid_lessons || 0);
       }
+    });
+
+    const unsubBalance = onSnapshot(doc(db, "lesson_balances", selected.id), (snap) => {
+      setStudentBalance(snap.exists() ? (snap.data().remaining || 0) : 0);
     });
 
     const unsubLessons = onSnapshot(query(collection(db, "lessons"), where("student_id", "==", selected.id)), (snap) => setStudentLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
     const unsubHw = onSnapshot(query(collection(db, "homeworks"), where("assigned_students", "array-contains", selected.id)), (snap) => setStudentHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
     const unsubSub = onSnapshot(query(collection(db, "submissions"), where("student_id", "==", selected.id)), (snap) => setStudentSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 
-    return () => { unsubLessons(); unsubHw(); unsubSub(); };
+    return () => { unsubLessons(); unsubHw(); unsubSub(); unsubBalance(); };
   }, [selected]);
 
   useEffect(() => {
@@ -132,6 +124,13 @@ function StudentsContent() {
     }).filter((d: any) => d.date !== "—");
     setChartData(data);
   }, [selected, studentSubmissions, studentHomeworks]);
+
+  const nextLesson = useMemo(() => {
+    const now = Date.now();
+    return studentLessons
+      .filter((l: any) => l.status === "scheduled" && new Date(l.start_time).getTime() >= now)
+      .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())[0] || null;
+  }, [studentLessons]);
 
   const filteredStudents = useMemo(() => {
     let filtered = [...students];
@@ -212,29 +211,13 @@ function StudentsContent() {
     }
   }
 
-  async function saveLinks() {
-    if (!selected) return;
-    await updateDoc(doc(db, "profiles", selected.id), {
-      zoom_link: editZoomLink.trim() || null,
-      board_link: editBoardLink.trim() || null,
-      holst_link: editHolstLink.trim() || null,
-    });
-    const snap = await getDoc(doc(db, "profiles", selected.id));
-    if (snap.exists()) setStudentProfile(snap.data());
-    setEditingLinks(false);
-    toast.success("✨ Ссылки сохранены!");
-  }
-
-  // ✅ ИСПРАВЛЕНО: Убрано createUserWithEmailAndPassword, которое выкидывало репетитора из аккаунта.
-  // Теперь мы просто сохраняем email родителя и количество оплаченных занятий в профиль ученика.
   async function saveParent() {
     if (!selected) return;
     try {
       await updateDoc(doc(db, "profiles", selected.id), {
         parent_email: editParentEmail.trim(),
-        paid_lessons: editPaidLessons,
       });
-      toast.success("✨ Данные родителя и оплаты сохранены!");
+      toast.success("✨ Email родителя сохранён!");
       const snap = await getDoc(doc(db, "profiles", selected.id));
       if (snap.exists()) setStudentProfile(snap.data());
       setEditingParent(false);
@@ -262,6 +245,36 @@ function StudentsContent() {
   const doneHw = studentSubmissions.filter((s: any) => s.status === "approved").length;
   const attendance = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
   const hwRate = totalHw > 0 ? Math.round((doneHw / totalHw) * 100) : 0;
+
+  // ✅ НОВОЕ: пока Firebase Auth ещё не подтвердил сессию — показываем
+  // явный индикатор загрузки, а не пустой список "НЕТ УЧЕНИКОВ".
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4 animate-pulse">📸</div>
+          <p className="text-sky-700 font-black uppercase tracking-widest">Проверка авторизации...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ НОВОЕ: Auth проверил, но пользователь не залогинен — явное сообщение
+  // вместо мнимого "нет учеников".
+  if (!uid) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-white flex items-center justify-center">
+        <div className="text-center bg-white/80 rounded-2xl p-8 border-2 border-sky-200 shadow-lg">
+          <p className="text-5xl mb-4">🔒</p>
+          <p className="text-sky-700 text-lg font-black uppercase tracking-widest mb-2">Не авторизован</p>
+          <p className="text-sky-500 text-sm mb-4">Сессия истекла или вы ещё не входили в аккаунт</p>
+          <Link href="/auth" className="inline-block px-5 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-lg font-bold uppercase tracking-wide">
+            Войти
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-white relative overflow-hidden">
@@ -317,7 +330,7 @@ function StudentsContent() {
             ) : (
               <div className="text-center py-12 bg-white/80 rounded-xl border-2 border-sky-200">
                 <p className="text-5xl mb-3">🔍</p>
-                <p className="text-sky-700 font-bold uppercase tracking-wide">{!uid ? "⚠️ Не авторизован" : searchQuery ? "Не найдено" : "Нет учеников"}</p>
+                <p className="text-sky-700 font-bold uppercase tracking-wide">{searchQuery ? "Не найдено" : "Нет учеников"}</p>
               </div>
             )}
           </div>
@@ -327,7 +340,7 @@ function StudentsContent() {
               <div className="space-y-5">
                 <div className="bg-white/80 backdrop-blur rounded-2xl shadow-xl p-6 border-2 border-sky-200 relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-sky-400 to-blue-500 opacity-10 rounded-bl-full"></div>
-                  
+
                   <div className="flex flex-wrap items-center gap-4 mb-5 relative z-10">
                     <div className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl font-black bg-gradient-to-br ${AVATARS[students.findIndex((x: any) => x.id === selected.id) % AVATARS.length]} shadow-lg ring-4 ring-white`}>
                       {(selected.full_name || "У")[0].toUpperCase()}
@@ -357,27 +370,30 @@ function StudentsContent() {
                   )}
 
                   <div className="bg-sky-50/50 rounded-xl p-4 mb-4 border-2 border-sky-100 relative z-10">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-bold text-sm text-slate-700 uppercase tracking-wide">🎧 Ссылки</h3>
-                      {!editingLinks ? (
-                        <button onClick={() => setEditingLinks(true)} className="text-xs text-sky-600 hover:text-sky-800 font-bold uppercase">✏️ Изменить</button>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button onClick={saveLinks} className="text-xs text-emerald-600 hover:text-emerald-800 font-bold uppercase">💾 Сохранить</button>
-                          <button onClick={() => setEditingLinks(false)} className="text-xs text-slate-500 hover:text-slate-700 font-bold uppercase">Отмена</button>
+                    <h3 className="font-bold text-sm text-slate-700 uppercase tracking-wide mb-3">📅 Ближайшее занятие</h3>
+                    {nextLesson ? (
+                      <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-sky-200">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">{nextLesson.subject === "chemistry" ? "🧪" : "🧬"}</span>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">
+                              {new Date(nextLesson.start_time).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+                            </p>
+                            <p className="text-xs text-sky-600">
+                              {new Date(nextLesson.start_time).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                    {editingLinks ? (
-                      <div className="space-y-3">
-                        <div><label className="text-xs text-slate-600 font-bold uppercase">🎥 Zoom</label><input type="url" value={editZoomLink} onChange={(e) => setEditZoomLink(e.target.value)} placeholder="https://zoom.us/j/..." className="w-full border-2 border-sky-200 rounded-lg p-2 text-xs mt-1 bg-white focus:border-sky-500 focus:outline-none" /></div>
-                        <div><label className="text-xs text-slate-600 font-bold uppercase">🖊️ Miro</label><input type="url" value={editBoardLink} onChange={(e) => setEditBoardLink(e.target.value)} placeholder="https://miro.com/app/..." className="w-full border-2 border-sky-200 rounded-lg p-2 text-xs mt-1 bg-white focus:border-sky-500 focus:outline-none" /></div>
-                        <div><label className="text-xs text-slate-600 font-bold uppercase">🎨 Holst</label><input type="url" value={editHolstLink} onChange={(e) => setEditHolstLink(e.target.value)} placeholder="https://holst.so/embed/..." className="w-full border-2 border-sky-200 rounded-lg p-2 text-xs mt-1 bg-white focus:border-sky-500 focus:outline-none" /></div>
+                        <Link href={`/schedule?lesson=${nextLesson.id}`} className="text-xs font-bold text-sky-600 hover:text-sky-800 uppercase">
+                          В расписание →
+                        </Link>
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {studentProfile?.zoom_link ? <a href={studentProfile.zoom_link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition border border-blue-200"><span>🎥</span><span className="text-xs text-blue-700 truncate font-medium">{studentProfile.zoom_link}</span></a> : <p className="text-xs text-slate-500 p-2 font-medium">🎥 Zoom не указан</p>}
-                        {studentProfile?.board_link ? <a href={studentProfile.board_link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 bg-purple-50 rounded-lg hover:bg-purple-100 transition border border-purple-200"><span>🖊️</span><span className="text-xs text-purple-700 truncate font-medium">{studentProfile.board_link}</span></a> : <p className="text-xs text-slate-500 p-2 font-medium">🖊️ Доска не указана</p>}
+                      <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-dashed border-sky-200">
+                        <p className="text-xs text-slate-500">Занятие не запланировано</p>
+                        <Link href={`/schedule?student=${selected.id}`} className="text-xs font-bold text-sky-600 hover:text-sky-800 uppercase">
+                          Запланировать →
+                        </Link>
                       </div>
                     )}
                   </div>
@@ -386,7 +402,7 @@ function StudentsContent() {
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-bold text-sm text-slate-700 uppercase tracking-wide">👨‍👩‍👧 Родитель и оплата</h3>
                       {!editingParent ? (
-                        <button onClick={() => setEditingParent(true)} className="text-xs text-sky-600 hover:text-sky-800 font-bold uppercase">✏️ Изменить</button>
+                        <button onClick={() => setEditingParent(true)} className="text-xs text-sky-600 hover:text-sky-800 font-bold uppercase">✏️ Email</button>
                       ) : (
                         <div className="flex gap-2">
                           <button onClick={saveParent} className="text-xs text-emerald-600 hover:text-emerald-800 font-bold uppercase">💾 Сохранить</button>
@@ -395,25 +411,33 @@ function StudentsContent() {
                       )}
                     </div>
                     {editingParent ? (
-                      <div className="space-y-3">
-                        <div><label className="text-xs text-slate-600 font-bold uppercase">Email родителя</label><input value={editParentEmail} onChange={(e) => setEditParentEmail(e.target.value)} placeholder="parent@email.com" className="w-full border-2 border-sky-200 rounded-lg p-2 text-xs mt-1 bg-white focus:border-sky-500 focus:outline-none" /></div>
-                        <div><label className="text-xs text-slate-600 font-bold uppercase">Оплачено занятий</label><input type="number" value={editPaidLessons} onChange={(e) => setEditPaidLessons(parseInt(e.target.value) || 0)} min={0} className="w-full border-2 border-sky-200 rounded-lg p-2 text-xs mt-1 bg-white focus:border-sky-500 focus:outline-none" /></div>
+                      <div>
+                        <label className="text-xs text-slate-600 font-bold uppercase">Email родителя</label>
+                        <input value={editParentEmail} onChange={(e) => setEditParentEmail(e.target.value)} placeholder="parent@email.com" className="w-full border-2 border-sky-200 rounded-lg p-2 text-xs mt-1 bg-white focus:border-sky-500 focus:outline-none" />
                       </div>
                     ) : (
                       <div className="space-y-2">
                         <p className="text-xs text-slate-600 font-medium">Родитель: {studentProfile?.parent_email ? <span className="text-sky-700 font-bold">{studentProfile.parent_email}</span> : "Не привязан"}</p>
-                        <p className="text-xs text-slate-600 font-medium">Оплачено: <b className="text-sky-700">{studentProfile?.paid_lessons || 0}</b> занятий</p>
-                        {studentProfile?.paid_lessons > 0 && (
-                          <div className="w-full bg-sky-100 rounded-full h-2 overflow-hidden">
-                            <div className="bg-gradient-to-r from-sky-500 to-blue-600 h-2 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (completedLessons / Math.max(1, studentProfile.paid_lessons)) * 100)}%` }} />
-                          </div>
+                        <p className="text-xs text-slate-600 font-medium">
+                          Осталось: <b className={studentBalance > 0 ? "text-sky-700" : "text-rose-600"}>{studentBalance}</b> занятий
+                        </p>
+                        <div className="w-full bg-sky-100 rounded-full h-2 overflow-hidden">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-500 ${studentBalance <= 0 ? "bg-gradient-to-r from-rose-500 to-red-600" : "bg-gradient-to-r from-sky-500 to-blue-600"}`}
+                            style={{ width: studentBalance <= 0 ? "100%" : "60%" }}
+                          />
+                        </div>
+                        {studentBalance <= 0 && (
+                          <p className="text-xs text-rose-600 font-bold mt-1">⚠️ Занятия закончились</p>
                         )}
+                        <Link href={`/finance?tab=stats&studentId=${selected.id}`} className="text-xs text-sky-600 hover:text-sky-800 font-bold uppercase inline-block mt-1">
+                          Пополнить / история платежей →
+                        </Link>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* ✅ УБРАНА вкладка "notes" */}
                 <div className="flex gap-2 flex-wrap">
                   {[
                     { key: "stats", label: "📸 СТАТИСТИКА" },
@@ -482,17 +506,21 @@ function StudentsContent() {
                 )}
 
                 {activeTab === "analytics" && (
-                  <StudentAnalytics studentId={selected.id} />
+                  <StudentAnalytics
+                    studentId={selected.id}
+                    homeworks={studentHomeworks}
+                    submissions={studentSubmissions}
+                    lessons={studentLessons}
+                  />
                 )}
 
-                {/* ✅ ИСПРАВЛЕНО: Пробники теперь берутся из homeworks (type: trial_exam) + submissions */}
                 {activeTab === "trials" && (
                   <div className="bg-white/80 backdrop-blur rounded-2xl p-5 shadow-md border-2 border-sky-100">
                     <h3 className="font-serif font-bold text-stone-700 mb-4">🎓 ПРОБНИКИ</h3>
                     {(() => {
                       const trials = studentHomeworks.filter((hw: any) => hw.type === 'trial_exam');
                       if (trials.length === 0) return <p className="text-stone-500 text-sm py-4 text-center font-serif italic">Нет назначенных пробников</p>;
-                      
+
                       return (
                         <div className="space-y-3">
                           {trials.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).map((trial: any) => {
@@ -500,7 +528,7 @@ function StudentsContent() {
                             const score = sub ? sub.score : null;
                             const maxScore = trial.max_score || 100;
                             const percent = score !== null ? Math.round((score / maxScore) * 100) : null;
-                            
+
                             return (
                               <div key={trial.id} className="flex items-center justify-between p-3 bg-sky-50 rounded-lg border border-sky-200">
                                 <div className="flex items-center gap-3">

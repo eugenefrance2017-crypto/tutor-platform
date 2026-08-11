@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, useRef } from "react";
+import { useState, useEffect, Suspense, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams, usePathname } from "next/navigation";
 import { getApps, getApp, initializeApp } from "firebase/app";
@@ -48,6 +48,16 @@ const TASK_TYPES: Record<string, { label: string; icon: string }> = {
   photo: { label: "Фото-задание", icon: "📷" },
 };
 
+// Типы, где calcScore() сверяет ответ с объективным ключом без места для
+// человеческого суждения (выбор варианта/порядок/пара/сборка — всё это
+// заранее известные структурные данные, а не свободный текст). "text" и
+// "photo" сюда намеренно НЕ входят — даже с alt_answers остаётся риск
+// незапланированной, но верной формулировки, которую точное сравнение
+// строк отбракует, а "photo" вообще не проверяем автоматически по
+// содержанию. Используется для автоодобрения при первой отправке —
+// см. комментарий в submitAnswer().
+const AUTO_GRADABLE_TYPES = ['single_choice', 'multi_choice', 'order', 'match', 'fill_blanks', 'assembly', 'drag_drop'];
+
 const EGE_SCALES: Record<string, Record<number, number>> = {
   chemistry: { 0: 0, 1: 4, 2: 7, 3: 10, 4: 14, 5: 17, 6: 20, 7: 23, 8: 27, 9: 30, 10: 33, 11: 36, 12: 38, 13: 39, 14: 40, 15: 42, 16: 43, 17: 44, 18: 46, 19: 47, 20: 48, 21: 49, 22: 51, 23: 52, 24: 53, 25: 55, 26: 56, 27: 57, 28: 58, 29: 60, 30: 61, 31: 62, 32: 64, 33: 65, 34: 66, 35: 68, 36: 69, 37: 70, 38: 71, 39: 73, 40: 74, 41: 75, 42: 77, 43: 78, 44: 79, 45: 80, 46: 82, 47: 84, 48: 86, 49: 88, 50: 90, 51: 91, 52: 93, 53: 95, 54: 97, 55: 99, 56: 100 },
   biology: { 0: 0, 1: 3, 2: 5, 3: 7, 4: 10, 5: 12, 6: 14, 7: 17, 8: 19, 9: 21, 10: 24, 11: 26, 12: 28, 13: 31, 14: 33, 15: 36, 16: 38, 17: 40, 18: 41, 19: 43, 20: 45, 21: 46, 22: 48, 23: 50, 24: 51, 25: 53, 26: 55, 27: 56, 28: 58, 29: 60, 30: 61, 31: 63, 32: 65, 33: 66, 34: 68, 35: 70, 36: 71, 37: 72, 38: 73, 39: 74, 40: 75, 41: 76, 42: 77, 43: 78, 44: 79, 45: 80, 46: 81, 47: 83, 48: 85, 49: 86, 50: 88, 51: 90, 52: 91, 53: 93, 54: 95, 55: 96, 56: 98, 57: 100 }
@@ -80,6 +90,19 @@ function normalizeText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// Русское склонение "балл": 1 → балл, 2-4 → балла, 5-20 (и 0, и *5-*9,
+// *11-*14) → баллов. Раньше было жёстко зашито "балла" везде, независимо
+// от числа — "1 балла", "5 балла" и т.д.
+function pluralizeBall(n: number): string {
+  const abs = Math.abs(n);
+  const mod100 = abs % 100;
+  const mod10 = abs % 10;
+  if (mod100 >= 11 && mod100 <= 14) return `${n} баллов`;
+  if (mod10 === 1) return `${n} балл`;
+  if (mod10 >= 2 && mod10 <= 4) return `${n} балла`;
+  return `${n} баллов`;
+}
+
 function formatDisplayText(value: any): string {
   if (value === null || value === undefined || value === '') return '';
   if (typeof value === 'string') return value;
@@ -93,8 +116,158 @@ function formatDisplayText(value: any): string {
   return String(value);
 }
 
+// formatDisplayText() выше — общий fallback, но для 5 из 9 типов заданий
+// он показывал ученику на экране результата бессмысленные данные:
+// голые индексы ("2", "2, 0") для single_choice/multi_choice/order/assembly,
+// сырой JSON ({"0":"право1"}) для match/drag_drop. Эта функция знает
+// структуру данных каждого типа (variants/order_items/pairs/
+// assembly_parts/drag_items) и переводит ответ в то, что реально
+// выбрал/расставил/сопоставил ученик — человекочитаемым текстом.
+function formatAnswerForDisplay(section: any, answer: any): string {
+  const type = section?.type || 'text';
+  const data = section?.data || section || {};
+  if (answer === null || answer === undefined) return '';
+
+  if (type === 'single_choice') {
+    const variants = data.variants || [];
+    const idx = typeof answer === 'number' ? answer : parseInt(answer, 10);
+    if (Number.isInteger(idx) && variants[idx] !== undefined) {
+      return `${String.fromCharCode(65 + idx)}. ${variants[idx]}`;
+    }
+    return formatDisplayText(answer);
+  }
+
+  if (type === 'multi_choice') {
+    const variants = data.variants || [];
+    if (!Array.isArray(answer)) return formatDisplayText(answer);
+    return answer
+      .filter((i: any) => Number.isInteger(i) && variants[i] !== undefined)
+      .map((i: number) => `${String.fromCharCode(65 + i)}. ${variants[i]}`)
+      .join('; ');
+  }
+
+  if (type === 'order') {
+    const items = data.order_items || [];
+    if (!Array.isArray(answer)) return formatDisplayText(answer);
+    return answer
+      .map((origIdx: number, pos: number) => `${pos + 1}. ${items[origIdx] ?? '?'}`)
+      .join('\n');
+  }
+
+  if (type === 'assembly') {
+    const parts = data.assembly_parts || [];
+    if (!Array.isArray(answer)) return formatDisplayText(answer);
+    return answer.map((idx: number) => parts[idx] ?? '?').join(' → ');
+  }
+
+  if (type === 'match') {
+    const pairs = data.pairs || [];
+    if (!answer || typeof answer !== 'object') return formatDisplayText(answer);
+    return Object.keys(answer)
+      .map((key) => {
+        const i = parseInt(key, 10);
+        const left = pairs[i]?.left ?? '?';
+        return `${left} → ${answer[key]}`;
+      })
+      .join('\n');
+  }
+
+  if (type === 'drag_drop') {
+    const dragItems = data.drag_items || [];
+    if (!answer || typeof answer !== 'object') return formatDisplayText(answer);
+    return Object.keys(answer)
+      .map((key) => {
+        const i = parseInt(key, 10);
+        const item = dragItems[i]?.item ?? '?';
+        return `${item} → ${answer[key]}`;
+      })
+      .join('\n');
+  }
+
+  // text / photo / fill_blanks — уже читаемая строка, formatDisplayText справляется.
+  return formatDisplayText(answer);
+}
+
+// Для структурных типов (не text/photo/fill_blanks) возвращает разбивку
+// ответа по элементам с отметкой верно/неверно для каждого — используется
+// в ResultCard, чтобы после проверки красить каждую строку зелёным/
+// бордовым отдельно, а не показывать один сплошной текстовый блок без
+// цвета. Возвращает null для типов, где такая построчная разбивка не
+// имеет смысла (там остаётся обычный текст через formatAnswerForDisplay).
+function getGradedBreakdown(section: any, answer: any): { label: string; correct: boolean; correctLabel?: string }[] | null {
+  const type = section?.type || 'text';
+  const data = section?.data || section || {};
+
+  if (type === 'single_choice') {
+    const variants = data.variants || [];
+    const correctIdx = Array.isArray(data.correct_indices) ? data.correct_indices[0] : undefined;
+    const chosenIdx = typeof answer === 'number' ? answer : parseInt(answer, 10);
+    if (!Number.isInteger(chosenIdx) || variants[chosenIdx] === undefined) return null;
+    const isCorrect = chosenIdx === correctIdx;
+    return [{
+      label: `${String.fromCharCode(65 + chosenIdx)}. ${variants[chosenIdx]}`,
+      correct: isCorrect,
+      correctLabel: (!isCorrect && correctIdx !== undefined && variants[correctIdx] !== undefined)
+        ? `${String.fromCharCode(65 + correctIdx)}. ${variants[correctIdx]}` : undefined
+    }];
+  }
+
+  if (type === 'multi_choice') {
+    const variants = data.variants || [];
+    const correctSet = new Set(data.correct_indices || []);
+    if (!Array.isArray(answer)) return null;
+    return answer
+      .filter((i: any) => Number.isInteger(i) && variants[i] !== undefined)
+      .map((i: number) => ({ label: `${String.fromCharCode(65 + i)}. ${variants[i]}`, correct: correctSet.has(i) }));
+  }
+
+  if (type === 'order') {
+    const items = data.order_items || [];
+    if (!Array.isArray(answer)) return null;
+    return answer.map((origIdx: number, pos: number) => ({
+      label: `${pos + 1}. ${items[origIdx] ?? '?'}`,
+      correct: origIdx === pos
+    }));
+  }
+
+  if (type === 'assembly') {
+    const parts = data.assembly_parts || [];
+    if (!Array.isArray(answer)) return null;
+    return answer.map((idx: number, pos: number) => ({ label: parts[idx] ?? '?', correct: idx === pos }));
+  }
+
+  if (type === 'match') {
+    const pairs = data.pairs || [];
+    if (!answer || typeof answer !== 'object') return null;
+    return Object.keys(answer).map((key) => {
+      const i = parseInt(key, 10);
+      const left = pairs[i]?.left ?? '?';
+      const chosenRight = answer[key];
+      const correctRight = pairs[i]?.right;
+      const isCorrect = chosenRight === correctRight;
+      return { label: `${left} → ${chosenRight}`, correct: isCorrect, correctLabel: !isCorrect ? `${left} → ${correctRight}` : undefined };
+    });
+  }
+
+  if (type === 'drag_drop') {
+    const dragItems = data.drag_items || [];
+    if (!answer || typeof answer !== 'object') return null;
+    return Object.keys(answer).map((key) => {
+      const i = parseInt(key, 10);
+      const item = dragItems[i]?.item ?? '?';
+      const chosenTarget = answer[key];
+      const correctTarget = dragItems[i]?.target;
+      const isCorrect = chosenTarget === correctTarget;
+      return { label: `${item} → ${chosenTarget}`, correct: isCorrect, correctLabel: !isCorrect ? `${item} → ${correctTarget}` : undefined };
+    });
+  }
+
+  return null;
+}
+
 function hasMeaningfulContent(value: any): boolean {
   if (value === null || value === undefined) return false;
+  if (typeof value === 'number') return true;
   if (typeof value === 'string') return value.trim().length > 0;
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'object') return Object.keys(value).length > 0;
@@ -130,22 +303,22 @@ function ChemButton({ value, onChange, placeholder = "", rows = 2, darkMode = fa
     setTimeout(() => { textarea.focus(); textarea.setSelectionRange(start + symbol.length, start + symbol.length); }, 0);
   }
 
-  const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900';
-  const bgPopup = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
-  const textLabel = darkMode ? 'text-gray-300' : 'text-gray-700';
+  const bgInput = darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]';
+  const bgPopup = darkMode ? 'bg-[#2A2420] border-[#2A2420]' : 'bg-white border-[#E8DCC8]';
+  const textLabel = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
 
   return (
     <div className="relative flex gap-2">
-      <textarea ref={textareaRef} value={safeValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows} className={`flex-1 px-3 py-2 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none text-sm ${bgInput}`} />
+      <textarea ref={textareaRef} value={safeValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows} className={`flex-1 px-3 py-2 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none resize-none text-sm ${bgInput}`} />
       <div className="relative" ref={popupRef}>
-        <button type="button" onClick={() => setShowPopup(!showPopup)} className="h-full px-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl hover:from-orange-600 hover:to-pink-600 transition shadow-md text-lg active:scale-95">🧪</button>
+        <button type="button" onClick={() => setShowPopup(!showPopup)} className="h-full px-3 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl hover:from-[#A86535] hover:to-[#7A2F2F] transition shadow-md text-lg active:scale-95">🧪</button>
         {showPopup && (
           <div className={`fixed right-4 bottom-4 w-64 rounded-xl shadow-2xl border-2 p-3 z-[100] max-h-[400px] overflow-y-auto ${bgPopup}`}>
             <div className="space-y-2">
-              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Индексы:</p><div className="flex flex-wrap gap-1">{SUBSCRIPTS.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-orange-300' : 'bg-orange-50 hover:bg-orange-100 text-orange-800'}`}>{s}</button>))}</div></div>
-              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Заряды:</p><div className="flex flex-wrap gap-1">{CHARGES.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-pink-300' : 'bg-pink-50 hover:bg-pink-100 text-pink-800'}`}>{s}</button>))}</div></div>
-              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Степени:</p><div className="flex flex-wrap gap-1">{OXIDATION.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-red-300' : 'bg-red-50 hover:bg-red-100 text-red-800'}`}>{s}</button>))}</div></div>
-              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Знаки:</p><div className="flex flex-wrap gap-1">{SIGNS.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-50 hover:bg-gray-100 text-gray-800'}`}>{s}</button>))}</div></div>
+              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Индексы:</p><div className="flex flex-wrap gap-1">{SUBSCRIPTS.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-[#2A2420] hover:bg-[#3D2817] text-[#DCC7AA]' : 'bg-[#FAF3E8] hover:bg-[#F5E4D5] text-[#6B4520]'}`}>{s}</button>))}</div></div>
+              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Заряды:</p><div className="flex flex-wrap gap-1">{CHARGES.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-[#2A2420] hover:bg-[#3D2817] text-[#D98F8F]' : 'bg-[#F5DEDA] hover:bg-[#F5DEDA] text-[#5A2424]'}`}>{s}</button>))}</div></div>
+              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Степени:</p><div className="flex flex-wrap gap-1">{OXIDATION.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-[#2A2420] hover:bg-[#3D2817] text-[#E0A3A3]' : 'bg-[#F5DEDA] hover:bg-[#F5DEDA] text-[#4A1818]'}`}>{s}</button>))}</div></div>
+              <div><p className={`text-xs font-bold ${textLabel} mb-1`}>Знаки:</p><div className="flex flex-wrap gap-1">{SIGNS.map(s => (<button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-2 py-1 rounded text-xs active:scale-90 transition ${darkMode ? 'bg-[#2A2420] hover:bg-[#3D2817] text-[#B8A898]' : 'bg-[#FAF3E8] hover:bg-[#F0E8D8] text-[#6B4E3A]'}`}>{s}</button>))}</div></div>
             </div>
           </div>
         )}
@@ -223,7 +396,7 @@ function StudentFileUploader({ value, onChange, studentId, sectionId, darkMode =
     onChange(currentAttachments.filter((_: any, i: number) => i !== index));
   };
 
-  const textLabel = darkMode ? "text-gray-300" : "text-gray-700";
+  const textLabel = darkMode ? "text-[#B8A898]" : "text-[#6B4E3A]";
   const attachments = Array.isArray(value) ? value : (value ? [value] : []);
 
   return (
@@ -243,7 +416,7 @@ function StudentFileUploader({ value, onChange, studentId, sectionId, darkMode =
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center gap-2 disabled:opacity-50 text-sm active:scale-95"
+          className="px-4 py-2 bg-gradient-to-r from-[#B8860B] to-[#D4A017] text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center gap-2 disabled:opacity-50 text-sm active:scale-95"
         >
           <Paperclip className="w-4 h-4" />
           {uploading ? "Загрузка..." : "Прикрепить фото"}
@@ -264,25 +437,24 @@ function StudentFileUploader({ value, onChange, studentId, sectionId, darkMode =
                   setPreviewImage(attachment);
                 }
               }}
-              className={`relative group rounded-lg overflow-visible border-2 text-left cursor-pointer ${darkMode ? 'border-gray-600' : 'border-orange-200'}`}
+              className={`relative group rounded-lg overflow-visible border-2 text-left cursor-pointer ${darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'}`}
             >
               <div className="rounded-lg overflow-hidden">
                 <img src={attachment.url} alt={attachment.name} className="w-full h-32 object-cover" loading="lazy" />
               </div>
               <div className="absolute inset-0 rounded-lg bg-gradient-to-t from-black/45 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-              {/* ✅ Кнопка удаления: всегда видна, в углу, не съезжает */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   removeAttachment(index);
                 }}
-                className="absolute top-2 right-2 z-20 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all hover:scale-110 active:scale-95 flex items-center justify-center"
+                className="absolute top-2 right-2 z-20 p-1.5 bg-[#8B3A3A] hover:bg-[#7A2F2F] text-white rounded-full shadow-lg transition-all hover:scale-110 active:scale-95 flex items-center justify-center"
                 title="Удалить фото"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
-              <p className={`text-xs p-2 truncate rounded-b-lg ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-50 text-gray-700'}`}>
+              <p className={`text-xs p-2 truncate rounded-b-lg ${darkMode ? 'bg-[#2A2420] text-[#B8A898]' : 'bg-[#FAF3E8] text-[#6B4E3A]'}`}>
                 {attachment.name}
               </p>
             </div>
@@ -296,7 +468,7 @@ function StudentFileUploader({ value, onChange, studentId, sectionId, darkMode =
             <button
               type="button"
               onClick={() => setPreviewImage(null)}
-              className="absolute top-3 right-3 z-10 p-2 rounded-full bg-white/90 text-gray-800 shadow-lg"
+              className="absolute top-3 right-3 z-10 p-2 rounded-full bg-white/90 text-[#6B4E3A] shadow-lg"
             >
               <X className="w-5 h-5" />
             </button>
@@ -316,21 +488,622 @@ function StudentFileUploader({ value, onChange, studentId, sectionId, darkMode =
   );
 }
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Реализация drag_drop: раньше это был <select> — визуально неотличимый
+// от match, без какого-либо перетаскивания. Здесь — нажатие и удержание
+// точки слева, живая линия тянется за курсором/пальцем (Pointer Events —
+// единый API для мыши и тача, в отличие от HTML5 Drag, который на
+// мобильных браузерах работает нестабильно), отпускание над точкой справа
+// создаёт соединение. Порядок целей (правая колонка) перемешивается один
+// раз на секцию через useMemo — раньше показывался в порядке хранения,
+// что делало задание тривиальным для угадывания.
+// Формат answer не меняется: { [индекс_слева]: "строка_цели" } — та же
+// структура, что была у select-версии, поэтому calcScore для drag_drop
+// не требует изменений.
+// Реализация drag_drop v2: карточка физически поднимается и переносится
+// в ячейку — не "соедини линией" (это была бы та же операция, что у
+// match, просто нарисованная иначе), а "разложи по местам". Карточки
+// живут в общем "пуле" сверху, ячейки — фиксированные слоты с подписью
+// цели снизу; забирая карточку из пула (или из другой ячейки), её
+// отпускают над нужным слотом — определяется через elementFromPoint +
+// closest('[data-slot]') на pointerup.
+//
+// Формат answer НЕ меняется относительно старой select-версии — это
+// по-прежнему { [индекс_элемента]: "строка_цели" }. Внутри компонента
+// это представление конвертируется в удобную для UI форму
+// (слот -> элемент) и обратно при каждом изменении, поэтому calcScore
+// для drag_drop трогать не пришлось.
+function DragDropCards({ dragItems, answer, onChange, readOnly = false, darkMode = false }: any) {
+  const items = dragItems.map((d: any) => d.item);
+  const slots = dragItems.map((d: any) => d.target);
+
+  // Клавиатурный путь (Tab + Enter/Space) работает параллельно с
+  // Pointer Events и оперирует той же applyPlacement() — та же логика
+  // размещения/вытеснения, что и у перетаскивания мышью/пальцем, просто
+  // без непрерывного жеста. Раньше единственным способом ответить было
+  // физически схватить и перетащить — недоступно ни с клавиатуры, ни
+  // для скринридера.
+  const [keyboardSelected, setKeyboardSelected] = useState<number | null>(null);
+
+  const shuffledItemOrder = useMemo(() => {
+    return shuffleArray(items.map((_: any, i: number) => i));
+  }, [dragItems]);
+
+  const placement: Record<number, number> = {};
+  if (answer) {
+    Object.keys(answer).forEach((key) => {
+      const itemIdx = parseInt(key, 10);
+      const targetStr = answer[itemIdx];
+      const slotIdx = slots.indexOf(targetStr);
+      if (slotIdx !== -1) placement[slotIdx] = itemIdx;
+    });
+  }
+
+  const placedItemIndices = new Set(Object.values(placement));
+  const poolItemIndices = shuffledItemOrder.filter((i: number) => !placedItemIndices.has(i));
+
+  const applyPlacement = (newPlacement: Record<number, number>) => {
+    const newAnswer: Record<number, string> = {};
+    Object.keys(newPlacement).forEach((slotKey) => {
+      const slotIdx = parseInt(slotKey, 10);
+      const itemIdx = newPlacement[slotIdx];
+      newAnswer[itemIdx] = slots[slotIdx];
+    });
+    onChange(newAnswer);
+  };
+
+  const handlePointerDown = (itemIdx: number) => (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (readOnly) return;
+    e.preventDefault();
+    const chip = e.currentTarget;
+    const rect = chip.getBoundingClientRect();
+
+    const floating = chip.cloneNode(true) as HTMLElement;
+    floating.style.position = 'fixed';
+    floating.style.left = rect.left + 'px';
+    floating.style.top = rect.top + 'px';
+    floating.style.width = rect.width + 'px';
+    floating.style.pointerEvents = 'none';
+    floating.style.zIndex = '9999';
+    floating.style.opacity = '0.95';
+    floating.style.boxShadow = '0 8px 20px rgba(0,0,0,0.25)';
+    document.body.appendChild(floating);
+    chip.style.opacity = '0.25';
+
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+
+    const move = (ev: PointerEvent) => {
+      floating.style.left = (ev.clientX - offsetX) + 'px';
+      floating.style.top = (ev.clientY - offsetY) + 'px';
+    };
+    const up = (ev: PointerEvent) => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      floating.remove();
+      chip.style.opacity = '1';
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const slotEl = el ? (el as HTMLElement).closest('[data-slot]') as HTMLElement | null : null;
+      const newPlacement: Record<number, number> = { ...placement };
+      Object.keys(newPlacement).forEach((k) => {
+        if (newPlacement[parseInt(k, 10)] === itemIdx) delete newPlacement[parseInt(k, 10)];
+      });
+      if (slotEl) {
+        const si = parseInt(slotEl.getAttribute('data-slot') || '-1', 10);
+        if (si >= 0) newPlacement[si] = itemIdx;
+      }
+      applyPlacement(newPlacement);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  };
+
+  // Enter/Space на карточке — "взять" (или отпустить, если уже взята эта же).
+  const handleChipKeyDown = (itemIdx: number) => (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (readOnly) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setKeyboardSelected(keyboardSelected === itemIdx ? null : itemIdx);
+    } else if (e.key === 'Escape') {
+      setKeyboardSelected(null);
+    }
+  };
+
+  // Enter/Space на ячейке: если что-то взято — кладём сюда (вытесняя
+  // прежнего жильца обратно в пул); если ячейка занята и ничего не
+  // взято — забираем то, что в ней лежит.
+  const handleSlotKeyDown = (slotIdx: number, occupiedItemIdx: number | undefined) => (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (readOnly) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (keyboardSelected !== null) {
+        const newPlacement: Record<number, number> = { ...placement };
+        Object.keys(newPlacement).forEach((k) => {
+          if (newPlacement[parseInt(k, 10)] === keyboardSelected) delete newPlacement[parseInt(k, 10)];
+        });
+        newPlacement[slotIdx] = keyboardSelected;
+        applyPlacement(newPlacement);
+        setKeyboardSelected(null);
+      } else if (occupiedItemIdx !== undefined) {
+        setKeyboardSelected(occupiedItemIdx);
+      }
+    } else if (e.key === 'Escape') {
+      setKeyboardSelected(null);
+    }
+  };
+
+  const bg = darkMode ? '#2A2420' : '#fff';
+  const poolBg = darkMode ? '#1A1614' : '#fff';
+  const borderDefault = darkMode ? '#3D2817' : '#E4DCC8';
+  const textColor = darkMode ? '#F5E6D3' : '#3D2817';
+  const labelColor = darkMode ? '#B8A898' : '#8A7A65';
+  const accentLabelColor = darkMode ? '#D4A017' : '#A8622E';
+
+  // Плоский однотонный цвет вместо градиента терракота→золото — на
+  // маленькой плашке диагональный градиент читался мутным пятном
+  // ("грязным"), особенно рядом с бежевым фоном пула. Один чистый
+  // насыщенный оттенок + белый текст даёт больше контраста.
+  const chipStyle = (itemIdx: number): React.CSSProperties => ({
+    background: '#D9773F',
+    color: '#fff',
+    border: keyboardSelected === itemIdx ? '2px solid #3D2817' : '2px solid transparent',
+    borderRadius: 9,
+    padding: '7px 14px',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: readOnly ? 'default' : 'grab',
+    touchAction: 'none',
+    boxShadow: keyboardSelected === itemIdx ? '0 0 0 2px #E8B84D' : 'none',
+    whiteSpace: 'nowrap',
+  });
+
+  return (
+    <div style={{ padding: '4px 0', maxWidth: 440 }}>
+      {!readOnly && (
+        <div style={{ fontSize: 11, color: labelColor, marginBottom: 10 }}>
+          С клавиатуры: Tab до карточки → Enter — взять, Tab до ячейки → Enter — положить.
+        </div>
+      )}
+      <div style={{ fontSize: 11, fontWeight: 700, color: accentLabelColor, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
+        Карточки
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, minHeight: 40, background: poolBg, border: `1.5px dashed ${borderDefault}`, borderRadius: 12, padding: 10, marginBottom: 18 }}>
+        {poolItemIndices.length === 0 && (
+          <span style={{ fontSize: 12, color: labelColor }}>Все карточки размещены</span>
+        )}
+        {poolItemIndices.map((itemIdx: number) => (
+          <button
+            key={itemIdx}
+            type="button"
+            onPointerDown={handlePointerDown(itemIdx)}
+            onKeyDown={handleChipKeyDown(itemIdx)}
+            aria-pressed={keyboardSelected === itemIdx}
+            style={chipStyle(itemIdx)}
+          >
+            {items[itemIdx]}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: accentLabelColor, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
+        Куда относится
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {slots.map((label: string, si: number) => {
+          const itemIdx = placement[si];
+          return (
+            <div
+              key={si}
+              data-slot={si}
+              tabIndex={readOnly ? -1 : 0}
+              role="button"
+              aria-label={itemIdx !== undefined ? `Ячейка «${label}», сейчас: ${items[itemIdx]}` : `Ячейка «${label}», пусто`}
+              onKeyDown={handleSlotKeyDown(si, itemIdx)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 12, padding: '9px 14px',
+                borderRadius: 10, border: `1.5px solid ${borderDefault}`, borderLeft: `4px solid #D9773F`,
+                background: bg, outline: 'none', width: 'fit-content', minWidth: 160
+              }}
+            >
+              <span style={{ fontSize: 13, color: textColor, fontWeight: 600, minWidth: 24 }}>{label}</span>
+              {itemIdx !== undefined ? (
+                <button
+                  type="button"
+                  onPointerDown={handlePointerDown(itemIdx)}
+                  onKeyDown={handleChipKeyDown(itemIdx)}
+                  aria-pressed={keyboardSelected === itemIdx}
+                  style={chipStyle(itemIdx)}
+                >
+                  {items[itemIdx]}
+                </button>
+              ) : (
+                <span style={{ fontSize: 12, color: labelColor, fontStyle: 'italic' }}>пусто</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Реализация order: раньше элементы показывались уже в правильном порядке
+// (данные хранятся как data.order_items в верной последовательности), и
+// ученик просто вписывал 1,2,3... не глядя на содержание. Здесь: порядок
+// отображения перемешивается один раз на секцию (useMemo), а расставить
+// заново можно только стрелками вверх/вниз — сознательно НЕ drag, чтобы
+// не повторить ту же ошибку с доступностью, что была у первой версии
+// drag_drop (обычные <button>, работают с клавиатуры и скринридером
+// из коробки, никакого Pointer Events здесь не нужно).
+//
+// Формат answer меняется: теперь это массив ОРИГИНАЛЬНЫХ индексов в том
+// порядке, в котором их расставил ученик (а не массив вписанных вручную
+// номеров) — поэтому calcScore для order тоже обновлён (см. ниже),
+// сравнивает answer[i] === i вместо старого answer[i] === i+1.
+function OrderableList({ items, answer, onChange, readOnly = false, darkMode = false }: any) {
+  const initialOrder = useMemo(() => {
+    return shuffleArray(items.map((_: any, i: number) => i));
+  }, [items]);
+
+  useEffect(() => {
+    if (!Array.isArray(answer) || answer.length !== items.length) {
+      onChange(initialOrder);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const order: number[] = Array.isArray(answer) && answer.length === items.length ? answer : initialOrder;
+
+  const move = (pos: number, dir: -1 | 1) => {
+    if (readOnly) return;
+    const target = pos + dir;
+    if (target < 0 || target >= order.length) return;
+    const next = [...order];
+    const tmp = next[pos]; next[pos] = next[target]; next[target] = tmp;
+    onChange(next);
+  };
+
+  const bg = darkMode ? '#2A2420' : '#fff';
+  const border = darkMode ? '#3D2817' : '#E8DCC8';
+  const textColor = darkMode ? '#F5E6D3' : '#3D2817';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {order.map((origIdx, pos) => (
+        <div key={origIdx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, border: `2px solid ${border}`, background: bg }}>
+          <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#C67B4B,#B8860B)', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {pos + 1}
+          </div>
+          <span style={{ flex: 1, fontSize: 14, color: textColor, fontWeight: 500 }}>{items[origIdx]}</span>
+          {!readOnly && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <button type="button" aria-label="Переместить выше" onClick={() => move(pos, -1)} disabled={pos === 0} style={{ width: 22, height: 18, border: 'none', borderRadius: 4, background: pos === 0 ? (darkMode ? '#3D2817' : '#E8DCC8') : '#C67B4B', color: '#fff', fontSize: 10, cursor: pos === 0 ? 'default' : 'pointer' }}>▲</button>
+              <button type="button" aria-label="Переместить ниже" onClick={() => move(pos, 1)} disabled={pos === order.length - 1} style={{ width: 22, height: 18, border: 'none', borderRadius: 4, background: pos === order.length - 1 ? (darkMode ? '#3D2817' : '#E8DCC8') : '#C67B4B', color: '#fff', fontSize: 10, cursor: pos === order.length - 1 ? 'default' : 'pointer' }}>▼</button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Реализация assembly: та же болезнь, что была у order — плашки
+// показывались в порядке хранения (= правильном порядке), достаточно
+// было кликать слева направо. Плашки теперь перемешаны (useMemo), плюс
+// добавлена полоска предпросмотра — раньше собранная последовательность
+// нигде не показывалась текстом, только подсветкой самих кнопок, из-за
+// чего порядок клика было легко потерять из виду.
+// calcScore для assembly НЕ менялся: answer как был, так и остаётся
+// массивом оригинальных индексов в порядке клика — просто визуальный
+// порядок плашек больше не совпадает с этим массивом по умолчанию.
+function AssemblyPicker({ assemblyParts, answer, onChange, readOnly = false, darkMode = false }: any) {
+  const shuffledOrder = useMemo(() => {
+    return shuffleArray(assemblyParts.map((_: any, i: number) => i));
+  }, [assemblyParts]);
+
+  const selected: number[] = Array.isArray(answer) ? answer : [];
+
+  const toggle = (i: number) => {
+    if (readOnly) return;
+    if (selected.includes(i)) {
+      onChange(selected.filter((x: number) => x !== i));
+    } else {
+      onChange([...selected, i]);
+    }
+  };
+
+  const bg = darkMode ? '#2A2420' : '#fff';
+  const poolBg = darkMode ? '#1A1614' : '#FAF3E8';
+  const border = darkMode ? '#3D2817' : '#E8DCC8';
+  const textColor = darkMode ? '#F5E6D3' : '#3D2817';
+  const mutedColor = darkMode ? '#B8A898' : '#6B4E3A';
+
+  return (
+    <div>
+      <div style={{ minHeight: 44, background: poolBg, border: `2px dashed ${border}`, borderRadius: 12, padding: 10, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {selected.length === 0 ? (
+          <span style={{ fontSize: 12, color: mutedColor }}>Твой ответ соберётся здесь по мере клика</span>
+        ) : (
+          selected.map((idx: number, pos: number) => (
+            <span key={pos} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '4px 10px', fontSize: 13, color: textColor, fontWeight: 600 }}>
+              {assemblyParts[idx]}
+            </span>
+          ))
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {shuffledOrder.map((i: number) => {
+          const isSelected = selected.includes(i);
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={readOnly}
+              onClick={() => toggle(i)}
+              style={{
+                background: isSelected ? 'linear-gradient(135deg,#C67B4B,#B8860B)' : bg,
+                color: isSelected ? '#fff' : textColor,
+                border: `2px solid ${isSelected ? 'transparent' : border}`,
+                borderRadius: 10, padding: '9px 16px', fontSize: 14, fontWeight: 600,
+                cursor: readOnly ? 'default' : 'pointer', opacity: isSelected ? 0.55 : 1
+              }}
+            >
+              {assemblyParts[i]}
+            </button>
+          );
+        })}
+      </div>
+      {selected.length > 0 && !readOnly && (
+        <button type="button" onClick={() => onChange([])} style={{ marginTop: 10, fontSize: 12, color: mutedColor, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+          Очистить
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Реализация match: раньше — <select> с фильтрацией уже занятых right,
+// визуально ничем не отличался от drag_drop до сегодняшних правок.
+// Теперь match и drag_drop выглядят и ощущаются по-разному, но оба
+// современные: drag_drop — физически поднимаешь и роняешь карточку
+// (данные item/target, это "разложи по местам"); match — тянешь линию
+// от точки к точке (данные pairs left/right, это "свяжи пары"). Разная
+// механика отражает разную структуру данных, а не просто разный стиль
+// на одну и ту же задачу.
+//
+// Формат answer не меняется — { [индекс_left]: "строка_right" }, тот же,
+// что был у select-версии, поэтому calcScore для match не тронут.
+function MatchConnector({ pairs, answer, onChange, readOnly = false, darkMode = false }: any) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const leftRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const rightRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const tempLineRef = useRef<SVGLineElement | null>(null);
+  const draggingFrom = useRef<number | null>(null);
+
+  // Клавиатурный путь: Enter/Space на точке слева выбирает её, Enter/Space
+  // на точке справа завершает соединение — тот же принцип "выбери-затем-
+  // подтверди", что и в DragDropCards, работает параллельно перетаскиванию.
+  const [keyboardSelected, setKeyboardSelected] = useState<number | null>(null);
+
+  const shuffledRight = useMemo(() => {
+    return shuffleArray(pairs.map((p: any) => p.right));
+  }, [pairs]);
+
+  const connections: Record<number, string> = answer || {};
+
+  const dotCenter = (el: HTMLElement | null) => {
+    if (!el || !svgRef.current) return { x: 0, y: 0 };
+    const r = el.getBoundingClientRect();
+    const sr = svgRef.current.getBoundingClientRect();
+    return { x: r.left + r.width / 2 - sr.left, y: r.top + r.height / 2 - sr.top };
+  };
+
+  const svgPoint = (clientX: number, clientY: number) => {
+    if (!svgRef.current) return { x: 0, y: 0 };
+    const sr = svgRef.current.getBoundingClientRect();
+    return { x: clientX - sr.left, y: clientY - sr.top };
+  };
+
+  const redraw = () => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    Array.from(svg.querySelectorAll('.perm-line')).forEach((l) => l.remove());
+    Object.keys(connections).forEach((key) => {
+      const li = parseInt(key, 10);
+      const rightVal = connections[li];
+      const ri = shuffledRight.indexOf(rightVal);
+      if (ri === -1) return;
+      const p1 = dotCenter(leftRefs.current[li]);
+      const p2 = dotCenter(rightRefs.current[ri]);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'perm-line');
+      line.setAttribute('x1', String(p1.x));
+      line.setAttribute('y1', String(p1.y));
+      line.setAttribute('x2', String(p2.x));
+      line.setAttribute('y2', String(p2.y));
+      line.setAttribute('stroke', '#C67B4B');
+      line.setAttribute('stroke-width', '3');
+      line.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(line);
+    });
+  };
+
+  useEffect(() => { redraw(); });
+  useEffect(() => {
+    const onResize = () => redraw();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const cleanupTemp = () => {
+    if (tempLineRef.current) { tempLineRef.current.remove(); tempLineRef.current = null; }
+    draggingFrom.current = null;
+    leftRefs.current.forEach((d) => { if (d) d.style.background = darkMode ? '#2A2420' : '#fff'; });
+  };
+
+  const connectTo = (leftIdx: number, rightVal: string) => {
+    const newConnections: Record<number, string> = { ...connections };
+    Object.keys(newConnections).forEach((k) => {
+      const idx = parseInt(k, 10);
+      if (newConnections[idx] === rightVal && idx !== leftIdx) delete newConnections[idx];
+    });
+    newConnections[leftIdx] = rightVal;
+    onChange(newConnections);
+  };
+
+  const handlePointerDown = (i: number) => (e: React.PointerEvent) => {
+    if (readOnly) return;
+    e.preventDefault();
+    draggingFrom.current = i;
+    const dot = leftRefs.current[i];
+    const svg = svgRef.current;
+    if (!dot || !svg) return;
+    try { dot.setPointerCapture(e.pointerId); } catch (err) {}
+    dot.style.background = '#C67B4B';
+    const p1 = dotCenter(dot);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', String(p1.x)); line.setAttribute('y1', String(p1.y));
+    line.setAttribute('x2', String(p1.x)); line.setAttribute('y2', String(p1.y));
+    line.setAttribute('stroke', '#C67B4B');
+    line.setAttribute('stroke-width', '3');
+    line.setAttribute('stroke-dasharray', '6 4');
+    line.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(line);
+    tempLineRef.current = line;
+  };
+
+  const handlePointerMove = (i: number) => (e: React.PointerEvent) => {
+    if (draggingFrom.current !== i || !tempLineRef.current) return;
+    const p = svgPoint(e.clientX, e.clientY);
+    tempLineRef.current.setAttribute('x2', String(p.x));
+    tempLineRef.current.setAttribute('y2', String(p.y));
+  };
+
+  const handlePointerUp = (i: number) => (e: React.PointerEvent) => {
+    if (draggingFrom.current !== i) return;
+    const clientX = e.clientX, clientY = e.clientY;
+    const elAtPoint = document.elementFromPoint(clientX, clientY);
+    let hitIndex: number | null = null;
+    rightRefs.current.forEach((rd, ri) => { if (rd === elAtPoint) hitIndex = ri; });
+    if (hitIndex === null) {
+      let best: number | null = null, bestDist = 34;
+      rightRefs.current.forEach((rd, ri) => {
+        const c = dotCenter(rd);
+        const p = svgPoint(clientX, clientY);
+        const dist = Math.hypot(c.x - p.x, c.y - p.y);
+        if (dist < bestDist) { bestDist = dist; best = ri; }
+      });
+      hitIndex = best;
+    }
+    if (hitIndex !== null) connectTo(i, shuffledRight[hitIndex]);
+    cleanupTemp();
+  };
+
+  const handleLeftKeyDown = (i: number) => (e: React.KeyboardEvent) => {
+    if (readOnly) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setKeyboardSelected(keyboardSelected === i ? null : i);
+    } else if (e.key === 'Escape') {
+      setKeyboardSelected(null);
+    }
+  };
+
+  const handleRightKeyDown = (ri: number) => (e: React.KeyboardEvent) => {
+    if (readOnly) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (keyboardSelected === null) return;
+      connectTo(keyboardSelected, shuffledRight[ri]);
+      setKeyboardSelected(null);
+    } else if (e.key === 'Escape') {
+      setKeyboardSelected(null);
+    }
+  };
+
+  const bg = darkMode ? '#2A2420' : '#fff';
+  const textColor = darkMode ? '#F5E6D3' : '#3D2817';
+  const labelColor = darkMode ? '#B8A898' : '#6B4E3A';
+
+  return (
+    <div style={{ position: 'relative', padding: '20px 4px', userSelect: 'none', maxWidth: 420 }}>
+      {!readOnly && (
+        <div style={{ fontSize: 11, color: labelColor, marginBottom: 12 }}>
+          С клавиатуры: Tab до точки слева → Enter — выбрать, Tab до точки справа → Enter — соединить.
+        </div>
+      )}
+      <svg ref={svgRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {pairs.map((p: any, i: number) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 14, color: textColor, fontWeight: 500 }}>{p.left}</span>
+              <button
+                type="button"
+                ref={(el) => { leftRefs.current[i] = el; }}
+                onPointerDown={handlePointerDown(i)}
+                onPointerMove={handlePointerMove(i)}
+                onPointerUp={handlePointerUp(i)}
+                onPointerCancel={cleanupTemp}
+                onKeyDown={handleLeftKeyDown(i)}
+                aria-label={`Точка: ${p.left}`}
+                aria-pressed={keyboardSelected === i}
+                style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  border: keyboardSelected === i ? '2px solid #3D2817' : '2px solid #C67B4B',
+                  background: keyboardSelected === i ? '#C67B4B' : bg,
+                  cursor: readOnly ? 'default' : 'grab', padding: 0, flexShrink: 0,
+                  touchAction: 'none', boxShadow: keyboardSelected === i ? '0 0 0 2px #B8860B' : 'none'
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {shuffledRight.map((rightVal: string, ri: number) => (
+            <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                type="button"
+                ref={(el) => { rightRefs.current[ri] = el; }}
+                onKeyDown={handleRightKeyDown(ri)}
+                aria-label={`Точка: ${rightVal}`}
+                style={{
+                  width: 20, height: 20, borderRadius: '50%', border: '2px solid #B8860B',
+                  background: bg, padding: 0, flexShrink: 0, cursor: readOnly ? 'default' : 'pointer'
+                }}
+              />
+              <span style={{ fontSize: 14, color: textColor, fontWeight: 500 }}>{rightVal}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuestionCard({ section, answer, onChange, studentComment, onCommentChange, showComment = true, isStudent = false, attachment, onAttachmentChange, studentId, darkMode = false, readOnly = false }: any) {
   const type = typeof section?.type === 'string' ? section.type : 'text';
   const typeInfo = TASK_TYPES[type] || TASK_TYPES.text;
   const data = section?.data || section || {};
 
-  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-orange-100';
-  const bgHeader = darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gradient-to-r from-orange-50 to-amber-50 border-orange-100';
-  const bgTask = darkMode ? 'bg-gray-700 border-orange-700' : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-400';
-  const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900';
-  const bgOption = darkMode ? 'bg-gray-700 border-gray-600 hover:border-orange-400' : 'bg-white border-orange-100 hover:border-orange-300';
-  const bgOptionSelected = darkMode ? 'border-orange-500 bg-orange-900/20' : 'border-orange-500 bg-orange-50';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-300' : 'text-gray-700';
-  const textMuted = darkMode ? 'text-gray-400' : 'text-gray-500';
-  const textAccent = darkMode ? 'text-orange-300' : 'text-orange-700';
+  const bgCard = darkMode ? 'bg-[#2A2420] border-[#2A2420]' : 'bg-white border-[#F5E4D5]';
+  const bgHeader = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-gradient-to-r from-[#FAF3E8] to-[#F6ECCF] border-[#F5E4D5]';
+  const bgTask = darkMode ? 'bg-[#2A2420] border-[#8B5A2E]' : 'bg-gradient-to-br from-[#FAF3E8] to-[#F6ECCF] border-[#D18F5C]';
+  const bgInput = darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]';
+  const bgOption = darkMode ? 'bg-[#2A2420] border-[#3D2817] hover:border-[#D18F5C]' : 'bg-white border-[#F5E4D5] hover:border-[#DCC7AA]';
+  const bgOptionSelected = darkMode ? 'border-[#C67B4B] bg-[#3D2817]/20' : 'border-[#C67B4B] bg-[#FAF3E8]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
+  const textMuted = darkMode ? 'text-[#8A7A6A]' : 'text-[#6B4E3A]';
+  const textAccent = darkMode ? 'text-[#DCC7AA]' : 'text-[#8B5A2E]';
   const taskText = formatDisplayText(data?.task_text || data?.text);
   const sectionTitle = formatDisplayText(section?.title || 'Задание');
   const currentAnswer = typeof answer === 'string' ? answer : (typeof answer?.text === 'string' ? answer.text : formatDisplayText(answer));
@@ -345,28 +1118,28 @@ function QuestionCard({ section, answer, onChange, studentComment, onCommentChan
       <div className={`p-6 border-b-2 ${bgHeader}`}>
         <h3 className={`text-xl font-bold ${textPrimary} mb-3`}>{sectionTitle}</h3>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="px-3 py-1.5 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-lg text-xs font-semibold shadow-sm">{typeInfo.icon} {typeInfo.label}</span>
-          <span className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-white rounded-lg text-xs font-semibold shadow-sm">⭐ {section.max_score || 1} балла</span>
-          {readOnly && <span className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-1"><Hourglass className="w-3 h-3" /> Ожидает проверки</span>}
+          <span className="px-3 py-1.5 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg text-xs font-semibold shadow-sm">{typeInfo.icon} {typeInfo.label}</span>
+          <span className="px-3 py-1.5 bg-gradient-to-r from-[#B8860B] to-[#B8860B] text-white rounded-lg text-xs font-semibold shadow-sm">⭐ {pluralizeBall(section.max_score || 1)}</span>
+          {readOnly && <span className="px-3 py-1.5 bg-gradient-to-r from-[#B8860B] to-[#D4A017] text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-1"><Hourglass className="w-3 h-3" /> Ожидает проверки</span>}
         </div>
       </div>
       <div className="p-6 space-y-6">
         {data?.image_url && (
-          <div className={`rounded-xl p-4 border-2 ${darkMode ? 'bg-gray-700 border-orange-700' : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200'}`}>
+          <div className={`rounded-xl p-4 border-2 ${darkMode ? 'bg-[#2A2420] border-[#8B5A2E]' : 'bg-gradient-to-br from-[#FAF3E8] to-[#F6ECCF] border-[#E8DCC8]'}`}>
             <img src={data.image_url} alt="Задание" className="max-w-full max-h-80 rounded-lg mx-auto" loading="lazy" />
           </div>
         )}
         {taskText && (
           <div className={`rounded-xl p-5 border-l-4 ${bgTask}`}>
             <p className={`text-xs font-semibold ${textAccent} mb-2 uppercase tracking-wide`}>Условие</p>
-            <p className={`text-base leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{taskText}</p>
+            <p className={`text-base leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-[#E8DCC8]' : 'text-[#6B4E3A]'}`}>{taskText}</p>
           </div>
         )}
 
         {(type === "text" || type === "photo") && (
           <div className="space-y-3">
             <label className={`block text-sm font-semibold ${textSecondary}`}>{readOnly ? 'Ваш ответ' : 'Ваш ответ'}</label>
-            <textarea value={currentAnswer} onChange={(e) => !readOnly && onChange(e.target.value)} readOnly={readOnly} rows={4} placeholder={readOnly ? '' : "Введите ваш ответ..."} className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 focus:outline-none resize-none transition-all text-base ${bgInput} ${readOnly ? 'opacity-90 cursor-default' : ''}`} />
+            <textarea value={currentAnswer} onChange={(e) => !readOnly && onChange(e.target.value)} readOnly={readOnly} rows={4} placeholder={readOnly ? '' : "Введите ваш ответ..."} className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-4 focus:ring-[#C67B4B]/20 focus:border-[#C67B4B] focus:outline-none resize-none transition-all text-base ${bgInput} ${readOnly ? 'opacity-90 cursor-default' : ''}`} />
             {isStudent && !readOnly && <StudentFileUploader value={attachment} onChange={onAttachmentChange} studentId={studentId} sectionId={section.id} darkMode={darkMode} />}
           </div>
         )}
@@ -379,7 +1152,7 @@ function QuestionCard({ section, answer, onChange, studentComment, onCommentChan
                 const isSelected = type === "single_choice" ? answer === oi : (Array.isArray(answer) ? answer.includes(oi) : false);
                 return (
                   <motion.label key={oi} whileHover={readOnly ? {} : { scale: 1.01 }} whileTap={readOnly ? {} : { scale: 0.99 }} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${readOnly ? '' : 'cursor-pointer'} ${isSelected ? bgOptionSelected : bgOption}`}>
-                    <input type={type === "single_choice" ? "radio" : "checkbox"} checked={isSelected} disabled={readOnly} onChange={() => { if (readOnly) return; if (type === "single_choice") onChange(oi); else { const current = Array.isArray(answer) ? answer : []; onChange(current.includes(oi) ? current.filter((x: number) => x !== oi) : [...current, oi]); } }} className="w-5 h-5 text-orange-600 border-orange-300 focus:ring-orange-500" />
+                    <input type={type === "single_choice" ? "radio" : "checkbox"} checked={isSelected} disabled={readOnly} onChange={() => { if (readOnly) return; if (type === "single_choice") onChange(oi); else { const current = Array.isArray(answer) ? answer : []; onChange(current.includes(oi) ? current.filter((x: number) => x !== oi) : [...current, oi]); } }} className="w-5 h-5 text-[#A86535] border-[#DCC7AA] focus:ring-[#C67B4B]" />
                     <span className={`text-base font-medium ${textSecondary}`}>{String.fromCharCode(65 + oi)}. {opt}</span>
                   </motion.label>
                 );
@@ -390,38 +1163,15 @@ function QuestionCard({ section, answer, onChange, studentComment, onCommentChan
 
         {type === "order" && orderItems.length > 0 && (
           <div className="space-y-3">
-            <p className={`font-semibold ${textSecondary}`}>Расположите элементы в правильном порядке:</p>
-            <div className="space-y-2">
-              {orderItems.map((item: string, i: number) => (
-                <div key={i} className={`flex items-center gap-3 p-4 rounded-xl border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
-                  <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg text-white text-sm font-bold flex items-center justify-center flex-shrink-0">{i + 1}</div>
-                  <input type="number" min={1} max={orderItems.length} disabled={readOnly} value={(answer?.[i] || i + 1)} onChange={(e) => { if (readOnly) return; const newAnswer = [...(answer || orderItems.map((_: any, idx: number) => idx + 1))]; newAnswer[i] = parseInt(e.target.value) || (i + 1); onChange(newAnswer); }} className={`w-16 px-3 py-2 border-2 rounded-lg text-center text-base font-bold focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                  <span className={`flex-1 text-base font-medium ${textSecondary}`}>{item}</span>
-                </div>
-              ))}
-            </div>
+            <p className={`font-semibold ${textSecondary}`}>Расставь элементы в правильном порядке (стрелками):</p>
+            <OrderableList items={orderItems} answer={answer} onChange={onChange} readOnly={readOnly} darkMode={darkMode} />
           </div>
         )}
 
         {type === "match" && pairs.length > 0 && (
           <div className="space-y-3">
-            <p className={`font-semibold ${textSecondary}`}>Установите соответствие:</p>
-            <div className="space-y-2">
-              {pairs.map((p: any, pi: number) => {
-                const usedValues = Object.values(answer || {}).filter((_, idx) => idx !== pi);
-                const availableOptions = pairs.filter((r: any) => !usedValues.includes(r.right));
-                return (
-                  <div key={pi} className={`flex items-center gap-3 p-4 rounded-xl border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
-                    <span className={`flex-1 text-base font-medium ${textSecondary}`}>{p.left}</span>
-                    <span className="text-orange-500 font-bold text-xl">→</span>
-                    <select value={(answer || {})[pi] || ""} disabled={readOnly} onChange={(e) => { if (readOnly) return; onChange({ ...answer, [pi]: e.target.value }); }} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 focus:outline-none ${bgInput}`}>
-                      <option value="">Выберите...</option>
-                      {availableOptions.map((r: any, ri: number) => (<option key={ri} value={r.right}>{r.right}</option>))}
-                    </select>
-                  </div>
-                );
-              })}
-            </div>
+            <p className={`font-semibold ${textSecondary}`}>Соедините пары линией — нажми на точку слева и потяни к нужной точке справа:</p>
+            <MatchConnector pairs={pairs} answer={answer} onChange={onChange} readOnly={readOnly} darkMode={darkMode} />
           </div>
         )}
 
@@ -430,61 +1180,37 @@ function QuestionCard({ section, answer, onChange, studentComment, onCommentChan
             <p className={`font-semibold ${textSecondary}`}>Заполните пропуски (___):</p>
             {data?.blanks_text && (
               <div className={`rounded-xl p-5 border-l-4 ${bgTask}`}>
-                <p className={`text-base leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{data.blanks_text}</p>
+                <p className={`text-base leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-[#E8DCC8]' : 'text-[#6B4E3A]'}`}>{data.blanks_text}</p>
               </div>
             )}
             <div>
               <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>Ваши ответы (через запятую):</label>
-              <input type="text" value={typeof answer === 'string' ? answer : ''} readOnly={readOnly} onChange={(e) => { if (readOnly) return; onChange(e.target.value); }} placeholder={readOnly ? '' : "ответ1, ответ2, ответ3"} className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 focus:outline-none text-base ${bgInput}`} />
+              <input type="text" value={typeof answer === 'string' ? answer : ''} readOnly={readOnly} onChange={(e) => { if (readOnly) return; onChange(e.target.value); }} placeholder={readOnly ? '' : "ответ1, ответ2, ответ3"} className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-4 focus:ring-[#C67B4B]/20 focus:border-[#C67B4B] focus:outline-none text-base ${bgInput}`} />
             </div>
           </div>
         )}
 
         {type === "assembly" && assemblyParts.length > 0 && (
           <div className="space-y-3">
-            <p className={`font-semibold ${textSecondary}`}>Соберите правильный ответ из частей:</p>
-            <div className={`flex flex-wrap gap-2 p-4 rounded-xl border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
-              {assemblyParts.map((part: string, i: number) => {
-                const isSelected = (answer || []).includes(i);
-                return (
-                  <motion.button key={i} whileHover={readOnly ? {} : { scale: 1.05 }} whileTap={readOnly ? {} : { scale: 0.95 }} disabled={readOnly} onClick={() => { if (readOnly) return; const current = answer || []; onChange(isSelected ? current.filter((x: number) => x !== i) : [...current, i]); }} className={`px-4 py-2 rounded-lg text-base font-medium transition-all ${isSelected ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow' : darkMode ? 'bg-gray-800 border-2 border-gray-600 text-gray-300 hover:border-orange-400' : 'bg-white border-2 border-orange-200 text-gray-700 hover:border-orange-400'}`}>
-                    {part}
-                  </motion.button>
-                );
-              })}
-            </div>
+            <p className={`font-semibold ${textSecondary}`}>Соберите правильный ответ из частей — жми по кусочкам в нужном порядке:</p>
+            <AssemblyPicker assemblyParts={assemblyParts} answer={answer} onChange={onChange} readOnly={readOnly} darkMode={darkMode} />
           </div>
         )}
 
         {type === "drag_drop" && dragItems.length > 0 && (
           <div className="space-y-3">
-            <p className={`font-semibold ${textSecondary}`}>Сопоставьте элементы с их целями:</p>
-            <div className="space-y-2">
-              {dragItems.map((item: any, i: number) => {
-                const usedTargets = Object.values(answer || {}).filter((_, idx) => idx !== i);
-                const availableTargets = dragItems.filter((d: any) => !usedTargets.includes(d.target));
-                return (
-                  <div key={i} className={`flex items-center gap-3 p-4 rounded-xl border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
-                    <span className={`flex-1 text-base font-medium ${textSecondary}`}>{item.item}</span>
-                    <span className="text-orange-500 font-bold text-xl">→</span>
-                    <select value={(answer || {})[i] || ""} disabled={readOnly} onChange={(e) => { if (readOnly) return; onChange({ ...answer, [i]: e.target.value }); }} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 focus:outline-none ${bgInput}`}>
-                      <option value="">Выберите цель...</option>
-                      {availableTargets.map((d: any, di: number) => (<option key={di} value={d.target}>{d.target}</option>))}
-                    </select>
-                  </div>
-                );
-              })}
-            </div>
+            <p className={`font-semibold ${textSecondary}`}>Перетащи карточку в нужную ячейку:</p>
+            <DragDropCards dragItems={dragItems} answer={answer} onChange={onChange} readOnly={readOnly} darkMode={darkMode} />
           </div>
         )}
 
         {showComment && !readOnly && (
-          <div className={`border-t-2 pt-4 ${darkMode ? 'border-gray-700' : 'border-orange-100'}`}>
+          <div className={`border-t-2 pt-4 ${darkMode ? 'border-[#2A2420]' : 'border-[#F5E4D5]'}`}>
             <div className="flex items-center gap-2 mb-2">
-              <MessageCircle className={`w-4 h-4 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+              <MessageCircle className={`w-4 h-4 ${darkMode ? 'text-[#D2A954]' : 'text-[#96690A]'}`} />
               <label className={`text-sm font-semibold ${textSecondary}`}>Вопрос учителю (необязательно)</label>
             </div>
-            <textarea value={studentComment || ''} onChange={(e) => onCommentChange && onCommentChange(e.target.value)} placeholder="Если что-то непонятно — напишите здесь..." rows={2} className={`w-full px-3 py-2 border-2 rounded-xl focus:border-blue-500 focus:outline-none resize-none text-sm ${darkMode ? 'bg-blue-900/10 border-gray-600 text-white' : 'bg-blue-50/30 border-blue-200 text-gray-900'}`} />
+            <textarea value={studentComment || ''} onChange={(e) => onCommentChange && onCommentChange(e.target.value)} placeholder="Если что-то непонятно — напишите здесь..." rows={2} className={`w-full px-3 py-2 border-2 rounded-xl focus:border-[#B8860B] focus:outline-none resize-none text-sm ${darkMode ? 'bg-[#4A3405]/10 border-[#3D2817] text-[#F5E6D3]' : 'bg-[#F6ECCF]/30 border-[#EAD9A8] text-[#3D2817]'}`} />
           </div>
         )}
       </div>
@@ -508,25 +1234,26 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
   const testScore = convertToTestScore(score, conversionScale);
   const maxTestScore = conversionScale ? convertToTestScore(maxScore, conversionScale) : null;
 
-  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-orange-100';
+  const bgCard = darkMode ? 'bg-[#2A2420] border-[#2A2420]' : 'bg-white border-[#F5E4D5]';
   const bgHeader = pendingReview
-    ? (darkMode ? 'bg-blue-900/20 border-blue-700' : 'bg-blue-50 border-blue-200')
-    : isCorrect ? (darkMode ? 'bg-emerald-900/20 border-emerald-700' : 'bg-emerald-50 border-emerald-200') : (darkMode ? 'bg-rose-900/20 border-rose-700' : 'bg-rose-50 border-rose-200');
-  const bgTask = darkMode ? 'bg-gray-700 border-orange-700' : 'bg-orange-50 border-orange-400';
+    ? (darkMode ? 'bg-[#4A3405]/20 border-[#7A5608]' : 'bg-[#F6ECCF] border-[#EAD9A8]')
+    : isCorrect ? (darkMode ? 'bg-[#2A2E26]/20 border-[#4A4F42]' : 'bg-[#DCEBD2] border-[#A9C596]') : (darkMode ? 'bg-[#3D1515]/20 border-[#6B2626]' : 'bg-[#F5DEDA] border-[#ECC2C2]');
+  const bgTask = darkMode ? 'bg-[#2A2420] border-[#8B5A2E]' : 'bg-[#FAF3E8] border-[#D18F5C]';
   const bgAnswer = pendingReview
-    ? (darkMode ? 'bg-blue-900/10 border-blue-700' : 'bg-blue-50 border-blue-200')
-    : isCorrect ? (darkMode ? 'bg-emerald-900/10 border-emerald-700' : 'bg-emerald-50 border-emerald-200') : (darkMode ? 'bg-rose-900/10 border-rose-700' : 'bg-rose-50 border-rose-200');
-  const bgCorrect = darkMode ? 'bg-emerald-900/10 border-emerald-700' : 'bg-emerald-50 border-emerald-200';
-  const bgComment = darkMode ? 'bg-blue-900/10 border-blue-700' : 'bg-blue-50 border-blue-200';
-  const bgQuestion = darkMode ? 'bg-purple-900/10 border-purple-700' : 'bg-purple-50 border-purple-200';
-  const bgScore = darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200';
-  const bgTest = darkMode ? 'bg-purple-900/10 border-purple-700' : 'bg-purple-50 border-purple-200';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-300' : 'text-gray-700';
-  const textMuted = darkMode ? 'text-gray-400' : 'text-gray-500';
-  const textAccent = darkMode ? 'text-orange-300' : 'text-orange-700';
+    ? (darkMode ? 'bg-[#4A3405]/10 border-[#7A5608]' : 'bg-[#F6ECCF] border-[#EAD9A8]')
+    : isCorrect ? (darkMode ? 'bg-[#2A2E26]/10 border-[#4A4F42]' : 'bg-[#DCEBD2] border-[#A9C596]') : (darkMode ? 'bg-[#3D1515]/10 border-[#6B2626]' : 'bg-[#F5DEDA] border-[#ECC2C2]');
+  const bgCorrect = darkMode ? 'bg-[#2A2E26]/10 border-[#4A4F42]' : 'bg-[#DCEBD2] border-[#A9C596]';
+  const bgComment = darkMode ? 'bg-[#4A3405]/10 border-[#7A5608]' : 'bg-[#F6ECCF] border-[#EAD9A8]';
+  const bgQuestion = darkMode ? 'bg-[#2E1A1E]/10 border-[#5A333A]' : 'bg-[#F0E3E5] border-[#DFC3C8]';
+  const bgScore = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]';
+  const bgTest = darkMode ? 'bg-[#2E1A1E]/10 border-[#5A333A]' : 'bg-[#F0E3E5] border-[#DFC3C8]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
+  const textMuted = darkMode ? 'text-[#8A7A6A]' : 'text-[#6B4E3A]';
+  const textAccent = darkMode ? 'text-[#DCC7AA]' : 'text-[#8B5A2E]';
   const sectionTitle = formatDisplayText(section.title || 'Задание');
-  const answerText = formatDisplayText(answer);
+  const answerText = formatAnswerForDisplay(section, answer);
+  const gradedBreakdown = !pendingReview ? getGradedBreakdown(section, answer) : null;
   const correctAnswerText = formatDisplayText(data.correct_answer);
   const teacherCommentText = formatDisplayText(comment);
   const studentQuestionText = formatDisplayText(studentComment);
@@ -540,9 +1267,9 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
         <div className="flex items-center justify-between">
           <h3 className={`text-xl font-bold ${textPrimary}`}>{sectionTitle}</h3>
           {pendingReview ? (
-            <div className="px-4 py-2 rounded-xl font-bold bg-gradient-to-r from-blue-500 to-cyan-500 text-white flex items-center gap-1"><Hourglass className="w-4 h-4" /> На проверке</div>
+            <div className="px-4 py-2 rounded-xl font-bold bg-gradient-to-r from-[#B8860B] to-[#D4A017] text-white flex items-center gap-1"><Hourglass className="w-4 h-4" /> На проверке</div>
           ) : (
-            <div className={`px-4 py-2 rounded-xl font-bold ${isCorrect ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white' : 'bg-gradient-to-r from-rose-500 to-pink-500 text-white'}`}>{score}/{maxScore}</div>
+            <div className={`px-4 py-2 rounded-xl font-bold ${isCorrect ? 'bg-gradient-to-r from-[#6B705C] to-[#5F7A66] text-white' : 'bg-gradient-to-r from-[#8B3A3A] to-[#8B3A3A] text-white'}`}>{score}/{maxScore}</div>
           )}
         </div>
       </div>
@@ -550,14 +1277,43 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
         {(data.task_text || data.text) && (
           <div className={`rounded-xl p-5 border-l-4 ${bgTask}`}>
             <p className={`text-xs font-semibold ${textAccent} mb-2 uppercase tracking-wide`}>Условие</p>
-            <p className={`text-base leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{formatDisplayText(data.task_text || data.text)}</p>
+            <p className={`text-base leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-[#E8DCC8]' : 'text-[#6B4E3A]'}`}>{formatDisplayText(data.task_text || data.text)}</p>
           </div>
         )}
         <div>
           <p className={`text-sm font-semibold ${textMuted} mb-2`}>Ваш ответ:</p>
-          <div className={`rounded-xl p-4 border-2 ${bgAnswer}`}>
-            <p className={`text-base whitespace-pre-wrap ${textPrimary}`}>{answerText || <span className="italic opacity-60">Текстового ответа нет</span>}</p>
-          </div>
+          {gradedBreakdown ? (
+            <div className="space-y-2">
+              {gradedBreakdown.map((row, idx) => (
+                <div
+                  key={idx}
+                  className={`rounded-lg p-3 border-2 flex items-center justify-between gap-3 ${
+                    row.correct
+                      ? (darkMode ? 'bg-[#2A2E26]/20 border-[#4A4F42]' : 'bg-[#DCEBD2] border-[#A9C596]')
+                      : (darkMode ? 'bg-[#3D1515]/20 border-[#6B2626]' : 'bg-[#F5DEDA] border-[#ECC2C2]')
+                  }`}
+                >
+                  <span className={`text-sm font-medium ${textPrimary}`}>{row.label}</span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {row.correct ? (
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${darkMode ? 'bg-[#4A4F42] text-[#DCEBD2]' : 'bg-[#6B705C] text-white'}`}>✓ верно</span>
+                    ) : (
+                      <>
+                        {row.correctLabel && (
+                          <span className={`text-xs italic ${textMuted}`}>верно: {row.correctLabel}</span>
+                        )}
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${darkMode ? 'bg-[#6B2626] text-[#F5DEDA]' : 'bg-[#8B3A3A] text-white'}`}>✗</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={`rounded-xl p-4 border-2 ${bgAnswer}`}>
+              <p className={`text-base whitespace-pre-wrap ${textPrimary}`}>{answerText || <span className="italic opacity-60">Текстового ответа нет</span>}</p>
+            </div>
+          )}
           {photos.length > 0 && (
             <div className="mt-3">
               <p className={`text-sm font-semibold ${textMuted} mb-2`}>📎 Прикреплённые фото ({photos.length}):</p>
@@ -574,7 +1330,7 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
                         setPreviewImage(photo);
                       }
                     }}
-                    className="rounded-lg overflow-hidden border-2 border-orange-200 text-left cursor-pointer"
+                    className="rounded-lg overflow-hidden border-2 border-[#E8DCC8] text-left cursor-pointer"
                   >
                     <img src={photo.url} alt={`Решение ${idx + 1}`} className="w-full h-40 object-cover" loading="lazy" />
                     <div className="bg-black/60 px-2 py-1 text-[11px] text-white font-semibold">
@@ -586,10 +1342,9 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
             </div>
           )}
         </div>
-        {/* ✅ Правильный ответ показываем ТОЛЬКО после реальной проверки */}
         {!pendingReview && (data.correct_answer) && (
           <div>
-            <p className={`text-sm font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'} mb-2`}>✓ Правильный ответ:</p>
+            <p className={`text-sm font-semibold ${darkMode ? 'text-[#B7C4A0]' : 'text-[#4A4F42]'} mb-2`}>✓ Правильный ответ:</p>
             <div className={`rounded-xl p-4 border-2 ${bgCorrect}`}>
               <p className={`text-base whitespace-pre-wrap font-medium ${textPrimary}`}>{correctAnswerText}</p>
             </div>
@@ -597,7 +1352,7 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
         )}
         {!pendingReview && comment && (
           <div>
-            <p className={`text-sm font-semibold ${darkMode ? 'text-blue-300' : 'text-blue-700'} mb-2`}>💬 Комментарий учителя:</p>
+            <p className={`text-sm font-semibold ${darkMode ? 'text-[#DEC17E]' : 'text-[#7A5608]'} mb-2`}>💬 Комментарий учителя:</p>
             <div className={`rounded-xl p-4 border-2 ${bgComment}`}>
               <p className={`text-base whitespace-pre-wrap ${textPrimary}`}>{teacherCommentText}</p>
             </div>
@@ -605,12 +1360,12 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
         )}
         {studentComment && (
           <div>
-            <p className={`text-sm font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'} mb-2`}>❓ Ваш вопрос:</p>
+            <p className={`text-sm font-semibold ${darkMode ? 'text-[#CBA0A8]' : 'text-[#5A333A]'} mb-2`}>❓ Ваш вопрос:</p>
             <div className={`rounded-xl p-4 border-2 ${bgQuestion}`}>
               <p className={`text-base whitespace-pre-wrap ${textPrimary}`}>{studentQuestionText}</p>
               {teacherReply && (
-                <div className={`mt-3 pt-3 border-t-2 ${darkMode ? 'border-purple-700' : 'border-purple-200'}`}>
-                  <p className={`text-xs font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'} mb-1`}>✅ Ответ учителя:</p>
+                <div className={`mt-3 pt-3 border-t-2 ${darkMode ? 'border-[#5A333A]' : 'border-[#DFC3C8]'}`}>
+                  <p className={`text-xs font-bold ${darkMode ? 'text-[#B7C4A0]' : 'text-[#4A4F42]'} mb-1`}>✅ Ответ учителя:</p>
                   <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{teacherReplyText}</p>
                 </div>
               )}
@@ -619,20 +1374,20 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
         )}
         <div className="space-y-3">
           {pendingReview ? (
-            <div className={`flex items-center gap-2 rounded-xl p-4 border-2 ${darkMode ? 'bg-blue-900/10 border-blue-700' : 'bg-blue-50 border-blue-200'}`}>
-              <Hourglass className="w-6 h-6 text-blue-500" />
-              <span className={`text-base font-bold ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>Баллы выставит преподаватель после проверки</span>
+            <div className={`flex items-center gap-2 rounded-xl p-4 border-2 ${darkMode ? 'bg-[#4A3405]/10 border-[#7A5608]' : 'bg-[#F6ECCF] border-[#EAD9A8]'}`}>
+              <Hourglass className="w-6 h-6 text-[#B8860B]" />
+              <span className={`text-base font-bold ${darkMode ? 'text-[#DEC17E]' : 'text-[#7A5608]'}`}>Баллы выставит преподаватель после проверки</span>
             </div>
           ) : (
             <>
               <div className={`flex items-center gap-2 rounded-xl p-4 border-2 ${bgScore}`}>
-                <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
+                <Star className="w-6 h-6 text-[#B8860B] fill-[#B8860B]" />
                 <span className={`text-xl font-bold ${textAccent}`}>{score} / {maxScore} первичных баллов</span>
               </div>
               {testScore !== null && maxTestScore !== null && (
                 <div className={`flex items-center gap-2 rounded-xl p-4 border-2 ${bgTest}`}>
-                  <Award className="w-6 h-6 text-purple-500 fill-purple-500" />
-                  <span className={`text-xl font-bold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>{testScore} / {maxTestScore} тестовых баллов</span>
+                  <Award className="w-6 h-6 text-[#7A4A52] fill-[#7A4A52]" />
+                  <span className={`text-xl font-bold ${darkMode ? 'text-[#CBA0A8]' : 'text-[#5A333A]'}`}>{testScore} / {maxTestScore} тестовых баллов</span>
                 </div>
               )}
             </>
@@ -646,7 +1401,7 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
             <button
               type="button"
               onClick={() => setPreviewImage(null)}
-              className="absolute top-3 right-3 z-10 p-2 rounded-full bg-white/90 text-gray-800 shadow-lg"
+              className="absolute top-3 right-3 z-10 p-2 rounded-full bg-white/90 text-[#6B4E3A] shadow-lg"
             >
               <X className="w-5 h-5" />
             </button>
@@ -666,7 +1421,6 @@ function ResultCard({ section, answer, score, maxScore, comment, conversionScale
   );
 }
 
-// ✅ calcScore теперь учитывает наличие прикреплённого фото
 function calcScore(section: any, answer: any, hasAttachment: boolean = false): number {
   if (!answer && !hasAttachment) return 0;
   const type = section.type || 'text';
@@ -676,8 +1430,6 @@ function calcScore(section: any, answer: any, hasAttachment: boolean = false): n
   if (type === 'text' || type === 'photo') {
     const ua = normalizeText(typeof answer === 'string' ? answer : '');
 
-    // Фото-задание: фото есть, но текстового ключа для автопроверки нет →
-    // автоматически оценить нельзя, балл выставит репетитор вручную.
     if (type === 'photo' && hasAttachment && !data.correct_answer) {
       return 0;
     }
@@ -686,21 +1438,46 @@ function calcScore(section: any, answer: any, hasAttachment: boolean = false): n
     const ca = normalizeText(data.correct_answer || '');
     if (ca && ua === ca) return maxScore;
     if (data.alt_answers && Array.isArray(data.alt_answers)) { for (const alt of data.alt_answers) { if (ua === normalizeText(alt)) return maxScore; } }
-    // Если заданы grading_criteria, но точного совпадения с ключом нет —
-    // автопроверка не начисляет частичный балл (это делает репетитор по критериям).
     return 0;
   }
   if (type === 'single_choice') { if (data.correct_indices && Array.isArray(data.correct_indices)) return answer === data.correct_indices[0] ? maxScore : 0; return 0; }
   if (type === 'multi_choice') { if (!Array.isArray(answer) || !data.correct_indices) return 0; const correct = new Set(data.correct_indices); const userAnswer = new Set(answer); if (correct.size !== userAnswer.size) return 0; for (const c of correct) { if (!userAnswer.has(c)) return 0; } return maxScore; }
-  if (type === 'order') { if (!Array.isArray(answer) || !data.order_items) return 0; const correct = data.order_items.map((_: any, i: number) => i + 1); let matches = 0; for (let i = 0; i < correct.length; i++) { if (answer[i] === correct[i]) matches++; } return Math.round((matches / correct.length) * maxScore); }
+  if (type === 'order') {
+    // answer теперь — массив ОРИГИНАЛЬНЫХ индексов в том порядке, в котором
+    // их расставил ученик (см. OrderableList). Верно расставленным
+    // считается элемент, чей оригинальный индекс совпал со своей позицией:
+    // answer[i] === i. Раньше сравнивалось с вручную вписанными числами
+    // (answer[i] === i+1), что не имело смысла без перемешивания при показе.
+    if (!Array.isArray(answer) || !data.order_items) return 0;
+    const n = data.order_items.length;
+    if (answer.length !== n) return 0;
+    let matches = 0;
+    for (let i = 0; i < n; i++) { if (answer[i] === i) matches++; }
+    return Math.round((matches / n) * maxScore);
+  }
   if (type === 'match') { if (!data.pairs || !answer) return 0; let matches = 0; for (let i = 0; i < data.pairs.length; i++) { if (answer[i] === data.pairs[i].right) matches++; } return Math.round((matches / data.pairs.length) * maxScore); }
-  if (type === 'fill_blanks') { if (typeof answer !== 'string') return 0; return normalizeText(answer) === normalizeText(data.correct_answer || '') ? maxScore : 0; }
+  if (type === 'fill_blanks') {
+    // Раньше — всё-или-ничего по всей строке целиком: один лишний пробел
+    // или опечатка в одном из нескольких пропусков обнуляла балл за всё
+    // задание. Теперь сверяем по каждому пропуску отдельно (через запятую,
+    // как и просит подсказка в поле ввода) и даём пропорциональный балл —
+    // тот же паттерн частичного зачёта, что уже используется в order/match.
+    if (typeof answer !== 'string') return 0;
+    const correctParts = (data.correct_answer || '')
+      .split(',').map((s: string) => normalizeText(s)).filter((s: string) => s.length > 0);
+    if (correctParts.length === 0) return 0;
+    const studentParts = answer.split(',').map((s: string) => normalizeText(s));
+    let matches = 0;
+    for (let i = 0; i < correctParts.length; i++) {
+      if (studentParts[i] === correctParts[i]) matches++;
+    }
+    return Math.round((matches / correctParts.length) * maxScore);
+  }
   if (type === 'assembly') { if (!Array.isArray(answer) || !data.assembly_parts) return 0; const correct = data.assembly_parts.map((_: any, i: number) => i); if (answer.length !== correct.length) return 0; for (let i = 0; i < correct.length; i++) { if (answer[i] !== correct[i]) return 0; } return maxScore; }
   if (type === 'drag_drop') { if (!data.drag_items || !answer) return 0; let matches = 0; for (let i = 0; i < data.drag_items.length; i++) { if (answer[i] === data.drag_items[i].target) matches++; } return Math.round((matches / data.drag_items.length) * maxScore); }
   return 0;
 }
 
-// ✅ Адаптивный таймер: на мобильных элементы складываются в столбик
 function ExamTimer({ timeLimit, onTimeUp, isPaused, startTime, darkMode = false }: { timeLimit: number; onTimeUp: () => void; isPaused?: boolean; startTime?: number; darkMode?: boolean }) {
   const [timeLeft, setTimeLeft] = useState(timeLimit * 60);
   const [warningShown, setWarningShown] = useState(false);
@@ -738,7 +1515,7 @@ function ExamTimer({ timeLimit, onTimeUp, isPaused, startTime, darkMode = false 
 
   const percentage = (timeLeft / (timeLimit * 60)) * 100;
   const isCritical = timeLeft <= 60;
-  const bgColor = isCritical ? 'bg-rose-500 border-rose-600' : (timeLeft <= 300 ? 'bg-amber-500 border-amber-600' : 'bg-emerald-500 border-emerald-600');
+  const bgColor = isCritical ? 'bg-[#8B3A3A] border-[#7A2F2F]' : (timeLeft <= 300 ? 'bg-[#B8860B] border-[#96690A]' : 'bg-[#6B705C] border-[#596050]');
 
   return (
     <div className={`sticky top-0 z-50 px-4 sm:px-6 py-3 shadow-lg border-b-2 ${bgColor} ${isCritical ? 'animate-pulse' : ''}`}>
@@ -754,6 +1531,36 @@ function ExamTimer({ timeLimit, onTimeUp, isPaused, startTime, darkMode = false 
       </div>
     </div>
   );
+}
+
+// Формат ответа для order поменялся сегодня: раньше это были вручную
+// вписанные числа 1..n, теперь — массив ОРИГИНАЛЬНЫХ индексов (0..n-1,
+// без повторов) в порядке, как расставил ученик. Черновик, сохранённый
+// ДО этого изменения (ученик решал order-задание и не успел отправить),
+// всё ещё лежит в старом формате — он тоже проходит поверхностную
+// проверку "это массив нужной длины", но числа в нём будут не те, и
+// OrderableList покажет перепутанный порядок, а calcScore посчитает
+// неверно. Эта функция вызывается при каждом восстановлении ответов
+// (из submission, из homework_drafts, из localStorage) и молча
+// выбрасывает order-ответы, которые не являются валидной перестановкой
+// 0..n-1 — OrderableList в этом случае просто проинициализирует
+// секцию заново перемешанным порядком, как будто ученик её не трогал.
+function sanitizeAnswers(sections: any[], answers: Record<string, any>): Record<string, any> {
+  if (!answers || typeof answers !== 'object') return answers;
+  const result = { ...answers };
+  (sections || []).forEach((sec: any) => {
+    if (sec?.type !== 'order') return;
+    const n = (sec.data?.order_items || []).length;
+    const val = result[sec.id];
+    if (val === undefined) return;
+    const isValidPermutation =
+      Array.isArray(val) &&
+      val.length === n &&
+      val.every((v: any) => Number.isInteger(v) && v >= 0 && v < n) &&
+      new Set(val).size === n;
+    if (!isValidPermutation) delete result[sec.id];
+  });
+  return result;
 }
 
 function normalizeAttachmentList(value: any): any[] {
@@ -887,15 +1694,15 @@ function HomeworkView() {
     localStorage.setItem("darkMode", String(darkMode));
   }, [darkMode]);
 
-  const bg = darkMode ? 'bg-gray-900' : 'bg-gray-50';
-  const bgHeader = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
-  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-orange-100';
-  const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900';
-  const bgProgress = darkMode ? 'bg-gray-700' : 'bg-orange-100';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
-  const textMuted = darkMode ? 'text-gray-500' : 'text-gray-400';
-  const textAccent = darkMode ? 'text-orange-300' : 'text-orange-700';
+  const bg = darkMode ? 'bg-[#1A1614]' : 'bg-[#FAF3E8]';
+  const bgHeader = darkMode ? 'bg-[#2A2420] border-[#2A2420]' : 'bg-white border-[#E8DCC8]';
+  const bgCard = darkMode ? 'bg-[#2A2420] border-[#2A2420]' : 'bg-white border-[#F5E4D5]';
+  const bgInput = darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]';
+  const bgProgress = darkMode ? 'bg-[#2A2420]' : 'bg-[#F5E4D5]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#8A7A6A]' : 'text-[#3D2817]';
+  const textMuted = darkMode ? 'text-[#6B4E3A]' : 'text-[#8A7A6A]';
+  const textAccent = darkMode ? 'text-[#DCC7AA]' : 'text-[#8B5A2E]';
 
   const [hw, setHw] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -919,7 +1726,14 @@ function HomeworkView() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [manualScores, setManualScores] = useState<Record<string, number>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
-  const [reviewDecision, setReviewDecision] = useState<"approved" | "needs_revision">("approved");
+  // reviewDecision-стейт убран: раньше кнопки делали setReviewDecision(...)
+  // и сразу следующей строкой звали saveReview(), которая читала
+  // reviewDecision из замыкания — но setState не применяется синхронно,
+  // так что saveReview() видела значение с ПРЕДЫДУЩЕГО рендера. При первом
+  // клике на "На доработку" в сессии это было значение по умолчанию
+  // ("approved"), и работа сохранялась как принятая при клике на "На
+  // доработку". Теперь saveReview(decision) принимает решение параметром
+  // напрямую от кнопки — никакого чтения стейта, никакой гонки.
 
   const [commentTemplates, setCommentTemplates] = useState<string[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -958,7 +1772,6 @@ function HomeworkView() {
   };
   const conversionScale = getConversionScale();
 
-  // ✅ Обновление прогресса/статистики ученика (читается дашбордом ученика и родителя)
   const updateStudentProgress = async (studentId: string, finalScore: number, maxScoreVal: number, homeworkId: string) => {
     try {
       const progressRef = doc(db, "student_progress", `${studentId}_${homeworkId}`);
@@ -975,7 +1788,6 @@ function HomeworkView() {
         updated_at: new Date().toISOString()
       }, { merge: true });
 
-      // Общий счётчик в профиле ученика (родитель видит то же через child_id)
       const profileRef = doc(db, "profiles", studentId);
       await updateDoc(profileRef, {
         total_completed_homeworks: increment(1),
@@ -1011,6 +1823,17 @@ function HomeworkView() {
     if (!user) { setError('Необходимо войти в аккаунт'); setLoading(false); return; }
 
     const load = async () => {
+      // ✅ ПАТЧ БЕЗОПАСНОСТИ: доступ к режиму проверки (?mode=review) и
+      // предпросмотру (?preview=true) — только для репетитора. Раньше эта
+      // проверка отсутствовала: любой ученик, изменив URL, получал доступ
+      // к чужим ответам, фото и мог сам выставлять оценки через saveReview.
+      // Проверка стоит в самом начале load(), до getDoc() — значит для
+      // не-репетитора не уходит вообще ни одного запроса к submissions/homeworks.
+      if ((isReviewMode || isPreviewMode) && !isTutor) {
+        setError('Доступ запрещён');
+        setLoading(false);
+        return;
+      }
       try {
         const snap = await getDoc(doc(db, "homeworks", id));
         if (!snap.exists()) { setError('ДЗ не найдено'); setLoading(false); return; }
@@ -1063,7 +1886,7 @@ function HomeworkView() {
                 setCurrentSubmission({ id: docSnap.id, ...sd });
                 setSubmissionId(data.submission);
                 setReviewStatus(sd.status || "");
-                setAnswers(sd.section_answers || {});
+                setAnswers(sanitizeAnswers(data.sections || [], sd.section_answers || {}));
                 setScores(sd.section_scores || {});
                 setScore(sd.score || 0);
                 setSectionComments(sd.section_comments || {});
@@ -1078,8 +1901,6 @@ function HomeworkView() {
                 });
                 setAttachments(prev => Object.keys(normalized).length > 0 ? normalized : prev);
 
-                // ✅ submitted=true только когда работа реально проверена или на доработке;
-                // статус "submitted" (на проверке) НЕ считаем завершённым.
                 setSubmitted(sd.status === "approved" || sd.status === "needs_revision");
                 if (sd.status === "needs_revision") toast("📝 Работа отправлена на доработку.", { icon: '📝', duration: 5000 });
               }
@@ -1097,14 +1918,23 @@ function HomeworkView() {
                   const val = rawAttachments[key];
                   normalized[key] = normalizeAttachmentList(val);
                 });
-                setAnswers(ddata.answers || {});
+                setAnswers(sanitizeAnswers(data.sections || [], ddata.answers || {}));
                 setStudentComments(ddata.comments || {});
                 setAttachments(Object.keys(normalized).length > 0 ? normalized : {});
+                if ((data.type === 'trial_exam' || data.time_limit) && typeof ddata.exam_start_time === 'number') {
+                  // Пробник уже был начат раньше (в этой же сессии или до
+                  // перезагрузки страницы) — восстанавливаем startTime вместо
+                  // сброса на экран "Начать экзамен". Раньше examStartTime жил
+                  // только в React-стейте и обнулялся по F5, позволяя начать
+                  // отсчёт заново и продлить себе время.
+                  setExamStarted(true);
+                  setExamStartTime(ddata.exam_start_time);
+                }
               } else {
                 const saved = localStorage.getItem(`hw_answers_${id}_${uid}`);
                 if (saved) {
                   const parsed = JSON.parse(saved);
-                  setAnswers(parsed.answers || {});
+                  setAnswers(sanitizeAnswers(data.sections || [], parsed.answers || {}));
                   setStudentComments(parsed.comments || {});
                   const rawAttachments = parsed.attachments || {};
                   const normalized: Record<string, any[]> = {};
@@ -1144,7 +1974,7 @@ function HomeworkView() {
           });
           setAttachments(normalized);
 
-          setAnswers(sd.section_answers || {});
+          setAnswers(sanitizeAnswers(hw?.sections || [], sd.section_answers || {}));
           setScores(sd.section_scores || {});
           setScore(sd.score || 0);
           setSectionComments(sd.section_comments || {});
@@ -1157,7 +1987,6 @@ function HomeworkView() {
           } else if (sd.status === "approved") {
             setSubmitted(true);
           } else {
-            // "submitted" — на проверке, не завершено
             setSubmitted(false);
           }
         }
@@ -1167,7 +1996,6 @@ function HomeworkView() {
     }
   }, [submissionId, isReviewMode]);
 
-  // ✅ Надёжное автосохранение (debounce 1.5с + корректная сериализация вложений)
   useEffect(() => {
     if (submitted || !uid || isReviewMode || isPreviewMode) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -1272,7 +2100,6 @@ function HomeworkView() {
       const sc: Record<string,number> = {};
       let total = 0;
       for (const sec of secs) {
-        // ✅ Передаём флаг наличия фото в оценку
         const hasAttachment = Array.isArray(attachments[sec.id]) && attachments[sec.id].length > 0;
         const s = calcScore(sec, answers[sec.id], hasAttachment);
         sc[sec.id] = Math.round(s);
@@ -1280,6 +2107,23 @@ function HomeworkView() {
       }
       const final = Math.round(total);
       const historyEntry = { submitted_at: new Date().toISOString(), score: final, answers: { ...answers } };
+
+      // Автоодобрение: если ВСЕ задания в ДЗ — объективно проверяемых
+      // типов (см. AUTO_GRADABLE_TYPES), результат известен точно так же
+      // надёжно, как если бы его подтвердил репетитор — ждать живого
+      // клика "Принять" для этого не нужно. Осознанный компромисс: балл
+      // считает браузер ученика, а не сервер, значит настоящей защиты от
+      // подделки через прямой запрос к Firestore в обход интерфейса нет
+      // (правила проверяют только "какие поля меняются", не "честно ли
+      // посчитан calcScore()"). Настоящая защита — Cloud Function,
+      // пересчитывающая балл на сервере; здесь её нет, обсуждали отдельно.
+      //
+      // Намеренно применяется ТОЛЬКО к первой отправке (create), не к
+      // пересдаче (update) — у update() в правилах Firestore жёстко
+      // прописано status == 'submitted' для ученика, менять это правило
+      // сейчас не стал, чтобы не трогать ещё раз то, что уже трижды
+      // ломалось за этот заход. Пересдача всегда идёт на ручную проверку.
+      const isFullyAutoGradable = secs.length > 0 && secs.every((sec: any) => AUTO_GRADABLE_TYPES.includes(sec.type));
 
       const updateData: any = {
         section_answers: answers, section_scores: sc, student_comments: studentComments, attachments: cleanAttachments,
@@ -1290,19 +2134,32 @@ function HomeworkView() {
         updateData.resubmit_count = (currentSubmission?.resubmit_count || 0) + 1;
         await updateDoc(doc(db, "submissions", submissionId), updateData);
         toast.success("✅ Работа переотправлена!");
+        setReviewStatus("submitted");
       } else {
-        const subRef = await addDoc(collection(db, "submissions"), {
+        const initialStatus = isFullyAutoGradable ? "approved" : "submitted";
+        const createData: any = {
           homework_id: id, student_id: uid, section_answers: answers, section_scores: sc,
           student_comments: studentComments, attachments: cleanAttachments, score: final,
-          submitted_at: new Date().toISOString(), status: "submitted", resubmit_count: 0,
+          submitted_at: new Date().toISOString(), status: initialStatus, resubmit_count: 0,
           exam_start_time: examStartTime, history: [historyEntry]
-        });
+        };
+        if (isFullyAutoGradable) {
+          createData.reviewed_at = new Date().toISOString();
+          createData.reviewer_id = null;
+          createData.auto_graded = true;
+        }
+        const subRef = await addDoc(collection(db, "submissions"), createData);
         await updateDoc(doc(db, "homeworks", id), { submission: subRef.id });
         setSubmissionId(subRef.id);
-        toast.success(`✅ Отправлено на проверку! Автобалл: ${final}/${hw.max_score}`);
+        if (isFullyAutoGradable) {
+          toast.success(`✅ Автопроверено! Результат: ${final}/${hw.max_score}`);
+          setReviewStatus("approved");
+        } else {
+          toast.success(`✅ Отправлено на проверку! Автобалл: ${final}/${hw.max_score}`);
+          setReviewStatus("submitted");
+        }
       }
-      // ✅ После отправки работа "на проверке", а не "завершена"
-      setSubmitted(false); setScore(final); setScores(sc); setReviewStatus("submitted");
+      setSubmitted(isFullyAutoGradable && !submissionId); setScore(final); setScores(sc);
       try { localStorage.removeItem(`hw_answers_${id}_${uid}`); } catch (e) {}
     } catch (e: any) { toast.error("Ошибка: " + e.message); }
     finally { setIsSubmitting(false); }
@@ -1310,7 +2167,7 @@ function HomeworkView() {
 
   const getStudentName = (studentId: string) => {
     const student = students.find(s => s.id === studentId);
-    return student?.name || student?.email || studentId;
+    return student?.full_name || student?.name || student?.email || studentId;
   };
 
   const calcTotalScore = (submission: any) => {
@@ -1443,8 +2300,7 @@ function HomeworkView() {
     }
   };
 
-  // ✅ Проверка с оптимистичным обновлением и мгновенным статусом
-   const saveReview = () => {
+   const saveReview = (decision: "approved" | "needs_revision") => {
     const currentSub = filteredSubmissions[currentIndex];
     if (!currentSub) { toast.error("Нет отправки для проверки!"); return; }
 
@@ -1460,9 +2316,8 @@ function HomeworkView() {
       totalScore += score;
     });
 
-    // ✅ НОВОЕ: Записываем вечный снимок в student_results
     const saveResultSnapshot = async () => {
-      if (reviewDecision !== "approved") return; // Пишем только при принятии
+      if (decision !== "approved") return;
       
       const maxScoreVal = hw.max_score || totalScore || 1;
       const percentage = Math.round((totalScore / maxScoreVal) * 100);
@@ -1487,24 +2342,19 @@ function HomeworkView() {
       }
     };
 
-    // 1. Оптимистичное обновление UI
+    // Снимок состояния ДО оптимистичного обновления — нужен для отката,
+    // если запись в Firestore не пройдёт. Раньше при ошибке UI оставался
+    // "проверенным" навсегда (до следующей полной перезагрузки страницы),
+    // хотя в базе работа так и осталась непроверенной — тост с ошибкой
+    // показывался, но ничего в интерфейсе по факту не откатывалось.
+    const previousSubSnapshot = currentSub;
+
     setSubmissions(prev => prev.map(s =>
       s.id === currentSub.id
-        ? { ...s, status: reviewDecision, score: totalScore, section_scores: sectionScores, section_comments: sectionCommentsObj, overall_comment: overallComment }
+        ? { ...s, status: decision, score: totalScore, section_scores: sectionScores, section_comments: sectionCommentsObj, overall_comment: overallComment }
         : s
     ));
 
-    toast.success(`✅ Сохранено! ${totalScore}/${hw.max_score || 0} • ${reviewDecision === 'approved' ? 'Принято' : 'На доработку'}`);
-
-    // 2. Записываем снимок в фоне (даже если ДЗ потом удалят, аналитика сохранится)
-    void saveResultSnapshot();
-
-    // 3. Обновляем общий прогресс ученика
-    if (reviewDecision === "approved") {
-      void updateStudentProgress(currentSub.student_id, totalScore, hw.max_score || 0, id);
-    }
-
-    // 4. Сохраняем в Firestore
     updateDoc(doc(db, "submissions", currentSub.id), {
       manual_scores: sectionScores,
       section_comments: sectionCommentsObj,
@@ -1512,24 +2362,35 @@ function HomeworkView() {
       overall_comment: overallComment,
       score: totalScore,
       max_score: hw.max_score || 0,
-      status: reviewDecision,
+      status: decision,
       reviewed_at: new Date().toISOString(),
       reviewer_id: user?.uid || null
-    }).catch((error: any) => {
-      toast.error("Ошибка сохранения: " + error.message);
-    });
+    }).then(() => {
+      toast.success(`✅ Сохранено! ${totalScore}/${hw.max_score || 0} • ${decision === 'approved' ? 'Принято' : 'На доработку'}`);
 
-    // 5. Переход к следующей работе
-    setTimeout(() => {
-      if (currentIndex < filteredSubmissions.length - 1) {
-        setCurrentIndex(currentIndex + 1);
-        setManualScores({});
-        setComments({});
-        setOverallComment("");
-      } else {
-        toast.success("🎉 Все работы проверены!");
+      void saveResultSnapshot();
+
+      if (decision === "approved") {
+        void updateStudentProgress(currentSub.student_id, totalScore, hw.max_score || 0, id);
       }
-    }, 700);
+
+      // Переход к следующей работе — только после подтверждённой записи.
+      // Раньше это срабатывало безусловно через 700мс от вызова функции,
+      // не дожидаясь ответа от Firestore вообще.
+      setTimeout(() => {
+        if (currentIndex < filteredSubmissions.length - 1) {
+          setCurrentIndex(currentIndex + 1);
+          setManualScores({});
+          setComments({});
+          setOverallComment("");
+        } else {
+          toast.success("🎉 Все работы проверены!");
+        }
+      }, 700);
+    }).catch((error: any) => {
+      toast.error("Ошибка сохранения: " + error.message + " — изменения отменены, попробуйте снова");
+      setSubmissions(prev => prev.map(s => s.id === currentSub.id ? previousSubSnapshot : s));
+    });
   };
   
   const filteredSubmissions = (() => {
@@ -1541,12 +2402,12 @@ function HomeworkView() {
     return result;
   })();
 
-  if (loadingAuth || loading || !mounted) return <div className={`min-h-screen ${bg} flex items-center justify-center`}><div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>;
+  if (loadingAuth || loading || !mounted) return <div className={`min-h-screen ${bg} flex items-center justify-center`}><div className="w-16 h-16 border-4 border-[#C67B4B] border-t-transparent rounded-full animate-spin"></div></div>;
   if (error || !hw) return (
     <div className={`min-h-screen ${bg} flex items-center justify-center p-4`}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`${bgCard} rounded-3xl p-10 border-2 text-center shadow-2xl max-w-md`}>
         <h2 className={`text-2xl font-bold ${textPrimary} mb-3`}>{error || 'ДЗ не найдено'}</h2>
-        <button onClick={() => router.push('/homeworks')} className="px-8 py-4 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow active:scale-95 transition">← Назад</button>
+        <button onClick={() => router.push('/homeworks')} className="px-8 py-4 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-semibold shadow active:scale-95 transition">← Назад</button>
       </motion.div>
     </div>
   );
@@ -1559,25 +2420,25 @@ function HomeworkView() {
         <header className={`${bgHeader} border-b sticky top-0 z-30 shadow-sm`}>
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <button onClick={() => router.push('/homeworks')} className={`p-2 rounded-xl transition active:scale-90 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-orange-100'}`}><ArrowLeft className={`w-6 h-6 ${darkMode ? 'text-orange-400' : 'text-orange-700'}`} /></button>
-              <div><h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'bg-gradient-to-r from-orange-600 via-amber-600 to-pink-600 bg-clip-text text-transparent'}`}>Проверка ДЗ</h1><p className={`text-sm ${textSecondary}`}>{hw.title}</p></div>
+              <button onClick={() => router.push('/homeworks')} className={`p-2 rounded-xl transition active:scale-90 ${darkMode ? 'hover:bg-[#2A2420]' : 'hover:bg-[#F5E4D5]'}`}><ArrowLeft className={`w-6 h-6 ${darkMode ? 'text-[#D18F5C]' : 'text-[#8B5A2E]'}`} /></button>
+              <div><h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] bg-clip-text text-transparent'}`}>Проверка ДЗ</h1><p className={`text-sm ${textSecondary}`}>{hw.title}</p></div>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={() => setDarkMode(!darkMode)} className={`p-2.5 rounded-2xl border shadow-sm transition active:scale-90 ${darkMode ? 'bg-gray-800 text-yellow-400 border-gray-700' : 'bg-white text-gray-600 border-orange-200'}`}>
+              <button onClick={() => setDarkMode(!darkMode)} className={`p-2.5 rounded-2xl border shadow-sm transition active:scale-90 ${darkMode ? 'bg-[#2A2420] text-[#D4A017] border-[#2A2420]' : 'bg-white text-[#3D2817] border-[#E8DCC8]'}`}>
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
-              <div className={`px-4 py-2 rounded-xl ${darkMode ? 'bg-orange-900/30' : 'bg-orange-100'}`}><span className={`font-semibold ${darkMode ? 'text-orange-300' : 'text-orange-800'}`}>{filteredSubmissions.length} отправок</span></div>
+              <div className={`px-4 py-2 rounded-xl ${darkMode ? 'bg-[#3D2817]/30' : 'bg-[#F5E4D5]'}`}><span className={`font-semibold ${darkMode ? 'text-[#DCC7AA]' : 'text-[#6B4520]'}`}>{filteredSubmissions.length} отправок</span></div>
             </div>
           </div>
         </header>
 
         <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
           <div className={`${bgCard} rounded-2xl border-2 p-4 flex flex-wrap gap-3 items-center`}>
-            <List className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`px-3 py-2 border-2 rounded-lg text-sm focus:border-orange-500 focus:outline-none ${bgInput}`}>
+            <List className={`w-5 h-5 ${darkMode ? 'text-[#D18F5C]' : 'text-[#A86535]'}`} />
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`px-3 py-2 border-2 rounded-lg text-sm focus:border-[#C67B4B] focus:outline-none ${bgInput}`}>
               <option value="all">Все статусы</option><option value="submitted">На проверке</option><option value="approved">Принято</option><option value="needs_revision">На доработке</option>
             </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`px-3 py-2 border-2 rounded-lg text-sm focus:border-orange-500 focus:outline-none ${bgInput}`}>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`px-3 py-2 border-2 rounded-lg text-sm focus:border-[#C67B4B] focus:outline-none ${bgInput}`}>
               <option value="date">По дате</option><option value="score">По баллам</option><option value="name">По имени</option>
             </select>
           </div>
@@ -1589,16 +2450,16 @@ function HomeworkView() {
           ) : currentSub ? (
             <>
               <div className={`flex items-center justify-between ${bgCard} rounded-2xl border-2 p-4 shadow-lg`}>
-                <button onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))} disabled={currentIndex === 0} className={`px-6 py-3 border-2 rounded-xl font-bold disabled:opacity-30 transition flex items-center gap-2 active:scale-95 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900'}`}><ChevronLeft className="w-5 h-5" /> Предыдущий</button>
+                <button onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))} disabled={currentIndex === 0} className={`px-6 py-3 border-2 rounded-xl font-bold disabled:opacity-30 transition flex items-center gap-2 active:scale-95 ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]'}`}><ChevronLeft className="w-5 h-5" /> Предыдущий</button>
                 <div className="text-center"><p className={`text-sm font-bold ${textAccent}`}>Ученик {currentIndex + 1} из {filteredSubmissions.length}</p><p className={`text-xs ${textSecondary}`}>{getStudentName(currentSub.student_id)}</p></div>
-                <button onClick={() => setCurrentIndex(Math.min(filteredSubmissions.length - 1, currentIndex + 1))} disabled={currentIndex === filteredSubmissions.length - 1} className={`px-6 py-3 border-2 rounded-xl font-bold disabled:opacity-30 transition flex items-center gap-2 active:scale-95 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900'}`}>Следующий <ChevronRight className="w-5 h-5" /></button>
+                <button onClick={() => setCurrentIndex(Math.min(filteredSubmissions.length - 1, currentIndex + 1))} disabled={currentIndex === filteredSubmissions.length - 1} className={`px-6 py-3 border-2 rounded-xl font-bold disabled:opacity-30 transition flex items-center gap-2 active:scale-95 ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]'}`}>Следующий <ChevronRight className="w-5 h-5" /></button>
               </div>
 
               <div className={`${bgCard} rounded-3xl border-2 shadow-lg overflow-hidden`}>
-                <div className={`p-6 border-b-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200'}`}>
+                <div className={`p-6 border-b-2 ${darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-gradient-to-r from-[#FAF3E8] to-[#F6ECCF] border-[#E8DCC8]'}`}>
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold text-xl">{getStudentName(currentSub.student_id).charAt(0).toUpperCase()}</div>
+                      <div className="w-12 h-12 bg-gradient-to-br from-[#B8860B] to-[#D4A017] rounded-full flex items-center justify-center text-white font-bold text-xl">{getStudentName(currentSub.student_id).charAt(0).toUpperCase()}</div>
                       <div><h3 className={`text-xl font-bold ${textPrimary}`}>{getStudentName(currentSub.student_id)}</h3><p className={`text-sm ${textSecondary}`}>Отправлено: {new Date(currentSub.submitted_at).toLocaleDateString('ru-RU')}</p></div>
                     </div>
                     <div className="text-right">
@@ -1623,23 +2484,23 @@ function HomeworkView() {
                       : (rawAttachment?.url ? [rawAttachment] : []);
 
                     return (
-                      <div key={sectionId} className={`rounded-xl p-5 border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
+                      <div key={sectionId} className={`rounded-xl p-5 border-2 ${darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'}`}>
                         <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2"><div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold">{idx + 1}</div><h4 className={`font-bold text-lg ${textPrimary}`}>{section.title || `Задание ${idx + 1}`}</h4></div>
-                          <div className={`px-3 py-1 rounded-lg font-bold ${sectionScore >= maxScore ? (darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700') : sectionScore > 0 ? (darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700') : (darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700')}`}>{sectionScore}/{maxScore}</div>
+                          <div className="flex items-center gap-2"><div className="w-8 h-8 bg-gradient-to-br from-[#C67B4B] to-[#8B3A3A] rounded-lg flex items-center justify-center text-white font-bold">{idx + 1}</div><h4 className={`font-bold text-lg ${textPrimary}`}>{section.title || `Задание ${idx + 1}`}</h4></div>
+                          <div className={`px-3 py-1 rounded-lg font-bold ${sectionScore >= maxScore ? (darkMode ? 'bg-[#2A2E26]/30 text-[#B7C4A0]' : 'bg-[#DCEBD2] text-[#4A4F42]') : sectionScore > 0 ? (darkMode ? 'bg-[#4A3405]/30 text-[#E0B45C]' : 'bg-[#F6ECCF] text-[#7A5608]') : (darkMode ? 'bg-[#3D1515]/30 text-[#E0A3A3]' : 'bg-[#F5DEDA] text-[#6B2626]')}`}>{sectionScore}/{maxScore}</div>
                         </div>
 
                         {(section.data?.task_text || section.data?.text) && (
-                          <div className={`rounded-lg p-3 border-l-4 mb-3 ${darkMode ? 'bg-gray-800 border-orange-400' : 'bg-white border-orange-400'}`}>
+                          <div className={`rounded-lg p-3 border-l-4 mb-3 ${darkMode ? 'bg-[#2A2420] border-[#D18F5C]' : 'bg-white border-[#D18F5C]'}`}>
                             <p className={`text-xs font-bold ${textAccent} mb-1`}>Условие:</p>
-                            <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{section.data.task_text || section.data.text}</p>
+                            <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-[#E8DCC8]' : 'text-[#6B4E3A]'}`}>{section.data.task_text || section.data.text}</p>
                           </div>
                         )}
 
                         <div className="mb-3">
-                          <p className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Ответ ученика:</p>
-                          <div className={`rounded-lg p-3 border-2 ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-orange-200'}`}>
-                            <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{studentAnswer || <span className={textMuted}>Нет ответа</span>}</p>
+                          <p className={`text-sm font-bold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'} mb-2`}>Ответ ученика:</p>
+                          <div className={`rounded-lg p-3 border-2 ${darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'}`}>
+                            <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-[#E8DCC8]' : 'text-[#6B4E3A]'}`}>{formatAnswerForDisplay(section, studentAnswer) || <span className={textMuted}>Нет ответа</span>}</p>
                           </div>
 
                           {attachment.length > 0 ? (
@@ -1650,7 +2511,7 @@ function HomeworkView() {
                                   <div key={photoIdx} className="relative">
                                     <div
                                       onClick={() => window.open(photo.url, '_blank')}
-                                      className="overflow-hidden rounded-lg border-2 border-orange-200 cursor-pointer group"
+                                      className="overflow-hidden rounded-lg border-2 border-[#E8DCC8] cursor-pointer group"
                                     >
                                       <img
                                         src={photo.url}
@@ -1665,7 +2526,6 @@ function HomeworkView() {
                                       </div>
                                     </div>
 
-                                    {/* ✅ Кнопка удаления: всегда видна, не съезжает */}
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1673,7 +2533,7 @@ function HomeworkView() {
                                         e.preventDefault();
                                         handleDeletePhoto(sectionId, photoIdx);
                                       }}
-                                      className="absolute top-2 right-2 z-20 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all hover:scale-110 active:scale-90 flex items-center justify-center"
+                                      className="absolute top-2 right-2 z-20 p-1.5 bg-[#8B3A3A] hover:bg-[#7A2F2F] text-white rounded-full shadow-lg transition-all hover:scale-110 active:scale-90 flex items-center justify-center"
                                       title="Удалить фото"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -1683,53 +2543,52 @@ function HomeworkView() {
                               </div>
                             </div>
                           ) : (
-                            <div className="mt-3 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-center">
-                              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>📷 Фото не загружено</p>
+                            <div className="mt-3 p-3 bg-[#F0E8D8] dark:bg-[#2A2420] rounded-lg text-center">
+                              <p className={`text-sm ${darkMode ? 'text-[#8A7A6A]' : 'text-[#6B4E3A]'}`}>📷 Фото не загружено</p>
                             </div>
                           )}
                         </div>
 
                         {studentComment && (
                           <div className="mb-3">
-                            <p className={`text-sm font-bold ${darkMode ? 'text-purple-300' : 'text-purple-700'} mb-2`}>❓ Вопрос ученика:</p>
-                            <div className={`rounded-lg p-3 border-2 ${darkMode ? 'bg-purple-900/10 border-purple-700' : 'bg-purple-50 border-purple-200'}`}>
-                              <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{studentComment}</p>
+                            <p className={`text-sm font-bold ${darkMode ? 'text-[#CBA0A8]' : 'text-[#5A333A]'} mb-2`}>❓ Вопрос ученика:</p>
+                            <div className={`rounded-lg p-3 border-2 ${darkMode ? 'bg-[#2E1A1E]/10 border-[#5A333A]' : 'bg-[#F0E3E5] border-[#DFC3C8]'}`}>
+                              <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-[#E8DCC8]' : 'text-[#6B4E3A]'}`}>{studentComment}</p>
                             </div>
                           </div>
                         )}
 
                         {section.data?.correct_answer && (
                           <div className="mb-3">
-                            <p className={`text-sm font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'} mb-2`}>✓ Правильный ответ:</p>
-                            <div className={`rounded-lg p-3 border-2 ${darkMode ? 'bg-emerald-900/10 border-emerald-700' : 'bg-emerald-50 border-emerald-200'}`}>
-                              <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{section.data.correct_answer}</p>
+                            <p className={`text-sm font-bold ${darkMode ? 'text-[#B7C4A0]' : 'text-[#4A4F42]'} mb-2`}>✓ Правильный ответ:</p>
+                            <div className={`rounded-lg p-3 border-2 ${darkMode ? 'bg-[#2A2E26]/10 border-[#4A4F42]' : 'bg-[#DCEBD2] border-[#A9C596]'}`}>
+                              <p className={`text-sm whitespace-pre-wrap ${darkMode ? 'text-[#E8DCC8]' : 'text-[#6B4E3A]'}`}>{section.data.correct_answer}</p>
                             </div>
                           </div>
                         )}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            {/* ✅ Бейдж "фото прикреплено" рядом с полем баллов */}
-                            <label className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'} block mb-2`}>
+                            <label className={`text-sm font-bold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'} block mb-2`}>
                               <span className="flex items-center gap-2 flex-wrap">
                                 Баллы:
                                 {attachment.length > 0 && (
-                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full flex items-center gap-1 animate-pulse">
+                                  <span className="px-2 py-0.5 bg-[#F6ECCF] text-[#7A5608] text-[10px] font-bold rounded-full flex items-center gap-1 animate-pulse">
                                     📷 Фото прикреплено
                                   </span>
                                 )}
                               </span>
                             </label>
-                            <input type="number" min={0} max={maxScore} value={manualScores[sectionId] ?? sectionScore} onChange={(e) => setManualScores(prev => ({ ...prev, [sectionId]: parseInt(e.target.value) || 0 }))} className={`w-full px-4 py-3 border-2 rounded-xl text-center font-bold focus:border-orange-500 focus:outline-none text-lg ${darkMode ? 'bg-gray-800 border-gray-600 text-orange-300' : 'bg-white border-orange-200 text-orange-700'}`} />
+                            <input type="number" min={0} max={maxScore} value={manualScores[sectionId] ?? sectionScore} onChange={(e) => setManualScores(prev => ({ ...prev, [sectionId]: parseInt(e.target.value) || 0 }))} className={`w-full px-4 py-3 border-2 rounded-xl text-center font-bold focus:border-[#C67B4B] focus:outline-none text-lg ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#DCC7AA]' : 'bg-white border-[#E8DCC8] text-[#8B5A2E]'}`} />
                           </div>
                           <div>
                             <div className="flex items-center justify-between mb-2">
-                              <label className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>💬 Комментарий:</label>
-                              {commentTemplates.length > 0 && <button onClick={() => setShowTemplates(!showTemplates)} className={`text-xs font-semibold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>Шаблоны</button>}
+                              <label className={`text-sm font-bold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>💬 Комментарий:</label>
+                              {commentTemplates.length > 0 && <button onClick={() => setShowTemplates(!showTemplates)} className={`text-xs font-semibold ${darkMode ? 'text-[#B37E89]' : 'text-[#693D45]'}`}>Шаблоны</button>}
                             </div>
                             {showTemplates && commentTemplates.length > 0 && (
-                              <div className={`mb-2 p-2 rounded-lg border max-h-32 overflow-y-auto ${darkMode ? 'bg-purple-900/10 border-purple-700' : 'bg-purple-50 border-purple-200'}`}>
-                                {commentTemplates.map((template: string, i: number) => (<button key={i} onClick={() => applyCommentTemplate(template, sectionId)} className={`w-full text-left px-2 py-1 text-xs rounded ${darkMode ? 'text-gray-300 hover:bg-purple-900/20' : 'text-gray-700 hover:bg-purple-100'}`}>{template}</button>))}
+                              <div className={`mb-2 p-2 rounded-lg border max-h-32 overflow-y-auto ${darkMode ? 'bg-[#2E1A1E]/10 border-[#5A333A]' : 'bg-[#F0E3E5] border-[#DFC3C8]'}`}>
+                                {commentTemplates.map((template: string, i: number) => (<button key={i} onClick={() => applyCommentTemplate(template, sectionId)} className={`w-full text-left px-2 py-1 text-xs rounded ${darkMode ? 'text-[#B8A898] hover:bg-[#2E1A1E]/20' : 'text-[#6B4E3A] hover:bg-[#F0E3E5]'}`}>{template}</button>))}
                               </div>
                             )}
                             <ChemButton value={comments[sectionId] || ""} onChange={(v: string) => setComments(prev => ({ ...prev, [sectionId]: v }))} placeholder="Комментарий..." rows={3} darkMode={darkMode} />
@@ -1743,25 +2602,19 @@ function HomeworkView() {
 
               <div className={`${bgCard} rounded-3xl border-2 p-6 shadow-lg space-y-4 sticky bottom-4`}>
                 <div>
-                  <label className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'} block mb-2`}>💬 Общий комментарий:</label>
+                  <label className={`text-sm font-bold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'} block mb-2`}>💬 Общий комментарий:</label>
                   <ChemButton value={overallComment} onChange={setOverallComment} placeholder="Общий комментарий..." rows={3} darkMode={darkMode} />
                 </div>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => {
-                      setReviewDecision("needs_revision");
-                      saveReview();
-                    }}
-                    className="flex-1 px-6 py-4 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-xl font-bold hover:shadow-xl transition flex items-center justify-center gap-2 active:scale-95"
+                    onClick={() => saveReview("needs_revision")}
+                    className="flex-1 px-6 py-4 bg-gradient-to-r from-[#8B3A3A] to-[#8B3A3A] text-white rounded-xl font-bold hover:shadow-xl transition flex items-center justify-center gap-2 active:scale-95"
                   >
                     <RotateCcw className="w-5 h-5" /> На доработку
                   </button>
                   <button
-                    onClick={() => {
-                      setReviewDecision("approved");
-                      saveReview();
-                    }}
-                    className="flex-1 px-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-bold hover:shadow-xl transition flex items-center justify-center gap-2 active:scale-95"
+                    onClick={() => saveReview("approved")}
+                    className="flex-1 px-6 py-4 bg-gradient-to-r from-[#6B705C] to-[#5F7A66] text-white rounded-xl font-bold hover:shadow-xl transition flex items-center justify-center gap-2 active:scale-95"
                   >
                     <CheckCircle className="w-5 h-5" /> Принять
                   </button>
@@ -1778,37 +2631,35 @@ function HomeworkView() {
   const section = sections[current];
   const isDeadlinePassed = hw.due_date && new Date(hw.due_date) < new Date();
 
-  // ✅ Различаем "на проверке" и "реально проверено"
   const isReviewed = reviewStatus === 'approved' || currentSubmission?.status === 'approved';
   const pendingReview = (submitted || reviewStatus === 'submitted' || currentSubmission?.status === 'submitted') && !isReviewed && reviewStatus !== 'needs_revision';
 
   const getDeadlineInfo = () => {
     if (!hw.due_date) return null;
     const diff = new Date(hw.due_date).getTime() - new Date().getTime();
-    if (diff <= 0) return { text: '🔴 Просрочено!', color: darkMode ? 'text-rose-400' : 'text-rose-600', urgent: true };
+    if (diff <= 0) return { text: '🔴 Просрочено!', color: darkMode ? 'text-[#D68080]' : 'text-[#7A2F2F]', urgent: true };
     const hours = Math.floor(diff / (1000 * 60 * 60)); const days = Math.floor(hours / 24);
-    if (days > 0) return { text: `⏰ Осталось ${days} дн.`, color: darkMode ? 'text-emerald-400' : 'text-emerald-600', urgent: false };
-    if (hours > 0) return { text: `⏰ Осталось ${hours} ч.`, color: darkMode ? 'text-amber-400' : 'text-amber-600', urgent: true };
-    return { text: `⏰ Осталось ${Math.floor(diff / (1000 * 60))} мин.`, color: darkMode ? 'text-rose-400' : 'text-rose-600', urgent: true };
+    if (days > 0) return { text: `⏰ Осталось ${days} дн.`, color: darkMode ? 'text-[#9BB07C]' : 'text-[#596050]', urgent: false };
+    if (hours > 0) return { text: `⏰ Осталось ${hours} ч.`, color: darkMode ? 'text-[#D4A017]' : 'text-[#96690A]', urgent: true };
+    return { text: `⏰ Осталось ${Math.floor(diff / (1000 * 60))} мин.`, color: darkMode ? 'text-[#D68080]' : 'text-[#7A2F2F]', urgent: true };
   };
   const deadlineInfo = getDeadlineInfo();
 
   const getButtonColor = (sec: any, i: number) => {
     if (isReviewed) {
       const sc = scores[sec.id] ?? 0; const max = sec.max_score || 1;
-      if (sc >= max) return "bg-gradient-to-br from-emerald-500 to-teal-500 text-white border-emerald-600 shadow-lg";
-      else if (sc > 0) return "bg-gradient-to-br from-amber-400 to-yellow-500 text-white border-amber-500 shadow-lg";
-      else return "bg-gradient-to-br from-rose-500 to-red-500 text-white border-rose-600 shadow-lg";
+      if (sc >= max) return "bg-gradient-to-br from-[#6B705C] to-[#5F7A66] text-white border-[#596050] shadow-lg";
+      else if (sc > 0) return "bg-gradient-to-br from-[#D4A017] to-[#B8860B] text-white border-[#B8860B] shadow-lg";
+      else return "bg-gradient-to-br from-[#8B3A3A] to-[#8B3A3A] text-white border-[#7A2F2F] shadow-lg";
     } else if (pendingReview) {
-      // На проверке — цвет по факту ответа, без ложных "нулей"
       const answered = hasMeaningfulContent(answers[sec.id]) || (Array.isArray(attachments[sec.id]) && attachments[sec.id].length > 0);
-      if (i === current) return "bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white border-orange-500 shadow-lg";
+      if (i === current) return "bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white border-[#C67B4B] shadow-lg";
       return answered
-        ? "bg-gradient-to-br from-blue-500 to-cyan-500 text-white border-blue-600 shadow-lg"
-        : (darkMode ? "bg-gray-800 text-gray-400 border-2 border-gray-600" : "bg-white text-gray-500 border-2 border-orange-200");
-    } else if (i === current) return "bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white border-orange-500 shadow-lg";
-    else if (answers[sec.id] !== undefined) return darkMode ? "bg-orange-900/20 text-orange-300 border-amber-700" : "bg-orange-100 text-orange-700 border-amber-300";
-    return darkMode ? "bg-gray-800 text-gray-400 border-2 border-gray-600" : "bg-white text-gray-500 border-2 border-orange-200";
+        ? "bg-gradient-to-br from-[#B8860B] to-[#D4A017] text-white border-[#96690A] shadow-lg"
+        : (darkMode ? "bg-[#2A2420] text-[#8A7A6A] border-2 border-[#3D2817]" : "bg-white text-[#6B4E3A] border-2 border-[#E8DCC8]");
+    } else if (i === current) return "bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white border-[#C67B4B] shadow-lg";
+    else if (answers[sec.id] !== undefined) return darkMode ? "bg-[#3D2817]/20 text-[#DCC7AA] border-[#7A5608]" : "bg-[#F5E4D5] text-[#8B5A2E] border-[#E0B45C]";
+    return darkMode ? "bg-[#2A2420] text-[#8A7A6A] border-2 border-[#3D2817]" : "bg-white text-[#6B4E3A] border-2 border-[#E8DCC8]";
   };
 
   const totalScore = score !== null ? score : Object.values(scores).reduce((sum: number, s: any) => sum + (s || 0), 0);
@@ -1820,18 +2671,29 @@ function HomeworkView() {
       return (
         <div className={`min-h-screen ${bg} flex items-center justify-center p-4`}>
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className={`${bgCard} rounded-3xl p-10 border-2 text-center shadow-2xl max-w-2xl`}>
-            <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-pink-500 rounded-full flex items-center justify-center text-white text-5xl mx-auto mb-6 shadow-lg">⏱️</div>
+            <div className="w-24 h-24 bg-gradient-to-br from-[#C67B4B] to-[#8B3A3A] rounded-full flex items-center justify-center text-white text-5xl mx-auto mb-6 shadow-lg">⏱️</div>
             <h2 className={`text-3xl font-bold ${textPrimary} mb-3`}>Пробный экзамен</h2>
             <p className={`text-xl mb-2 font-semibold ${textSecondary}`}>{hw.title}</p>
-            <div className={`rounded-2xl p-6 border-2 mb-6 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
+            <div className={`rounded-2xl p-6 border-2 mb-6 ${darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'}`}>
               <div className="flex items-center justify-center gap-4 mb-4">
-                <Timer className={`w-8 h-8 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />
+                <Timer className={`w-8 h-8 ${darkMode ? 'text-[#D18F5C]' : 'text-[#A86535]'}`} />
                 <div className="text-left"><p className={`text-sm ${textSecondary}`}>Время на выполнение</p><p className={`text-3xl font-bold ${textAccent}`}>{hw.time_limit || 180} минут</p></div>
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => router.push('/homeworks')} className={`flex-1 px-6 py-4 border-2 rounded-xl font-bold transition active:scale-95 ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-white border-orange-300 text-gray-700'}`}>← Назад</button>
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => { setExamStarted(true); setExamStartTime(Date.now()); }} className="flex-1 px-6 py-4 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition flex items-center justify-center gap-2">
+              <button onClick={() => router.push('/homeworks')} className={`flex-1 px-6 py-4 border-2 rounded-xl font-bold transition active:scale-95 ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#B8A898]' : 'bg-white border-[#DCC7AA] text-[#6B4E3A]'}`}>← Назад</button>
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => {
+                const startTime = Date.now();
+                setExamStarted(true);
+                setExamStartTime(startTime);
+                // Пишем в черновик сразу, не дожидаясь debounce-автосохранения
+                // (оно завязано на answers/attachments и не сработает, если
+                // ученик ещё ничего не ответил) — иначе F5 сразу после старта
+                // потеряет exam_start_time и обнулит отсчёт.
+                setDoc(doc(db, "homework_drafts", `${id}_${uid}`), {
+                  homework_id: id, student_id: uid, exam_start_time: startTime, updated_at: new Date().toISOString()
+                }, { merge: true }).catch((e) => console.error('Не удалось сохранить старт экзамена:', e));
+              }} className="flex-1 px-6 py-4 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition flex items-center justify-center gap-2">
                 <Timer className="w-5 h-5" /> Начать экзамен
               </motion.button>
             </div>
@@ -1847,10 +2709,10 @@ function HomeworkView() {
         <div className="max-w-5xl mx-auto px-6 py-6">
           <header className={`${bgCard} rounded-2xl border-2 p-4 mb-6 shadow-sm`}>
             <div className="flex items-center justify-between">
-              <div><h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'bg-gradient-to-r from-orange-600 via-amber-600 to-pink-600 bg-clip-text text-transparent'}`}>{hw.title}</h1><p className={`text-sm ${textSecondary}`}>Пробный экзамен • {sections.length} заданий</p></div>
+              <div><h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] bg-clip-text text-transparent'}`}>{hw.title}</h1><p className={`text-sm ${textSecondary}`}>Пробный экзамен • {sections.length} заданий</p></div>
               <div className="flex items-center gap-3">
-                {saveStatus === 'saving' && <span className={`text-xs flex items-center gap-1 ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}><Save className="w-3 h-3 animate-pulse" /> Сохранение...</span>}
-                {saveStatus === 'saved' && <span className={`text-xs flex items-center gap-1 ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}><Check className="w-3 h-3" /> Сохранено</span>}
+                {saveStatus === 'saving' && <span className={`text-xs flex items-center gap-1 ${darkMode ? 'text-[#D4A017]' : 'text-[#96690A]'}`}><Save className="w-3 h-3 animate-pulse" /> Сохранение...</span>}
+                {saveStatus === 'saved' && <span className={`text-xs flex items-center gap-1 ${darkMode ? 'text-[#9BB07C]' : 'text-[#596050]'}`}><Check className="w-3 h-3" /> Сохранено</span>}
               </div>
             </div>
           </header>
@@ -1862,7 +2724,7 @@ function HomeworkView() {
             ))}
           </div>
           <div className="sticky bottom-4 mt-6">
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => { if (window.confirm('Завершить экзамен?')) { setExamFinished(true); submitAnswer(); } }} disabled={isSubmitting} className="w-full px-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-lg">
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => { if (window.confirm('Завершить экзамен?')) { setExamFinished(true); submitAnswer(); } }} disabled={isSubmitting} className="w-full px-6 py-4 bg-gradient-to-r from-[#6B705C] to-[#5F7A66] text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-lg">
               {isSubmitting ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Отправка...</>) : (<><CheckCircle className="w-6 h-6" /> Завершить экзамен</>)}
             </motion.button>
           </div>
@@ -1877,16 +2739,16 @@ function HomeworkView() {
       <header className={`${bgHeader} border-b sticky top-0 z-30 shadow-sm`}>
         <div className="max-w-5xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between gap-4">
-            <button onClick={() => router.push('/homeworks')} className={`font-medium text-sm flex items-center gap-2 transition active:scale-95 ${darkMode ? 'text-orange-400 hover:text-orange-300' : 'text-orange-700 hover:text-orange-800'}`}><ArrowLeft className="w-5 h-5" /> Назад</button>
-            <h1 className={`text-lg sm:text-xl font-bold truncate flex-1 text-center ${darkMode ? 'text-white' : 'bg-gradient-to-r from-orange-600 via-amber-600 to-pink-600 bg-clip-text text-transparent'}`}>{hw.title}</h1>
+            <button onClick={() => router.push('/homeworks')} className={`font-medium text-sm flex items-center gap-2 transition active:scale-95 ${darkMode ? 'text-[#D18F5C] hover:text-[#DCC7AA]' : 'text-[#8B5A2E] hover:text-[#6B4520]'}`}><ArrowLeft className="w-5 h-5" /> Назад</button>
+            <h1 className={`text-lg sm:text-xl font-bold truncate flex-1 text-center ${darkMode ? 'text-white' : 'bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] bg-clip-text text-transparent'}`}>{hw.title}</h1>
             <div className="flex items-center gap-2">
-              <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-xl border shadow-sm transition active:scale-90 ${darkMode ? 'bg-gray-800 text-yellow-400 border-gray-700' : 'bg-white text-gray-600 border-orange-200'}`}>
+              <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-xl border shadow-sm transition active:scale-90 ${darkMode ? 'bg-[#2A2420] text-[#D4A017] border-[#2A2420]' : 'bg-white text-[#3D2817] border-[#E8DCC8]'}`}>
                 {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
-              {deadlineInfo && !submitted && !pendingReview && <span className={`px-3 py-1 rounded-lg text-xs font-bold ${deadlineInfo.urgent ? (darkMode ? 'bg-rose-900/30 text-rose-300 animate-pulse' : 'bg-rose-100 text-rose-700 animate-pulse') : (darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700')}`}>{deadlineInfo.text}</span>}
-              {isPreviewMode && <span className={`px-3 py-1 rounded-lg text-xs font-bold ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>👁️ Предпросмотр</span>}
-              {pendingReview && <span className="px-3 py-1 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-xs font-bold flex items-center gap-1"><Hourglass className="w-3 h-3" /> На проверке</span>}
-              {reviewStatus === "needs_revision" && <span className="px-3 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-lg text-xs font-bold animate-pulse">📝 На доработку</span>}
+              {deadlineInfo && !submitted && !pendingReview && <span className={`px-3 py-1 rounded-lg text-xs font-bold ${deadlineInfo.urgent ? (darkMode ? 'bg-[#3D1515]/30 text-[#E0A3A3] animate-pulse' : 'bg-[#F5DEDA] text-[#6B2626] animate-pulse') : (darkMode ? 'bg-[#2A2E26]/30 text-[#B7C4A0]' : 'bg-[#DCEBD2] text-[#4A4F42]')}`}>{deadlineInfo.text}</span>}
+              {isPreviewMode && <span className={`px-3 py-1 rounded-lg text-xs font-bold ${darkMode ? 'bg-[#4A3405]/30 text-[#DEC17E]' : 'bg-[#F6ECCF] text-[#7A5608]'}`}>👁️ Предпросмотр</span>}
+              {pendingReview && <span className="px-3 py-1 bg-gradient-to-r from-[#B8860B] to-[#D4A017] text-white rounded-lg text-xs font-bold flex items-center gap-1"><Hourglass className="w-3 h-3" /> На проверке</span>}
+              {reviewStatus === "needs_revision" && <span className="px-3 py-1 bg-gradient-to-r from-[#8B3A3A] to-[#8B3A3A] text-white rounded-lg text-xs font-bold animate-pulse">📝 На доработку</span>}
             </div>
           </div>
         </div>
@@ -1894,61 +2756,60 @@ function HomeworkView() {
 
       <main className="max-w-5xl mx-auto px-6 py-6">
         {reviewStatus === "needs_revision" && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-rose-500 to-pink-500 rounded-2xl p-5 shadow-lg mb-6 text-white">
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-[#8B3A3A] to-[#8B3A3A] rounded-2xl p-5 shadow-lg mb-6 text-white">
             <div className="flex items-center gap-3"><RotateCcw className="w-8 h-8" /><div><h3 className="font-bold text-lg">Работа отправлена на доработку</h3><p className="text-sm text-white/90">Исправьте ошибки и отправьте снова</p></div></div>
           </motion.div>
         )}
         {pendingReview && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl p-5 shadow-lg mb-6 text-white">
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-[#B8860B] to-[#D4A017] rounded-2xl p-5 shadow-lg mb-6 text-white">
             <div className="flex items-center gap-3"><Hourglass className="w-8 h-8" /><div><h3 className="font-bold text-lg">Работа отправлена и ожидает проверки</h3><p className="text-sm text-white/90">Баллы и комментарии появятся после проверки преподавателем</p></div></div>
           </motion.div>
         )}
         {isReviewed && overallComment && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl p-5 shadow-lg mb-6 text-white">
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-[#B8860B] to-[#D4A017] rounded-2xl p-5 shadow-lg mb-6 text-white">
             <div className="flex items-start gap-3"><Award className="w-8 h-8 flex-shrink-0" /><div><h3 className="font-bold text-lg mb-1">💬 Комментарий учителя:</h3><p className="text-sm text-white/90 whitespace-pre-wrap">{overallComment}</p></div></div>
           </motion.div>
         )}
         {saveStatus === 'saving' && !submitted && !isPreviewMode && !pendingReview && (
-          <div className="fixed bottom-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 z-50 transition-all"><Save className="w-4 h-4 animate-pulse" /><span className="text-sm font-semibold">Сохранение...</span></div>
+          <div className="fixed bottom-4 right-4 bg-[#B8860B] text-white px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 z-50 transition-all"><Save className="w-4 h-4 animate-pulse" /><span className="text-sm font-semibold">Сохранение...</span></div>
         )}
         {saveStatus === 'saved' && !submitted && !isPreviewMode && !pendingReview && (
-          <div className="fixed bottom-4 right-4 bg-emerald-500 text-white px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 z-50 transition-all"><Check className="w-4 h-4" /><span className="text-sm font-semibold">Сохранено</span></div>
+          <div className="fixed bottom-4 right-4 bg-[#6B705C] text-white px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 z-50 transition-all"><Check className="w-4 h-4" /><span className="text-sm font-semibold">Сохранено</span></div>
         )}
 
         <div className={`${bgCard} rounded-2xl p-6 shadow-lg border-2 mb-6`}>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2"><div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg flex items-center justify-center text-white"><BookOpen className="w-4 h-4" /></div><span className={`text-sm font-semibold ${textSecondary}`}>Прогресс</span></div>
+            <div className="flex items-center gap-2"><div className="w-8 h-8 bg-gradient-to-br from-[#C67B4B] to-[#B8860B] rounded-lg flex items-center justify-center text-white"><BookOpen className="w-4 h-4" /></div><span className={`text-sm font-semibold ${textSecondary}`}>Прогресс</span></div>
             <span className={`text-sm font-bold ${textAccent}`}>{current + 1} из {sections.length}</span>
           </div>
           <div className={`relative h-3 ${bgProgress} rounded-full overflow-hidden mb-4`}>
-            <motion.div className="absolute h-full bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 rounded-full" initial={{ width: 0 }} animate={{ width: `${((current + 1) / sections.length) * 100}%` }} transition={{ duration: 0.5 }} />
+            <motion.div className="absolute h-full bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] rounded-full" initial={{ width: 0 }} animate={{ width: `${((current + 1) / sections.length) * 100}%` }} transition={{ duration: 0.5 }} />
           </div>
           <div className="flex items-center justify-center gap-3">
-            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleCurrentChange(Math.max(0, current - 1))} disabled={current === 0} className={`w-10 h-10 rounded-xl disabled:opacity-30 flex items-center justify-center border-2 shadow-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-orange-300 border-gray-600' : 'bg-orange-50 hover:bg-amber-100 text-orange-700 border-orange-200'}`}>◀</motion.button>
+            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleCurrentChange(Math.max(0, current - 1))} disabled={current === 0} className={`w-10 h-10 rounded-xl disabled:opacity-30 flex items-center justify-center border-2 shadow-sm ${darkMode ? 'bg-[#2A2420] hover:bg-[#3D2817] text-[#DCC7AA] border-[#3D2817]' : 'bg-[#FAF3E8] hover:bg-[#F6ECCF] text-[#8B5A2E] border-[#E8DCC8]'}`}>◀</motion.button>
             <div className="flex gap-2 flex-wrap justify-center">
               {sections.map((sec: any, i: number) => (
                 <motion.button key={sec.id} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleCurrentChange(i)} className={`w-10 h-10 rounded-xl text-sm font-bold transition-all flex items-center justify-center shadow-sm border-2 ${getButtonColor(sec, i)}`}>{i + 1}</motion.button>
               ))}
             </div>
-            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleCurrentChange(Math.min(sections.length - 1, current + 1))} disabled={current >= sections.length - 1} className={`w-10 h-10 rounded-xl disabled:opacity-30 flex items-center justify-center border-2 shadow-sm ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-orange-300 border-gray-600' : 'bg-orange-50 hover:bg-amber-100 text-orange-700 border-orange-200'}`}>▶</motion.button>
+            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleCurrentChange(Math.min(sections.length - 1, current + 1))} disabled={current >= sections.length - 1} className={`w-10 h-10 rounded-xl disabled:opacity-30 flex items-center justify-center border-2 shadow-sm ${darkMode ? 'bg-[#2A2420] hover:bg-[#3D2817] text-[#DCC7AA] border-[#3D2817]' : 'bg-[#FAF3E8] hover:bg-[#F6ECCF] text-[#8B5A2E] border-[#E8DCC8]'}`}>▶</motion.button>
           </div>
           {isReviewed && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className={`mt-5 pt-4 border-t-2 ${darkMode ? 'border-gray-700' : 'border-orange-100'}`}>
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className={`mt-5 pt-4 border-t-2 ${darkMode ? 'border-[#2A2420]' : 'border-[#F5E4D5]'}`}>
               <p className={`text-xs font-semibold mb-3 text-center ${textSecondary}`}>Результаты:</p>
               <div className="flex flex-wrap justify-center gap-3">
-                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 ${darkMode ? 'bg-emerald-900/20 border-emerald-700' : 'bg-emerald-50 border-emerald-200'}`}><div className="w-5 h-5 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-md"></div><span className={`text-sm font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>✓ Верно: {sections.filter((sec: any) => (scores[sec.id] ?? 0) >= (sec.max_score || 1)).length}</span></div>
-                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 ${darkMode ? 'bg-rose-900/20 border-rose-700' : 'bg-rose-50 border-rose-200'}`}><div className="w-5 h-5 bg-gradient-to-br from-rose-500 to-red-500 rounded-md"></div><span className={`text-sm font-semibold ${darkMode ? 'text-rose-300' : 'text-rose-700'}`}>✗ Неверно: {sections.filter((sec: any) => (scores[sec.id] ?? 0) === 0).length}</span></div>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 ${darkMode ? 'bg-[#2A2E26]/20 border-[#4A4F42]' : 'bg-[#DCEBD2] border-[#A9C596]'}`}><div className="w-5 h-5 bg-gradient-to-br from-[#6B705C] to-[#5F7A66] rounded-md"></div><span className={`text-sm font-semibold ${darkMode ? 'text-[#B7C4A0]' : 'text-[#4A4F42]'}`}>✓ Верно: {sections.filter((sec: any) => (scores[sec.id] ?? 0) >= (sec.max_score || 1)).length}</span></div>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 ${darkMode ? 'bg-[#3D1515]/20 border-[#6B2626]' : 'bg-[#F5DEDA] border-[#ECC2C2]'}`}><div className="w-5 h-5 bg-gradient-to-br from-[#8B3A3A] to-[#8B3A3A] rounded-md"></div><span className={`text-sm font-semibold ${darkMode ? 'text-[#E0A3A3]' : 'text-[#6B2626]'}`}>✗ Неверно: {sections.filter((sec: any) => (scores[sec.id] ?? 0) === 0).length}</span></div>
               </div>
             </motion.div>
           )}
         </div>
 
-        {/* ✅ Баннер с баллами только после реальной проверки */}
         {isReviewed && (
-          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", duration: 0.6 }} className="bg-gradient-to-br from-orange-500 via-amber-500 to-pink-500 rounded-3xl p-8 shadow-2xl text-white mb-6">
+          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", duration: 0.6 }} className={`bg-gradient-to-r ${percentage >= 90 ? 'from-[#C67B4B] to-[#B8860B]' : percentage >= 70 ? 'from-[#B8860B] to-[#A8622E]' : 'from-[#8A7A65] to-[#6B5A45]'} rounded-2xl px-6 py-4 shadow-lg text-white mb-6`}>
             <div className="flex items-center justify-between">
-              <div><p className="text-orange-100 text-sm mb-2">Первичные баллы</p><p className="text-5xl font-bold">{totalScore}<span className="text-3xl text-orange-200">/{maxScore}</span></p></div>
-              <div className="text-right"><p className="text-4xl font-bold text-white mb-1">{percentage}%</p><p className="text-orange-100 text-sm font-medium">{percentage >= 90 ? '🔥 Отлично!' : percentage >= 70 ? '👍 Хорошо' : '📖 Нужно подучить'}</p></div>
+              <div><p className="text-[#F5E4D5] text-xs mb-1">Первичные баллы</p><p className="text-2xl font-bold">{totalScore}<span className="text-lg text-[#E8DCC8]">/{maxScore}</span></p></div>
+              <div className="text-right"><p className="text-2xl font-bold text-white leading-tight">{percentage}%</p><p className="text-[#F5E4D5] text-xs font-medium">{percentage >= 90 ? '🔥 Отлично!' : percentage >= 70 ? '👍 Хорошо' : '📖 Нужно подучить'}</p></div>
             </div>
           </motion.div>
         )}
@@ -1964,7 +2825,6 @@ function HomeworkView() {
                 <ResultCard section={section} answer={answers[section.id]} score={scores[section.id] || 0} maxScore={section.max_score || 1} comment={sectionComments[section.id]} conversionScale={conversionScale} studentComment={studentComments[section.id]} teacherReply={currentSubmission?.teacher_replies?.[section.id]} attachment={attachments[section.id]} darkMode={darkMode} pendingReview={false} />
               )}
 
-              {/* Блок с фото и кнопкой удаления для ученика (только когда работа на доработке) */}
               {!isTutor && reviewStatus === "needs_revision" && (
                 <div className="mt-4">
                   {(() => {
@@ -1985,7 +2845,7 @@ function HomeworkView() {
                             <div key={photoIdx} className="relative">
                               <div
                                 onClick={() => window.open(photo.url, '_blank')}
-                                className="overflow-hidden rounded-lg border-2 border-orange-200 cursor-pointer group"
+                                className="overflow-hidden rounded-lg border-2 border-[#E8DCC8] cursor-pointer group"
                               >
                                 <img
                                   src={photo.url}
@@ -2000,7 +2860,6 @@ function HomeworkView() {
                                 </div>
                               </div>
 
-                              {/* ✅ Кнопка удаления: всегда видна, не съезжает */}
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -2008,7 +2867,7 @@ function HomeworkView() {
                                   e.preventDefault();
                                   handleDeletePhotoStudent(sectionId, photoIdx);
                                 }}
-                                className="absolute top-2 right-2 z-20 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all hover:scale-110 active:scale-90 flex items-center justify-center"
+                                className="absolute top-2 right-2 z-20 p-1.5 bg-[#8B3A3A] hover:bg-[#7A2F2F] text-white rounded-full shadow-lg transition-all hover:scale-110 active:scale-90 flex items-center justify-center"
                                 title="Удалить фото"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -2027,36 +2886,35 @@ function HomeworkView() {
 
         {!isPreviewMode && (
           <div className="flex gap-3">
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleCurrentChange(Math.max(0, current - 1))} disabled={current === 0} className={`px-6 py-3 rounded-xl font-semibold transition-all text-base ${current === 0 ? `opacity-50 cursor-not-allowed ${darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-200 text-gray-500'}` : `${darkMode ? 'bg-gray-800 border-2 border-gray-600 text-gray-300 hover:border-orange-400 hover:bg-gray-700' : 'bg-white border-2 border-orange-200 text-gray-700 hover:border-orange-400 hover:bg-orange-50'} shadow`}`}>← Назад</motion.button>
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleCurrentChange(Math.max(0, current - 1))} disabled={current === 0} className={`px-6 py-3 rounded-xl font-semibold transition-all text-base ${current === 0 ? `opacity-50 cursor-not-allowed ${darkMode ? 'bg-[#2A2420] text-[#6B4E3A]' : 'bg-[#E8DCC8] text-[#6B4E3A]'}` : `${darkMode ? 'bg-[#2A2420] border-2 border-[#3D2817] text-[#B8A898] hover:border-[#D18F5C] hover:bg-[#2A2420]' : 'bg-white border-2 border-[#E8DCC8] text-[#6B4E3A] hover:border-[#D18F5C] hover:bg-[#FAF3E8]'} shadow`}`}>← Назад</motion.button>
             {current < sections.length - 1 ? (
-              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleCurrentChange(current + 1)} className="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-xl transition shadow text-base">Далее →</motion.button>
+              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => handleCurrentChange(current + 1)} className="flex-1 px-6 py-3 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-semibold hover:shadow-xl transition shadow text-base">Далее →</motion.button>
             ) : !submitted && !pendingReview ? (
               isDeadlinePassed ? (
-                <div className={`flex-1 px-6 py-3 rounded-xl font-bold text-center border-2 ${darkMode ? 'bg-rose-900/20 text-rose-300 border-rose-700' : 'bg-rose-100 text-rose-700 border-rose-300'}`}>⏰ Дедлайн истёк</div>
+                <div className={`flex-1 px-6 py-3 rounded-xl font-bold text-center border-2 ${darkMode ? 'bg-[#3D1515]/20 text-[#E0A3A3] border-[#6B2626]' : 'bg-[#F5DEDA] text-[#6B2626] border-[#E0A3A3]'}`}>⏰ Дедлайн истёк</div>
               ) : (
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => submitAnswer()} disabled={isSubmitting} className="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-xl transition shadow disabled:opacity-50 flex items-center justify-center gap-2 text-base">
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => submitAnswer()} disabled={isSubmitting} className="flex-1 px-6 py-3 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-semibold hover:shadow-xl transition shadow disabled:opacity-50 flex items-center justify-center gap-2 text-base">
                   {isSubmitting ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Отправка...</>) : (<><CheckCircle className="w-5 h-5" /> {submissionId ? "✓ Переотправить" : "✓ Отправить"}</>)}
                 </motion.button>
               )
             ) : pendingReview ? (
-              <div className={`flex-1 flex items-center justify-center border-2 rounded-xl p-4 shadow gap-2 ${darkMode ? 'bg-blue-900/10 border-blue-700' : 'bg-blue-50 border-blue-200'}`}>
-                <Hourglass className={`w-5 h-5 ${darkMode ? 'text-blue-300' : 'text-blue-600'}`} />
-                <span className={`text-base font-bold ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>⏳ Работа на проверке у преподавателя</span>
+              <div className={`flex-1 flex items-center justify-center border-2 rounded-xl p-4 shadow gap-2 ${darkMode ? 'bg-[#4A3405]/10 border-[#7A5608]' : 'bg-[#F6ECCF] border-[#EAD9A8]'}`}>
+                <Hourglass className={`w-5 h-5 ${darkMode ? 'text-[#DEC17E]' : 'text-[#96690A]'}`} />
+                <span className={`text-base font-bold ${darkMode ? 'text-[#DEC17E]' : 'text-[#7A5608]'}`}>⏳ Работа на проверке у преподавателя</span>
               </div>
             ) : (
-              <div className={`flex-1 flex items-center justify-center border-2 rounded-xl p-4 shadow ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-orange-200'}`}>
+              <div className={`flex-1 flex items-center justify-center border-2 rounded-xl p-4 shadow ${darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'}`}>
                 <span className={`text-base font-bold ${textSecondary}`}>✅ Работа проверена • {totalScore}/{maxScore} баллов</span>
               </div>
             )}
           </div>
         )}
-        {isPreviewMode && <div className={`border-2 rounded-xl p-4 text-center ${darkMode ? 'bg-blue-900/10 border-blue-700' : 'bg-blue-50 border-blue-200'}`}><p className={`text-sm font-bold ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>👁️ Это режим предпросмотра. Отправка невозможна.</p></div>}
+        {isPreviewMode && <div className={`border-2 rounded-xl p-4 text-center ${darkMode ? 'bg-[#4A3405]/10 border-[#7A5608]' : 'bg-[#F6ECCF] border-[#EAD9A8]'}`}><p className={`text-sm font-bold ${darkMode ? 'text-[#DEC17E]' : 'text-[#7A5608]'}`}>👁️ Это режим предпросмотра. Отправка невозможна.</p></div>}
       </main>
 
-      {/* Плавающая кнопка справочных таблиц */}
       <button
         onClick={() => setShowTables(true)}
-        className="fixed bottom-24 right-6 z-40 w-14 h-14 bg-gradient-to-br from-orange-500 to-pink-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-transform duration-300"
+        className="fixed bottom-24 right-6 z-40 w-14 h-14 bg-gradient-to-br from-[#C67B4B] to-[#8B3A3A] text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-transform duration-300"
         title="Справочные таблицы"
       >
         <Table2 className="w-6 h-6" />
@@ -2065,10 +2923,10 @@ function HomeworkView() {
       {showTables && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm" onClick={() => setShowTables(false)}>
           <div onClick={(e) => e.stopPropagation()} className="h-full flex items-center justify-center p-4">
-            <div className="relative w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl shadow-2xl bg-white dark:bg-gray-900">
+            <div className="relative w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl shadow-2xl bg-white dark:bg-[#1A1614]">
               <button
                 onClick={() => setShowTables(false)}
-                className="absolute top-4 right-4 z-50 w-10 h-10 bg-white/90 dark:bg-gray-800/90 rounded-full flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition"
+                className="absolute top-4 right-4 z-50 w-10 h-10 bg-white/90 dark:bg-[#2A2420]/90 rounded-full flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2083,7 +2941,7 @@ function HomeworkView() {
 
 export default function HomeworkPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center"><div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+    <Suspense fallback={<div className="min-h-screen bg-[#FAF3E8] dark:bg-[#1A1614] flex items-center justify-center"><div className="w-16 h-16 border-4 border-[#C67B4B] border-t-transparent rounded-full animate-spin"></div></div>}>
       <HomeworkView />
     </Suspense>
   );

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, Suspense, useRef } from "react";
+import { useState, useEffect, Suspense, useRef, useMemo } from "react";
 import Link from "next/link";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
@@ -14,7 +14,8 @@ import {
   Search, Plus, Folder, Star, Clock, FileText, Edit, Copy, Trash2,
   CheckCircle, Target, Zap, BookOpen, Layers, X, Award, Check,
   Database, Users, Upload, Eye, RotateCcw, GraduationCap, Settings,
-  Save, Calculator, Timer, Download, Moon, Sun, Bell, Calendar, Tag, AlertTriangle
+  Save, Calculator, Timer, Download, Moon, Sun, Bell, Calendar, Tag, AlertTriangle,
+  TrendingUp, AlertCircle, BarChart3, UserCheck, Flame
 } from "lucide-react";
 
 const firebaseConfig = {
@@ -29,6 +30,10 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
+
+// ===================== EVERMORE ПАЛИТРА =====================
+// Терракота #C67B4B, коричневый #3D2817, оливковый #6B705C, бордовый #8B3A3A, золотой #B8860B
+// Кремовый фон #FAF3E8 (светлый) / #1A1614 (тёмный)
 
 type TaskType = 'text' | 'single_choice' | 'multi_choice' | 'order' | 'match' | 'fill_blanks' | 'assembly' | 'drag_drop' | 'photo';
 
@@ -78,20 +83,20 @@ interface Homework {
   tags?: string[];
 }
 
-const DIFFICULTY_INFO = {
-  easy: { label: "🟢 Лёгкое", color: "from-emerald-400 to-green-500" },
-  medium: { label: "🟡 Среднее", color: "from-amber-400 to-orange-500" },
-  hard: { label: "🔴 Сложное", color: "from-rose-400 to-red-500" },
+const DIFFICULTY_INFO: any = {
+  easy: { label: "🟢 Лёгкое", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" },
+  medium: { label: " Среднее", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" },
+  hard: { label: "🔴 Сложное", color: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300" },
 };
 
 const TASK_TYPES = [
   { value: "text", label: "Свободный ответ", icon: "📝", color: "from-blue-500 to-cyan-500" },
-  { value: "single_choice", label: "Один вариант", icon: "", color: "from-purple-500 to-pink-500" },
+  { value: "single_choice", label: "Один вариант", icon: "🔘", color: "from-purple-500 to-pink-500" },
   { value: "multi_choice", label: "Несколько", icon: "✅", color: "from-emerald-500 to-teal-500" },
-  { value: "order", label: "По порядку", icon: "", color: "from-orange-500 to-amber-500" },
+  { value: "order", label: "По порядку", icon: "🔢", color: "from-orange-500 to-amber-500" },
   { value: "match", label: "Соответствие", icon: "🔗", color: "from-rose-500 to-pink-500" },
   { value: "fill_blanks", label: "Заполнить", icon: "✍️", color: "from-indigo-500 to-purple-500" },
-  { value: "assembly", label: "Из частей", icon: "🧩", color: "from-cyan-500 to-blue-500" },
+  { value: "assembly", label: "Из частей", icon: "", color: "from-cyan-500 to-blue-500" },
   { value: "drag_drop", label: "Перетащить", icon: "🎯", color: "from-amber-500 to-orange-500" },
   { value: "photo", label: "Фото-задание", icon: "📷", color: "from-pink-500 to-rose-500" },
 ];
@@ -126,14 +131,14 @@ const EGE_SCALES: Record<string, Record<number, number>> = {
 };
 
 const EGE_SCALE_LABELS: Record<string, string> = {
-  chemistry: " Химия ЕГЭ (0-56 → 0-100)",
+  chemistry: "🧪 Химия ЕГЭ (0-56 → 0-100)",
   biology: "🧬 Биология ЕГЭ (0-57 → 0-100)"
 };
 
-const SUBSCRIPTS = ['₁','₂','₃','','₅','₆','₇'];
-const CHARGES = ['⁵⁻','','³⁻','²⁻','','','²⁺','³⁺','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
-const OXIDATION = ['⁻⁵','⁻⁴','³','⁻²','⁻¹','','⁺¹','⁺²','⁺³','⁺⁴','⁺⁵','⁺⁶','⁺⁷'];
-const SIGNS = ['→','←','⇄','','↑','↓','+','=','t°','°C'];
+const SUBSCRIPTS = ['₁','₂','₃','₄','₅','₆','₇'];
+const CHARGES = ['⁵⁻','⁴⁻','³⁻','²⁻','','','⁺','²⁺','³','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
+const OXIDATION = ['⁻⁵','⁴','⁻³','⁻²','⁻¹','','⁺¹','⁺²','⁺³','⁺⁴','⁺','⁺⁶','⁺⁷'];
+const SIGNS = ['→','←','⇄','↑','↓','+','=','t°','°C'];
 
 function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = "", darkMode = false }: any) {
   const [showPopup, setShowPopup] = useState(false);
@@ -163,15 +168,13 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
     }, 0);
   }
 
-  const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900';
-  const bgPopup = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
-  const textLabel = darkMode ? 'text-gray-300' : 'text-gray-700';
+  const bgInput = darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]';
+  const bgPopup = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]';
+  const textLabel = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
 
   return (
     <div className="relative">
-      {label && (
-        <label className={`block text-sm font-semibold ${textLabel} mb-2`}>{label}</label>
-      )}
+      {label && <label className={`block text-sm font-semibold ${textLabel} mb-2`}>{label}</label>}
       <div className="flex gap-2">
         <textarea
           ref={textareaRef}
@@ -179,27 +182,24 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={rows}
-          className={`flex-1 border rounded-xl p-3 text-base focus:border-orange-500 focus:outline-none resize-none ${bgInput}`}
-          aria-label={label || "Текстовое поле"}
+          className={`flex-1 border-2 rounded-xl p-3 text-base focus:border-[#C67B4B] focus:outline-none resize-none ${bgInput}`}
         />
         <div className="relative" ref={popupRef}>
           <button
             type="button"
             onClick={() => setShowPopup(!showPopup)}
-            className="h-full px-4 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl hover:from-orange-600 hover:to-pink-600 transition shadow-md text-xl"
-            aria-label="Химические символы"
-            title="Химические символы"
+            className="h-full px-4 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl hover:from-[#A86535] hover:to-[#7A2F2F] transition shadow-md text-xl"
           >
             🧪
           </button>
           {showPopup && (
-            <div className={`fixed right-4 bottom-4 w-80 rounded-2xl shadow-2xl border p-4 z-[100] max-h-[400px] overflow-y-auto ${bgPopup}`}>
+            <div className={`fixed right-4 bottom-4 w-80 rounded-2xl shadow-2xl border-2 p-4 z-[100] max-h-[400px] overflow-y-auto ${bgPopup}`}>
               <div className="space-y-3">
                 <div>
-                  <p className={`text-sm font-bold ${textLabel} mb-2`}> Индексы</p>
+                  <p className={`text-sm font-bold ${textLabel} mb-2`}>🔢 Индексы</p>
                   <div className="flex flex-wrap gap-1">
                     {SUBSCRIPTS.map(s => (
-                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border rounded-lg text-sm font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-orange-300 hover:bg-gray-600' : 'bg-orange-50 border-orange-200 text-orange-800 hover:bg-orange-100'}`}>{s}</button>
+                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border-2 rounded-lg text-sm font-bold ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#C67B4B] hover:bg-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#C67B4B] hover:bg-[#F5EBD8]'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
@@ -207,15 +207,15 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
                   <p className={`text-sm font-bold ${textLabel} mb-2`}>⚡ Заряды</p>
                   <div className="flex flex-wrap gap-1">
                     {CHARGES.map(s => (
-                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border rounded-lg text-sm font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-pink-300 hover:bg-gray-600' : 'bg-pink-50 border-pink-200 text-pink-800 hover:bg-pink-100'}`}>{s}</button>
+                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border-2 rounded-lg text-sm font-bold ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#8B3A3A] hover:bg-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#8B3A3A] hover:bg-[#F5EBD8]'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <p className={`text-sm font-bold ${textLabel} mb-2`}> Степени окисления</p>
+                  <p className={`text-sm font-bold ${textLabel} mb-2`}>️ Степени окисления</p>
                   <div className="flex flex-wrap gap-1">
                     {OXIDATION.map(s => (
-                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border rounded-lg text-sm font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-red-300 hover:bg-gray-600' : 'bg-red-50 border-red-200 text-red-800 hover:bg-red-100'}`}>{s}</button>
+                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border-2 rounded-lg text-sm font-bold ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#B8860B] hover:bg-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#B8860B] hover:bg-[#F5EBD8]'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
@@ -223,7 +223,7 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
                   <p className={`text-sm font-bold ${textLabel} mb-2`}>🔣 Знаки</p>
                   <div className="flex flex-wrap gap-1">
                     {SIGNS.map(s => (
-                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border rounded-lg text-sm font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-gray-50 border-gray-200 text-gray-800 hover:bg-gray-100'}`}>{s}</button>
+                      <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border-2 rounded-lg text-sm font-bold ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3] hover:bg-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817] hover:bg-[#F5EBD8]'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
@@ -261,20 +261,20 @@ function ImageUploader({ value, onChange, tutorId, darkMode = false }: any) {
     }
   };
 
-  const textLabel = darkMode ? 'text-gray-300' : 'text-gray-700';
+  const textLabel = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
 
   return (
     <div className="space-y-2">
       <label className={`block text-sm font-semibold ${textLabel}`}>📷 Картинка задания</label>
       <div className="flex gap-3 items-start">
-        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} aria-label="Загрузить изображение" />
-        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center gap-2 disabled:opacity-50" aria-label="Загрузить фото">
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={uploading} />
+        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-4 py-3 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center gap-2 disabled:opacity-50">
           <Upload className="w-5 h-5" /> {uploading ? 'Загрузка...' : 'Загрузить фото'}
         </button>
         {value && (
           <div className="relative">
-            <img src={value} alt="Preview" className="max-h-32 rounded-xl border-2 border-orange-200" loading="lazy" />
-            <button type="button" onClick={() => onChange('')} className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center hover:bg-rose-600 transition" aria-label="Удалить изображение">
+            <img src={value} alt="Preview" className="max-h-32 rounded-xl border-2 border-[#C67B4B]" loading="lazy" />
+            <button type="button" onClick={() => onChange('')} className="absolute -top-2 -right-2 w-6 h-6 bg-[#8B3A3A] text-white rounded-full flex items-center justify-center hover:bg-[#7A2F2F] transition">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -329,41 +329,40 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
     toast.success('✅ Своя шкала сохранена');
   };
 
-  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-purple-50 border-purple-200';
-  const bgBtn = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-purple-200 text-gray-900';
-  const bgBtnActive = 'bg-gradient-to-br from-purple-500 to-pink-500 text-white border-transparent';
-  const textLabel = darkMode ? 'text-gray-300' : 'text-gray-700';
-  const textMuted = darkMode ? 'text-gray-400' : 'text-gray-600';
+  const bgCard = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]';
+  const bgBtn = darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]';
+  const bgBtnActive = 'bg-gradient-to-br from-[#C67B4B] to-[#8B3A3A] text-white border-transparent';
+  const textLabel = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
 
   return (
     <div className={`rounded-2xl p-5 border-2 ${bgCard}`}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Calculator className={`w-6 h-6 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+          <Calculator className={`w-6 h-6 ${darkMode ? 'text-[#C67B4B]' : 'text-[#8B3A3A]'}`} />
           <div>
-            <h4 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>Шкала конвертации баллов</h4>
-            <p className={`text-xs ${textMuted}`}>Первичные → Тестовые баллы ЕГЭ</p>
+            <h4 className={`font-bold text-lg ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>Шкала конвертации баллов</h4>
+            <p className={`text-xs ${textLabel}`}>Первичные → Тестовые баллы ЕГЭ</p>
           </div>
         </div>
         {scaleType !== 'none' && (
-          <button type="button" onClick={removeScale} className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Убрать шкалу">
+          <button type="button" onClick={removeScale} className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
             <Trash2 className="w-3.5 h-3.5" /> Убрать
           </button>
         )}
       </div>
 
       <div className="grid grid-cols-3 gap-2 mb-4">
-        <button type="button" onClick={() => { setScaleType('none'); onChange(null); }} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'none' ? bgBtnActive : `${bgBtn} hover:border-purple-400`}`} aria-label="Без конвертации">
+        <button type="button" onClick={() => { setScaleType('none'); onChange(null); }} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'none' ? bgBtnActive : `${bgBtn} hover:border-[#C67B4B]`}`}>
           <div className="text-2xl mb-1">❌</div>
-          <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Без конвертации</div>
+          <div className={`text-xs font-bold ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>Без конвертации</div>
         </button>
-        <button type="button" onClick={() => { setScaleType('preset'); applyPreset(selectedPreset); }} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'preset' ? bgBtnActive : `${bgBtn} hover:border-purple-400`}`} aria-label="Стандарт ЕГЭ">
-          <div className="text-2xl mb-1">📊</div>
-          <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Стандарт ЕГЭ</div>
+        <button type="button" onClick={() => { setScaleType('preset'); applyPreset(selectedPreset); }} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'preset' ? bgBtnActive : `${bgBtn} hover:border-[#C67B4B]`}`}>
+          <div className="text-2xl mb-1"></div>
+          <div className={`text-xs font-bold ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>Стандарт ЕГЭ</div>
         </button>
-        <button type="button" onClick={() => setScaleType('custom')} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'custom' ? bgBtnActive : `${bgBtn} hover:border-purple-400`}`} aria-label="Своя шкала">
-          <div className="text-2xl mb-1">✏️</div>
-          <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Своя шкала</div>
+        <button type="button" onClick={() => setScaleType('custom')} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'custom' ? bgBtnActive : `${bgBtn} hover:border-[#C67B4B]`}`}>
+          <div className="text-2xl mb-1">️</div>
+          <div className={`text-xs font-bold ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>Своя шкала</div>
         </button>
       </div>
 
@@ -372,7 +371,7 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
           <p className={`text-sm font-semibold ${textLabel}`}>Выберите предмет:</p>
           <div className="grid grid-cols-1 gap-2">
             {Object.entries(EGE_SCALE_LABELS).map(([key, label]) => (
-              <button key={key} type="button" onClick={() => applyPreset(key)} className={`p-3 rounded-xl border-2 text-left transition-all ${selectedPreset === key ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white border-transparent shadow-md' : `${bgBtn} hover:border-purple-400`}`} aria-label={label}>
+              <button key={key} type="button" onClick={() => applyPreset(key)} className={`p-3 rounded-xl border-2 text-left transition-all ${selectedPreset === key ? 'bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white border-transparent shadow-md' : `${bgBtn} hover:border-[#C67B4B]`}`}>
                 <div className="font-bold text-sm">{label}</div>
                 <div className="text-xs opacity-80 mt-1">Максимум: {Math.max(...Object.keys(EGE_SCALES[key]).map(Number))} первичных → 100 тестовых</div>
               </button>
@@ -385,31 +384,31 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className={`text-sm font-semibold ${textLabel}`}>Задайте соответствие:</p>
-            <button type="button" onClick={addCustomRow} className="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1" aria-label="Добавить строку">
+            <button type="button" onClick={addCustomRow} className="px-3 py-1.5 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg text-xs font-semibold flex items-center gap-1">
               <Plus className="w-3.5 h-3.5" /> Строка
             </button>
           </div>
-          <div className={`${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-purple-200'} rounded-xl p-3 border-2 max-h-60 overflow-y-auto space-y-2`}>
+          <div className={`${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'} rounded-xl p-3 border-2 max-h-60 overflow-y-auto space-y-2`}>
             <div className="grid grid-cols-2 gap-2 text-xs font-bold text-gray-600 mb-2 px-2">
               <div>Первичные</div>
               <div>Тестовые</div>
             </div>
             {customScale.map((row, idx) => (
               <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
-                <input type="number" min={0} value={row.primary} onChange={(e) => updateCustomRow(idx, 'primary', parseInt(e.target.value) || 0)} className={`px-3 py-2 border rounded-lg text-sm font-bold text-center focus:border-purple-500 focus:outline-none ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-purple-50 border-purple-200 text-gray-900'}`} placeholder="Первичные" aria-label="Первичные баллы" />
-                <input type="number" min={0} max={100} value={row.test} onChange={(e) => updateCustomRow(idx, 'test', parseInt(e.target.value) || 0)} className={`px-3 py-2 border rounded-lg text-sm font-bold text-center focus:border-pink-500 focus:outline-none ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-pink-50 border-pink-200 text-gray-900'}`} placeholder="Тестовые" aria-label="Тестовые баллы" />
-                <button type="button" onClick={() => removeCustomRow(idx)} className={`p-1.5 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить строку">
+                <input type="number" min={0} value={row.primary} onChange={(e) => updateCustomRow(idx, 'primary', parseInt(e.target.value) || 0)} className={`px-3 py-2 border-2 rounded-lg text-sm font-bold text-center focus:border-[#C67B4B] focus:outline-none ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]'}`} />
+                <input type="number" min={0} max={100} value={row.test} onChange={(e) => updateCustomRow(idx, 'test', parseInt(e.target.value) || 0)} className={`px-3 py-2 border-2 rounded-lg text-sm font-bold text-center focus:border-[#8B3A3A] focus:outline-none ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]'}`} />
+                <button type="button" onClick={() => removeCustomRow(idx)} className={`p-1.5 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             ))}
           </div>
           {maxPrimaryScore > 0 && (
-            <div className={`text-xs ${darkMode ? 'text-amber-300 bg-amber-900/20 border-amber-700' : 'text-gray-600 bg-amber-50 border-amber-200'} border rounded-lg p-2`}>
+            <div className={`text-xs ${darkMode ? 'text-[#B8860B] bg-[#B8860B]/10 border-[#B8860B]/30' : 'text-[#6B4E3A] bg-[#B8860B]/10 border-[#B8860B]/30'} border-2 rounded-lg p-2`}>
               💡 Максимум первичных баллов в этом ДЗ: <b>{maxPrimaryScore}</b>. Убедитесь, что шкала покрывает все значения.
             </div>
           )}
-          <button type="button" onClick={saveCustomScale} className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2" aria-label="Сохранить шкалу">
+          <button type="button" onClick={saveCustomScale} className="w-full px-4 py-2.5 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2">
             <Save className="w-4 h-4" /> Сохранить свою шкалу
           </button>
         </div>
@@ -485,17 +484,16 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
     setEditingTemplate({ ...editingTemplate, criteria });
   };
 
-  const bgModal = darkMode ? 'bg-gray-900' : 'bg-white';
-  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200';
-  const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
-  const textMuted = darkMode ? 'text-gray-500' : 'text-gray-700';
+  const bgModal = darkMode ? 'bg-[#2A2420]' : 'bg-white';
+  const bgCard = darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]';
+  const bgInput = darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className={`${bgModal} rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col`} onClick={e => e.stopPropagation()}>
-        <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 px-6 py-5 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
               <Award className="w-7 h-7 text-white" />
@@ -505,7 +503,7 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
               <p className="text-white/80 text-sm">Создавайте и управляйте шаблонами</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white" aria-label="Закрыть">
+          <button onClick={onClose} className="text-white/80 hover:text-white">
             <X className="w-7 h-7" />
           </button>
         </div>
@@ -513,13 +511,13 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="text-center py-12">
-              <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+              <div className="w-12 h-12 border-4 border-[#C67B4B] border-t-transparent rounded-full animate-spin mx-auto"></div>
             </div>
           ) : templates.length === 0 ? (
-            <div className={`text-center py-12 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-br from-orange-50 to-pink-50 border-orange-200'} rounded-2xl border-2 border-dashed`}>
+            <div className={`text-center py-12 ${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'} rounded-2xl border-2 border-dashed`}>
               <div className="text-6xl mb-4">📋</div>
               <p className={`font-semibold text-lg mb-4 ${textSecondary}`}>Нет шаблонов</p>
-              <button onClick={() => { setEditingTemplate({ name: '', criteria: [] }); setShowForm(true); }} className="px-6 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-lg transition">+ Создать здесь</button>
+              <button onClick={() => { setEditingTemplate({ name: '', criteria: [] }); setShowForm(true); }} className="px-6 py-3 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl font-semibold hover:shadow-lg transition">+ Создать здесь</button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -531,10 +529,10 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
                       <p className={`text-sm ${textSecondary}`}>{(template.criteria?.length || 0)} критериев • Максимум: {template.criteria?.reduce((sum: number, c: any) => sum + (c.points || 0), 0) || 0} баллов</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => { setEditingTemplate(template); setShowForm(true); }} className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition flex items-center gap-1" aria-label="Изменить">
+                      <button onClick={() => { setEditingTemplate(template); setShowForm(true); }} className="px-3 py-2 bg-[#6B705C] text-white rounded-lg text-sm font-semibold hover:bg-[#5A5F4D] transition flex items-center gap-1">
                         <Edit className="w-4 h-4" /> Изменить
                       </button>
-                      <button onClick={() => deleteTemplate(template.id)} className="px-3 py-2 bg-rose-500 text-white rounded-lg text-sm font-semibold hover:bg-rose-600 transition flex items-center gap-1" aria-label="Удалить">
+                      <button onClick={() => deleteTemplate(template.id)} className="px-3 py-2 bg-[#8B3A3A] text-white rounded-lg text-sm font-semibold hover:bg-[#7A2F2F] transition flex items-center gap-1">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -542,15 +540,15 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
                   <div className="space-y-1">
                     {(template.criteria || []).map((c: any, i: number) => (
                       <div key={i} className="flex items-center gap-2 text-sm">
-                        <span className={`font-bold w-6 ${darkMode ? 'text-orange-300' : 'text-orange-700'}`}>{i + 1}.</span>
-                        <span className={`flex-1 ${textMuted}`}>{c.condition || 'Без условия'}</span>
-                        <span className={`font-bold ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>{c.points ?? 0} балл.</span>
+                        <span className={`font-bold w-6 ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`}>{i + 1}.</span>
+                        <span className={`flex-1 ${textSecondary}`}>{c.condition || 'Без условия'}</span>
+                        <span className={`font-bold ${darkMode ? 'text-[#B8860B]' : 'text-[#B8860B]'}`}>{c.points ?? 0} балл.</span>
                       </div>
                     ))}
                   </div>
                 </motion.div>
               ))}
-              <button onClick={() => { setEditingTemplate({ name: '', criteria: [] }); setShowForm(true); }} className="w-full px-4 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2">
+              <button onClick={() => { setEditingTemplate({ name: '', criteria: [] }); setShowForm(true); }} className="w-full px-4 py-3 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2">
                 <Plus className="w-5 h-5" /> Добавить шаблон
               </button>
             </div>
@@ -558,43 +556,43 @@ function GradingTemplatesModal({ onClose, tutorId, darkMode = false }: any) {
         </div>
 
         {showForm && editingTemplate && (
-          <div className={`border-t-2 ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-orange-200 bg-gradient-to-r from-orange-50 to-pink-50'} p-6`}>
+          <div className={`border-t-2 ${darkMode ? 'border-[#3D2817] bg-[#1A1614]' : 'border-[#E8DCC8] bg-[#FAF3E8]'} p-6`}>
             <h3 className={`text-lg font-bold ${textPrimary} mb-4`}>{editingTemplate.id ? 'Редактировать шаблон' : 'Новый шаблон'}</h3>
             <div className="space-y-4">
               <div>
-                <label className={`block text-sm font-semibold ${textMuted} mb-2`}>Название шаблона</label>
-                <input value={editingTemplate.name} onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${bgInput}`} placeholder="Например: Стандартный ЕГЭ" />
+                <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>Название шаблона</label>
+                <input value={editingTemplate.name} onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none text-base ${bgInput}`} placeholder="Например: Стандартный ЕГЭ" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className={`text-sm font-semibold ${textMuted}`}>Критерии оценивания</label>
-                  <button onClick={addCriterion} className="px-3 py-1.5 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+ Критерий</button>
+                  <label className={`text-sm font-semibold ${textSecondary}`}>Критерии оценивания</label>
+                  <button onClick={addCriterion} className="px-3 py-1.5 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg text-sm font-semibold">+ Критерий</button>
                 </div>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {(editingTemplate.criteria || []).map((c: any, i: number) => (
-                    <div key={i} className={`flex items-center gap-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-orange-200'} rounded-xl p-3 border-2`}>
-                      <span className={`font-bold w-6 ${darkMode ? 'text-orange-300' : 'text-orange-700'}`}>{i + 1}.</span>
-                      <input type="text" value={c.condition} onChange={(e) => updateCriterion(i, "condition", e.target.value)} placeholder="Условие" className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:border-orange-500 focus:outline-none ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-orange-50/50 border-orange-200 text-gray-900'}`} />
-                      <input type="number" min={0} value={c.points} onChange={(e) => updateCriterion(i, "points", parseInt(e.target.value) || 0)} className={`w-20 px-3 py-2 border rounded-lg text-sm text-center font-bold focus:border-orange-500 focus:outline-none ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-orange-50/50 border-orange-200 text-gray-900'}`} />
+                    <div key={i} className={`flex items-center gap-2 ${darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'} rounded-xl p-3 border-2`}>
+                      <span className={`font-bold w-6 ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`}>{i + 1}.</span>
+                      <input type="text" value={c.condition} onChange={(e) => updateCriterion(i, "condition", e.target.value)} placeholder="Условие" className={`flex-1 px-3 py-2 border-2 rounded-lg text-sm focus:border-[#C67B4B] focus:outline-none ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]'}`} />
+                      <input type="number" min={0} value={c.points} onChange={(e) => updateCriterion(i, "points", parseInt(e.target.value) || 0)} className={`w-20 px-3 py-2 border-2 rounded-lg text-sm text-center font-bold focus:border-[#C67B4B] focus:outline-none ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]'}`} />
                       <span className={`text-sm ${textSecondary}`}>балл.</span>
-                      <button onClick={() => removeCriterion(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить критерий">
+                      <button onClick={() => removeCriterion(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   ))}
                 </div>
                 {(editingTemplate.criteria || []).length > 0 && (
-                  <div className={`flex items-center justify-between ${darkMode ? 'bg-gray-700' : 'bg-gradient-to-r from-orange-100 to-pink-100'} rounded-xl p-3 mt-3`}>
-                    <span className={`text-sm font-bold ${darkMode ? 'text-orange-300' : 'text-orange-800'}`}>Максимум баллов:</span>
-                    <span className={`text-lg font-black ${darkMode ? 'text-orange-400' : 'text-orange-700'}`}>{editingTemplate.criteria.reduce((s: number, c: any) => s + (c.points || 0), 0)}</span>
+                  <div className={`flex items-center justify-between ${darkMode ? 'bg-[#2A2420]' : 'bg-[#FAF3E8]'} rounded-xl p-3 mt-3 border-2 ${darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'}`}>
+                    <span className={`text-sm font-bold ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`}>Максимум баллов:</span>
+                    <span className={`text-lg font-black ${darkMode ? 'text-[#B8860B]' : 'text-[#B8860B]'}`}>{editingTemplate.criteria.reduce((s: number, c: any) => s + (c.points || 0), 0)}</span>
                   </div>
                 )}
               </div>
               <div className="flex gap-3">
-                <button onClick={saveTemplate} className="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2">
+                <button onClick={saveTemplate} className="flex-1 px-6 py-3 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2">
                   <Save className="w-5 h-5" /> Сохранить шаблон
                 </button>
-                <button onClick={() => { setShowForm(false); setEditingTemplate(null); }} className={`px-6 py-3 ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-white border-2 border-orange-300 text-gray-700'} rounded-xl font-semibold hover:bg-orange-50 transition`}>Отмена</button>
+                <button onClick={() => { setShowForm(false); setEditingTemplate(null); }} className={`px-6 py-3 ${darkMode ? 'bg-[#3D2817] text-[#F5E6D3]' : 'bg-white border-2 border-[#E8DCC8] text-[#6B4E3A]'} rounded-xl font-semibold hover:bg-[#FAF3E8] transition`}>Отмена</button>
               </div>
             </div>
           </div>
@@ -644,15 +642,12 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
   const updateVariant = (i: number, v: string) => { const a = [...(section.data?.variants || [])]; a[i] = v; updateData("variants", a); };
   const removeVariant = (i: number) => updateData("variants", (section.data?.variants || []).filter((_: any, idx: number) => idx !== i));
   const toggleCorrect = (i: number) => { const cur = section.data?.correct_indices || []; if (section.type === "single_choice") updateData("correct_indices", [i]); else updateData("correct_indices", cur.includes(i) ? cur.filter((x: number) => x !== i) : [...cur, i]); };
-
   const addAlt = () => { setAltAnswers([...altAnswers, ""]); updateData("alt_answers", [...altAnswers, ""]); };
   const updateAlt = (i: number, v: string) => { const a = [...altAnswers]; a[i] = v; setAltAnswers(a); updateData("alt_answers", a); };
   const removeAlt = (i: number) => { const a = altAnswers.filter((_, idx) => idx !== i); setAltAnswers(a); updateData("alt_answers", a); };
-
   const addPair = () => updateData("pairs", [...(section.data?.pairs || []), { left: "", right: "" }]);
   const updatePair = (i: number, f: string, v: string) => { const a = [...(section.data?.pairs || [])]; a[i] = { ...a[i], [f]: v }; updateData("pairs", a); };
   const removePair = (i: number) => updateData("pairs", (section.data?.pairs || []).filter((_: any, idx: number) => idx !== i));
-
   const addOrderItem = () => updateData("order_items", [...(section.data?.order_items || []), ""]);
   const updateOrderItem = (i: number, v: string) => { const a = [...(section.data?.order_items || [])]; a[i] = v; updateData("order_items", a); };
   const removeOrderItem = (i: number) => updateData("order_items", (section.data?.order_items || []).filter((_: any, idx: number) => idx !== i));
@@ -661,15 +656,12 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
     const j = i + dir; if (j < 0 || j >= a.length) return;
     [a[i], a[j]] = [a[j], a[i]]; updateData("order_items", a);
   };
-
   const addPart = () => updateData("assembly_parts", [...(section.data?.assembly_parts || []), ""]);
   const updatePart = (i: number, v: string) => { const a = [...(section.data?.assembly_parts || [])]; a[i] = v; updateData("assembly_parts", a); };
   const removePart = (i: number) => updateData("assembly_parts", (section.data?.assembly_parts || []).filter((_: any, idx: number) => idx !== i));
-
   const addDragItem = () => updateData("drag_items", [...(section.data?.drag_items || []), { item: "", target: "" }]);
   const updateDragItem = (i: number, f: string, v: string) => { const a = [...(section.data?.drag_items || [])]; a[i] = { ...a[i], [f]: v }; updateData("drag_items", a); };
   const removeDragItem = (i: number) => updateData("drag_items", (section.data?.drag_items || []).filter((_: any, idx: number) => idx !== i));
-
   const addCriterion = () => onChange({ ...section, grading_criteria: [...(section.grading_criteria || []), { condition: "", points: 0 }] });
   const updateCriterion = (i: number, f: string, v: any) => { const a = [...(section.grading_criteria || [])]; a[i] = { ...a[i], [f]: v }; onChange({ ...section, grading_criteria: a }); };
   const removeCriterion = (i: number) => onChange({ ...section, grading_criteria: (section.grading_criteria || []).filter((_: any, idx: number) => idx !== i) });
@@ -682,26 +674,24 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
   };
 
   const typeInfo = TASK_TYPES.find(t => t.value === section.type) || TASK_TYPES[0];
-
-  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200';
-  const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900';
-  const bgInputLight = darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'bg-orange-50/50 border-orange-200 text-gray-900';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-300' : 'text-gray-700';
-  const textMuted = darkMode ? 'text-gray-400' : 'text-gray-600';
-  const textAccent = darkMode ? 'text-orange-300' : 'text-orange-700';
-  const textAccent2 = darkMode ? 'text-orange-400' : 'text-orange-600';
+  const bgCard = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]';
+  const bgInput = darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]';
+  const bgInputLight = darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
+  const textMuted = darkMode ? 'text-[#6B4E3A]' : 'text-[#B8A898]';
+  const textAccent = darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]';
 
   return (
     <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className={`${bgCard} rounded-2xl p-6 mb-6 border-2 shadow-sm`}>
       <div className="flex items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className={`w-10 h-10 bg-gradient-to-br ${typeInfo.color} rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg flex-shrink-0`}>{idx + 1}</div>
-          <input value={section.title} onChange={(e) => updateSection("title", e.target.value)} className={`flex-1 px-4 py-3 border-2 rounded-xl font-semibold text-base focus:border-orange-500 focus:outline-none min-w-0 ${bgInput}`} placeholder="Название задания" />
+          <input value={section.title} onChange={(e) => updateSection("title", e.target.value)} className={`flex-1 px-4 py-3 border-2 rounded-xl font-semibold text-base focus:border-[#C67B4B] focus:outline-none min-w-0 ${bgInput}`} placeholder="Название задания" />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <input type="number" min={1} max={10} value={section.max_score || 1} onChange={(e) => updateSection("max_score", parseInt(e.target.value) || 1)} className={`w-16 px-3 py-3 border-2 rounded-xl text-base font-bold text-center focus:border-orange-500 focus:outline-none ${bgInput}`} />
-          <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={onRemove} className="p-3 bg-gradient-to-br from-rose-500 to-red-500 text-white rounded-xl hover:shadow-lg transition" aria-label="Удалить задание">
+          <input type="number" min={1} max={10} value={section.max_score || 1} onChange={(e) => updateSection("max_score", parseInt(e.target.value) || 1)} className={`w-16 px-3 py-3 border-2 rounded-xl text-base font-bold text-center focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+          <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={onRemove} className="p-3 bg-gradient-to-br from-[#8B3A3A] to-[#7A2F2F] text-white rounded-xl hover:shadow-lg transition">
             <Trash2 className="w-5 h-5" />
           </motion.button>
         </div>
@@ -711,7 +701,7 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
         <label className={`block text-sm font-semibold ${textSecondary} mb-3`}>Тип задания</label>
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {TASK_TYPES.map(t => (
-            <motion.button key={t.value} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} type="button" onClick={() => changeType(t.value as TaskType)} className={`p-3 rounded-xl border-2 transition-all ${section.type === t.value ? `bg-gradient-to-br ${t.color} text-white border-transparent shadow-md` : `${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300 hover:border-orange-400' : 'bg-white border-orange-200 text-gray-700 hover:border-orange-400'}`}`}>
+            <motion.button key={t.value} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} type="button" onClick={() => changeType(t.value as TaskType)} className={`p-3 rounded-xl border-2 transition-all ${section.type === t.value ? `bg-gradient-to-br ${t.color} text-white border-transparent shadow-md` : `${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#B8A898] hover:border-[#C67B4B]' : 'bg-white border-[#E8DCC8] text-[#6B4E3A] hover:border-[#C67B4B]'}`}`}>
               <div className="text-2xl mb-1">{t.icon}</div>
               <div className="text-xs font-bold">{t.label}</div>
             </motion.button>
@@ -724,38 +714,63 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
 
       {(section.type === "text" || section.type === "photo") && (
         <div className="mb-4 space-y-3">
-          <div className="flex items-center justify-between"><label className={`text-sm font-semibold ${textSecondary}`}>✅ Правильные ответы</label><button type="button" onClick={addAlt} className="px-3 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg text-sm font-semibold">+ Ответ</button></div>
+          <div className="flex items-center justify-between">
+            <label className={`text-sm font-semibold ${textSecondary}`}>✅ Правильные ответы</label>
+            <button type="button" onClick={addAlt} className="px-3 py-2 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-lg text-sm font-semibold">+ Ответ</button>
+          </div>
           <ChemistryEditor value={section.data?.correct_answer || ''} onChange={(v: string) => updateData("correct_answer", v)} placeholder="Основной ответ..." rows={3} darkMode={darkMode} />
-          {altAnswers.map((a, i) => (<div key={i} className="flex items-center gap-2"><ChemistryEditor value={a} onChange={(v: string) => updateAlt(i, v)} placeholder={`Альтернативный ${i + 1}`} rows={2} darkMode={darkMode} /><button type="button" onClick={() => removeAlt(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить ответ"><Trash2 className="w-4 h-4" /></button></div>))}
+          {altAnswers.map((a, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <ChemistryEditor value={a} onChange={(v: string) => updateAlt(i, v)} placeholder={`Альтернативный ${i + 1}`} rows={2} darkMode={darkMode} />
+              <button type="button" onClick={() => removeAlt(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
       {(section.type === "single_choice" || section.type === "multi_choice") && (
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Варианты {section.type === "single_choice" ? "(один правильный)" : "(несколько)"}</label><button type="button" onClick={addVariant} className="px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+ Вариант</button></div>
+          <div className="flex items-center justify-between mb-3">
+            <label className={`text-sm font-semibold ${textSecondary}`}>Варианты {section.type === "single_choice" ? "(один правильный)" : "(несколько)"}</label>
+            <button type="button" onClick={addVariant} className="px-3 py-2 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-lg text-sm font-semibold">+ Вариант</button>
+          </div>
           <div className="space-y-2">
-            {(section.data?.variants || []).map((v: string, i: number) => { const sel = (section.data?.correct_indices || []).includes(i); return (
-              <div key={i} className="flex items-center gap-3">
-                <button type="button" onClick={() => toggleCorrect(i)} className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${sel ? 'bg-gradient-to-br from-emerald-500 to-teal-500 border-emerald-500 text-white' : darkMode ? 'border-gray-600' : 'border-gray-300'}`} aria-label="Отметить правильный">{sel && <Check className="w-4 h-4" />}</button>
-                <input type="text" value={v} onChange={(e) => updateVariant(i, e.target.value)} placeholder={`Вариант ${i + 1}`} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <button type="button" onClick={() => removeVariant(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить вариант"><Trash2 className="w-4 h-4" /></button>
-              </div>
-            ); })}
+            {(section.data?.variants || []).map((v: string, i: number) => {
+              const sel = (section.data?.correct_indices || []).includes(i);
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <button type="button" onClick={() => toggleCorrect(i)} className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${sel ? 'bg-gradient-to-br from-[#6B705C] to-[#6B4E3A] border-[#6B705C] text-white' : darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'}`}>
+                    {sel && <Check className="w-4 h-4" />}
+                  </button>
+                  <input type="text" value={v} onChange={(e) => updateVariant(i, e.target.value)} placeholder={`Вариант ${i + 1}`} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                  <button type="button" onClick={() => removeVariant(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {section.type === "order" && (
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Элементы в правильном порядке</label><button type="button" onClick={addOrderItem} className="px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg text-sm font-semibold">+ Элемент</button></div>
+          <div className="flex items-center justify-between mb-3">
+            <label className={`text-sm font-semibold ${textSecondary}`}>Элементы в правильном порядке</label>
+            <button type="button" onClick={addOrderItem} className="px-3 py-2 bg-gradient-to-r from-[#B8860B] to-[#C67B4B] text-white rounded-lg text-sm font-semibold">+ Элемент</button>
+          </div>
           <div className="space-y-2">
             {(section.data?.order_items || []).map((item: string, i: number) => (
-              <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
-                <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg text-white text-sm font-bold flex items-center justify-center flex-shrink-0">{i + 1}</div>
-                <input type="text" value={item} onChange={(e) => updateOrderItem(i, e.target.value)} placeholder={`Элемент ${i + 1}`} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <button type="button" onClick={() => moveOrderItem(i, -1)} disabled={i === 0} className={`p-2 rounded-lg disabled:opacity-30 ${darkMode ? 'bg-blue-900/30 text-blue-300 hover:bg-blue-800/30' : 'bg-blue-100 text-blue-600 hover:bg-blue-200'}`} aria-label="Вверх">↑</button>
-                <button type="button" onClick={() => moveOrderItem(i, 1)} disabled={i === (section.data?.order_items?.length || 0) - 1} className={`p-2 rounded-lg disabled:opacity-30 ${darkMode ? 'bg-blue-900/30 text-blue-300 hover:bg-blue-800/30' : 'bg-blue-100 text-blue-600 hover:bg-blue-200'}`} aria-label="Вниз">↓</button>
-                <button type="button" onClick={() => removeOrderItem(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить"><Trash2 className="w-4 h-4" /></button>
+              <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border-2 ${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'}`}>
+                <div className="w-8 h-8 bg-gradient-to-br from-[#B8860B] to-[#C67B4B] rounded-lg text-white text-sm font-bold flex items-center justify-center flex-shrink-0">{i + 1}</div>
+                <input type="text" value={item} onChange={(e) => updateOrderItem(i, e.target.value)} placeholder={`Элемент ${i + 1}`} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                <button type="button" onClick={() => moveOrderItem(i, -1)} disabled={i === 0} className={`p-2 rounded-lg disabled:opacity-30 ${darkMode ? 'bg-[#6B705C]/20 text-[#6B705C] hover:bg-[#6B705C]/30' : 'bg-[#6B705C]/20 text-[#6B705C] hover:bg-[#6B705C]/30'}`}>↑</button>
+                <button type="button" onClick={() => moveOrderItem(i, 1)} disabled={i === (section.data?.order_items?.length || 0) - 1} className={`p-2 rounded-lg disabled:opacity-30 ${darkMode ? 'bg-[#6B705C]/20 text-[#6B705C] hover:bg-[#6B705C]/30' : 'bg-[#6B705C]/20 text-[#6B705C] hover:bg-[#6B705C]/30'}`}>↓</button>
+                <button type="button" onClick={() => removeOrderItem(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             ))}
           </div>
@@ -764,14 +779,19 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
 
       {section.type === "match" && (
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Пары соответствий</label><button type="button" onClick={addPair} className="px-3 py-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+ Пара</button></div>
+          <div className="flex items-center justify-between mb-3">
+            <label className={`text-sm font-semibold ${textSecondary}`}>Пары соответствий</label>
+            <button type="button" onClick={addPair} className="px-3 py-2 bg-gradient-to-r from-[#8B3A3A] to-[#C67B4B] text-white rounded-lg text-sm font-semibold">+ Пара</button>
+          </div>
           <div className="space-y-2">
             {(section.data?.pairs || []).map((p: any, i: number) => (
               <div key={i} className="flex items-center gap-3">
-                <input type="text" value={p.left} onChange={(e) => updatePair(i, "left", e.target.value)} placeholder="Левая" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <span className="text-orange-500 font-bold text-lg">→</span>
-                <input type="text" value={p.right} onChange={(e) => updatePair(i, "right", e.target.value)} placeholder="Правая" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <button type="button" onClick={() => removePair(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить пару"><Trash2 className="w-4 h-4" /></button>
+                <input type="text" value={p.left} onChange={(e) => updatePair(i, "left", e.target.value)} placeholder="Левая" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                <span className="text-[#C67B4B] font-bold text-lg">→</span>
+                <input type="text" value={p.right} onChange={(e) => updatePair(i, "right", e.target.value)} placeholder="Правая" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                <button type="button" onClick={() => removePair(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             ))}
           </div>
@@ -787,12 +807,17 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
 
       {section.type === "assembly" && (
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Части для сборки</label><button type="button" onClick={addPart} className="px-3 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg text-sm font-semibold">+ Часть</button></div>
+          <div className="flex items-center justify-between mb-3">
+            <label className={`text-sm font-semibold ${textSecondary}`}>Части для сборки</label>
+            <button type="button" onClick={addPart} className="px-3 py-2 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-lg text-sm font-semibold">+ Часть</button>
+          </div>
           <div className="space-y-2">
             {(section.data?.assembly_parts || []).map((p: string, i: number) => (
               <div key={i} className="flex items-center gap-3">
-                <input type="text" value={p} onChange={(e) => updatePart(i, e.target.value)} placeholder={`Часть ${i + 1}`} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <button type="button" onClick={() => removePart(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить"><Trash2 className="w-4 h-4" /></button>
+                <input type="text" value={p} onChange={(e) => updatePart(i, e.target.value)} placeholder={`Часть ${i + 1}`} className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                <button type="button" onClick={() => removePart(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             ))}
           </div>
@@ -801,14 +826,19 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
 
       {section.type === "drag_drop" && (
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-3"><label className={`text-sm font-semibold ${textSecondary}`}>Элементы и цели</label><button type="button" onClick={addDragItem} className="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg text-sm font-semibold">+ Элемент</button></div>
+          <div className="flex items-center justify-between mb-3">
+            <label className={`text-sm font-semibold ${textSecondary}`}>Элементы и цели</label>
+            <button type="button" onClick={addDragItem} className="px-3 py-2 bg-gradient-to-r from-[#B8860B] to-[#C67B4B] text-white rounded-lg text-sm font-semibold">+ Элемент</button>
+          </div>
           <div className="space-y-2">
             {(section.data?.drag_items || []).map((d: any, i: number) => (
               <div key={i} className="flex items-center gap-3">
-                <input type="text" value={d.item} onChange={(e) => updateDragItem(i, "item", e.target.value)} placeholder="Элемент" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <span className="text-orange-500 font-bold text-lg">→</span>
-                <input type="text" value={d.target} onChange={(e) => updateDragItem(i, "target", e.target.value)} placeholder="Цель" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <button type="button" onClick={() => removeDragItem(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить"><Trash2 className="w-4 h-4" /></button>
+                <input type="text" value={d.item} onChange={(e) => updateDragItem(i, "item", e.target.value)} placeholder="Элемент" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                <span className="text-[#C67B4B] font-bold text-lg">→</span>
+                <input type="text" value={d.target} onChange={(e) => updateDragItem(i, "target", e.target.value)} placeholder="Цель" className={`flex-1 px-4 py-2 border-2 rounded-lg text-base focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                <button type="button" onClick={() => removeDragItem(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             ))}
           </div>
@@ -816,50 +846,73 @@ function TaskEditor({ section, onChange, onRemove, idx, tutorId, darkMode = fals
       )}
 
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <ChemistryEditor value={section.data?.hint || ''} onChange={(v: string) => updateData("hint", v)} placeholder="Подсказка..." rows={3} label=" Подсказка" darkMode={darkMode} />
+        <ChemistryEditor value={section.data?.hint || ''} onChange={(v: string) => updateData("hint", v)} placeholder="Подсказка..." rows={3} label="💡 Подсказка" darkMode={darkMode} />
         <ChemistryEditor value={section.data?.solution || ''} onChange={(v: string) => updateData("solution", v)} placeholder="Разбор..." rows={3} label="📖 Разбор" darkMode={darkMode} />
       </div>
 
-      <div className={`border-t-2 ${darkMode ? 'border-gray-600' : 'border-orange-200'} pt-4`}>
+      <div className={`border-t-2 ${darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'} pt-4`}>
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2"><Award className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} /><span className={`text-base font-bold ${textPrimary}`}>Гибкое оценивание</span></div>
+          <div className="flex items-center gap-2">
+            <Award className={`w-5 h-5 ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`} />
+            <span className={`text-base font-bold ${textPrimary}`}>Гибкое оценивание</span>
+          </div>
           <div className="flex gap-2">
-            {templates.length > 0 && <button type="button" onClick={() => setShowTemplates(!showTemplates)} className="px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-semibold hover:shadow-md transition flex items-center gap-1"><Database className="w-4 h-4" /> Шаблоны</button>}
-            <button type="button" onClick={() => setShowGrading(!showGrading)} className={`px-4 py-2 rounded-xl text-sm font-semibold ${showGrading ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white' : darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300' : 'bg-white border-2 border-orange-300 text-gray-700'}`}>{showGrading ? 'Скрыть' : 'Показать'}</button>
+            {templates.length > 0 && <button type="button" onClick={() => setShowTemplates(!showTemplates)} className="px-3 py-2 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-lg text-sm font-semibold hover:shadow-md transition flex items-center gap-1">
+              <Database className="w-4 h-4" /> Шаблоны
+            </button>}
+            <button type="button" onClick={() => setShowGrading(!showGrading)} className={`px-4 py-2 rounded-xl text-sm font-semibold ${showGrading ? 'bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white' : darkMode ? 'bg-[#1A1614] border-2 border-[#3D2817] text-[#B8A898]' : 'bg-white border-2 border-[#E8DCC8] text-[#6B4E3A]'}`}>
+              {showGrading ? 'Скрыть' : 'Показать'}
+            </button>
           </div>
         </div>
 
         {showTemplates && (
-          <div className={`mb-4 p-4 rounded-xl border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-purple-50 border-purple-200'}`}>
-            <div className="flex items-center justify-between mb-3"><h4 className={`font-bold ${darkMode ? 'text-purple-300' : 'text-purple-900'}`}>Выберите шаблон:</h4><button onClick={() => setShowTemplatesModal(true)} className={`text-sm font-semibold flex items-center gap-1 ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}><Settings className="w-4 h-4" /> Управление</button></div>
+          <div className={`mb-4 p-4 rounded-xl border-2 ${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className={`font-bold ${darkMode ? 'text-[#C67B4B]' : 'text-[#8B3A3A]'}`}>Выберите шаблон:</h4>
+              <button onClick={() => setShowTemplatesModal(true)} className={`text-sm font-semibold flex items-center gap-1 ${darkMode ? 'text-[#B8A898] hover:text-[#C67B4B]' : 'text-[#6B4E3A] hover:text-[#C67B4B]'}`}>
+                <Settings className="w-4 h-4" /> Управление
+              </button>
+            </div>
             {templates.length === 0 ? <p className={`text-sm ${textMuted}`}>Нет шаблонов</p> : (
-              <div className="grid grid-cols-2 gap-2">{templates.map((template) => (
-                <motion.button key={template.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => applyTemplate(template)} className={`p-3 rounded-lg border-2 text-left transition ${darkMode ? 'bg-gray-600 border-gray-500 hover:border-purple-400' : 'bg-white border-purple-200 hover:border-purple-400'}`}>
-                  <p className={`font-bold text-sm ${textPrimary}`}>{template.name}</p>
-                  <p className={`text-xs ${textMuted}`}>{(template.criteria?.length || 0)} критериев • {template.criteria?.reduce((s: number, c: any) => s + (c.points || 0), 0) || 0} балл.</p>
-                </motion.button>
-              ))}</div>
+              <div className="grid grid-cols-2 gap-2">
+                {templates.map((template) => (
+                  <motion.button key={template.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => applyTemplate(template)} className={`p-3 rounded-lg border-2 text-left transition ${darkMode ? 'bg-[#2A2420] border-[#3D2817] hover:border-[#C67B4B]' : 'bg-white border-[#E8DCC8] hover:border-[#C67B4B]'}`}>
+                    <p className={`font-bold text-sm ${textPrimary}`}>{template.name}</p>
+                    <p className={`text-xs ${textMuted}`}>{(template.criteria?.length || 0)} критериев • {template.criteria?.reduce((s: number, c: any) => s + (c.points || 0), 0) || 0} балл.</p>
+                  </motion.button>
+                ))}
+              </div>
             )}
           </div>
         )}
 
         {showGrading && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between"><span className={`text-sm ${textMuted}`}>Критерии ({(section.grading_criteria || []).length})</span><button type="button" onClick={addCriterion} className="px-3 py-2 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+ Критерий</button></div>
-            {(section.grading_criteria || []).length === 0 ? <p className={`text-sm italic p-4 rounded-xl border-2 border-dashed ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-400' : 'bg-white border-orange-200 text-gray-500'}`}>Добавьте критерии для частичных баллов</p> : (
+            <div className="flex items-center justify-between">
+              <span className={`text-sm ${textMuted}`}>Критерии ({(section.grading_criteria || []).length})</span>
+              <button type="button" onClick={addCriterion} className="px-3 py-2 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg text-sm font-semibold">+ Критерий</button>
+            </div>
+            {(section.grading_criteria || []).length === 0 ? (
+              <p className={`text-sm italic p-4 rounded-xl border-2 border-dashed ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#6B4E3A]' : 'bg-white border-[#E8DCC8] text-[#B8A898]'}`}>
+                Добавьте критерии для частичных баллов
+              </p>
+            ) : (
               <div className="space-y-2">
                 {(section.grading_criteria || []).map((c: any, i: number) => (
-                  <div key={i} className={`flex items-center gap-3 rounded-xl p-3 border-2 ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-orange-200'}`}>
+                  <div key={i} className={`flex items-center gap-3 rounded-xl p-3 border-2 ${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'}`}>
                     <span className={`text-sm font-bold w-6 ${textAccent}`}>{i + 1}.</span>
-                    <input type="text" value={c.condition} onChange={(e) => updateCriterion(i, "condition", e.target.value)} placeholder="Условие" className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:border-orange-500 focus:outline-none ${bgInputLight}`} />
-                    <input type="number" min={0} value={c.points} onChange={(e) => updateCriterion(i, "points", parseInt(e.target.value) || 0)} className={`w-20 px-3 py-2 border rounded-lg text-sm text-center font-bold focus:border-orange-500 focus:outline-none ${bgInputLight}`} />
+                    <input type="text" value={c.condition} onChange={(e) => updateCriterion(i, "condition", e.target.value)} placeholder="Условие" className={`flex-1 px-3 py-2 border-2 rounded-lg text-sm focus:border-[#C67B4B] focus:outline-none ${bgInputLight}`} />
+                    <input type="number" min={0} value={c.points} onChange={(e) => updateCriterion(i, "points", parseInt(e.target.value) || 0)} className={`w-20 px-3 py-2 border-2 rounded-lg text-sm text-center font-bold focus:border-[#C67B4B] focus:outline-none ${bgInputLight}`} />
                     <span className={`text-sm ${textMuted}`}>балл.</span>
-                    <button type="button" onClick={() => removeCriterion(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-rose-900 text-rose-300 hover:bg-rose-800' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`} aria-label="Удалить"><Trash2 className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => removeCriterion(i)} className={`p-2 rounded-lg ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A] hover:bg-[#8B3A3A]/30' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
-                <div className={`flex items-center justify-between rounded-xl p-3 ${darkMode ? 'bg-gray-700' : 'bg-gradient-to-r from-orange-100 to-pink-100'}`}>
-                  <span className={`text-sm font-bold ${darkMode ? 'text-orange-300' : 'text-orange-800'}`}>Максимум баллов:</span>
-                  <span className={`text-lg font-black ${darkMode ? 'text-orange-400' : 'text-orange-700'}`}>{(section.grading_criteria || []).reduce((s: number, c: any) => s + (c.points || 0), 0)} / {section.max_score || 1}</span>
+                <div className={`flex items-center justify-between rounded-xl p-3 ${darkMode ? 'bg-[#2A2420]' : 'bg-[#FAF3E8]'} border-2 ${darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'}`}>
+                  <span className={`text-sm font-bold ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`}>Максимум баллов:</span>
+                  <span className={`text-lg font-black ${darkMode ? 'text-[#B8860B]' : 'text-[#B8860B]'}`}>{(section.grading_criteria || []).reduce((s: number, c: any) => s + (c.points || 0), 0)} / {section.max_score || 1}</span>
                 </div>
               </div>
             )}
@@ -904,6 +957,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
       setLoadingBank(true);
       getDocs(query(collection(db, "task_folders"), where("tutor_id", "==", tutorId)))
         .then(snap => setBankFolders(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+        .catch(() => {});
       getDocs(query(collection(db, "tasks_bank"), where("tutor_id", "==", tutorId)))
         .then(snap => {
           setBankTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -962,85 +1016,89 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
 
   const filteredBankTasks = selectedBankFolder === 'all' ? bankTasks : bankTasks.filter(t => t.folder_id === selectedBankFolder);
 
-  const bgModal = darkMode ? 'bg-gray-900' : 'bg-white';
-  const bgInput = darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-orange-50/50 border-orange-200 text-gray-900';
-  const bgFooter = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-r from-orange-50 to-pink-50 border-orange-200';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-300' : 'text-gray-700';
+  const bgModal = darkMode ? 'bg-[#2A2420]' : 'bg-white';
+  const bgInput = darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]';
+  const bgFooter = darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} transition={{ type: "spring", duration: 0.5 }} className={`${bgModal} rounded-3xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col`} onClick={e => e.stopPropagation()}>
-        <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 px-8 py-6 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] px-8 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center"><BookOpen className="w-7 h-7 text-white" /></div>
+            <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
+              <BookOpen className="w-7 h-7 text-white" />
+            </div>
             <div>
               <h2 className="text-2xl font-bold text-white">{hw ? 'Редактировать ДЗ' : 'Создать ДЗ'}</h2>
               <p className="text-white/80 text-sm">Заполните информацию</p>
             </div>
           </div>
-          <motion.button whileHover={{ rotate: 90 }} onClick={onClose} className="text-white/80 hover:text-white" aria-label="Закрыть"><X className="w-7 h-7" /></motion.button>
+          <motion.button whileHover={{ rotate: 90 }} onClick={onClose} className="text-white/80 hover:text-white">
+            <X className="w-7 h-7" />
+          </motion.button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-8">
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="col-span-2">
               <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>Название *</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${bgInput}`} placeholder="Например: Контрольная по алканам" />
+              <input value={title} onChange={(e) => setTitle(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none text-base ${bgInput}`} placeholder="Например: Контрольная по алканам" />
             </div>
             <div className="col-span-2">
               <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>Описание</label>
-              <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none resize-none text-base ${bgInput}`} placeholder="О чём это задание..." />
+              <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none resize-none text-base ${bgInput}`} placeholder="О чём это задание..." />
             </div>
             <div>
               <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>📁 Папка</label>
-              <select value={folderId} onChange={(e) => setFolderId(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${bgInput}`}>
-                <option value=""> Без папки</option>
+              <select value={folderId} onChange={(e) => setFolderId(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none text-base ${bgInput}`}>
+                <option value="">Без папки</option>
                 {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </div>
             <div>
-              <label className={`block text-sm font-semibold ${textSecondary} mb-2`}> Тип ДЗ</label>
-              <select value={isTrialExam ? 'trial_exam' : 'regular'} onChange={(e) => setIsTrialExam(e.target.value === 'trial_exam')} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${bgInput}`}>
-                <option value="regular"> Обычное ДЗ</option>
+              <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>📝 Тип ДЗ</label>
+              <select value={isTrialExam ? 'trial_exam' : 'regular'} onChange={(e) => setIsTrialExam(e.target.value === 'trial_exam')} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none text-base ${bgInput}`}>
+                <option value="regular">📚 Обычное ДЗ</option>
                 <option value="trial_exam">⏱️ Пробный экзамен</option>
               </select>
             </div>
             <div>
               <label className={`block text-sm font-semibold ${textSecondary} mb-2 flex items-center gap-2`}><Calendar className="w-4 h-4" /> Автопубликация</label>
-              <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${bgInput}`} />
+              <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none text-base ${bgInput}`} />
             </div>
             <div>
               <label className={`block text-sm font-semibold ${textSecondary} mb-2 flex items-center gap-2`}><Tag className="w-4 h-4" /> Теги</label>
               <div className="flex gap-2 mb-2 flex-wrap">
                 {tags.map(t => (
-                  <span key={t} className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-orange-900/30 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
+                  <span key={t} className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#C67B4B]/20 text-[#C67B4B]' : 'bg-[#C67B4B]/20 text-[#8B3A3A]'}`}>
                     {t}
-                    <button onClick={() => removeTag(t)} className="hover:text-rose-600" aria-label="Удалить тег">×</button>
+                    <button onClick={() => removeTag(t)} className="hover:text-[#8B3A3A]">×</button>
                   </span>
                 ))}
               </div>
               <div className="flex gap-2">
-                <input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())} placeholder="Новый тег" className={`flex-1 px-3 py-2 border-2 rounded-lg text-sm focus:border-orange-500 focus:outline-none ${bgInput}`} />
-                <button type="button" onClick={addTag} className="px-3 py-2 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-lg text-sm font-semibold">+</button>
+                <input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())} placeholder="Новый тег" className={`flex-1 px-3 py-2 border-2 rounded-lg text-sm focus:border-[#C67B4B] focus:outline-none ${bgInput}`} />
+                <button type="button" onClick={addTag} className="px-3 py-2 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg text-sm font-semibold">+</button>
               </div>
             </div>
           </div>
 
           {isTrialExam && (
-            <div className={`mb-6 rounded-2xl p-5 border-2 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-br from-rose-50 to-pink-50 border-rose-200'}`}>
+            <div className={`mb-6 rounded-2xl p-5 border-2 ${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'}`}>
               <div className="flex items-center gap-2 mb-3">
-                <Timer className={`w-6 h-6 ${darkMode ? 'text-rose-400' : 'text-rose-600'}`} />
+                <Timer className={`w-6 h-6 ${darkMode ? 'text-[#8B3A3A]' : 'text-[#8B3A3A]'}`} />
                 <h4 className={`font-bold text-lg ${textPrimary}`}>Настройки пробника</h4>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>️ Время (минуты)</label>
-                  <input type="number" min={5} max={300} value={timeLimit} onChange={(e) => setTimeLimit(parseInt(e.target.value) || 180)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-rose-500 focus:outline-none text-base font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-rose-300' : 'bg-white border-rose-200 text-rose-700'}`} />
+                  <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>⏱️ Время (минуты)</label>
+                  <input type="number" min={5} max={300} value={timeLimit} onChange={(e) => setTimeLimit(parseInt(e.target.value) || 180)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#8B3A3A] focus:outline-none text-base font-bold ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#8B3A3A]' : 'bg-white border-[#E8DCC8] text-[#8B3A3A]'}`} />
                 </div>
                 <div>
                   <label className={`block text-sm font-semibold ${textSecondary} mb-2`}>📊 Макс. первичных баллов</label>
-                  <div className={`px-4 py-3 border-2 rounded-xl text-base font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-rose-300' : 'bg-white border-rose-200 text-rose-700'}`}>{totalPrimaryScore}</div>
+                  <div className={`px-4 py-3 border-2 rounded-xl text-base font-bold ${darkMode ? 'bg-[#2A2420] border-[#3D2817] text-[#B8860B]' : 'bg-white border-[#E8DCC8] text-[#B8860B]'}`}>{totalPrimaryScore}</div>
                 </div>
               </div>
             </div>
@@ -1048,12 +1106,19 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
 
           <div className="mb-6"><ConversionScaleEditor value={conversionScale} onChange={setConversionScale} maxPrimaryScore={totalPrimaryScore} darkMode={darkMode} /></div>
 
-          <div className={`border-t-2 ${darkMode ? 'border-gray-600' : 'border-orange-200'} pt-6`}>
+          <div className={`border-t-2 ${darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'} pt-6`}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className={`text-lg font-bold flex items-center gap-2 ${textPrimary}`}><Layers className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />Задания ({sections.length})</h3>
+              <h3 className={`text-lg font-bold flex items-center gap-2 ${textPrimary}`}>
+                <Layers className={`w-5 h-5 ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`} />
+                Задания ({sections.length})
+              </h3>
               <div className="flex gap-2">
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowBank(true)} className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-semibold shadow flex items-center gap-2"><Database className="w-4 h-4" /> Из банка</motion.button>
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={addSection} className="px-4 py-2 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-lg text-sm font-semibold shadow flex items-center gap-2"><Plus className="w-4 h-4" /> Добавить</motion.button>
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowBank(true)} className="px-4 py-2 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-lg text-sm font-semibold shadow flex items-center gap-2">
+                  <Database className="w-4 h-4" /> Из банка
+                </motion.button>
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={addSection} className="px-4 py-2 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-lg text-sm font-semibold shadow flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> Добавить
+                </motion.button>
               </div>
             </div>
 
@@ -1062,12 +1127,16 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
             ))}
 
             {sections.length === 0 && (
-              <div className={`text-center py-16 rounded-2xl border-2 border-dashed ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-gradient-to-br from-orange-50 via-amber-50 to-pink-50 border-orange-200'}`}>
-                <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-amber-500 rounded-full flex items-center justify-center text-white text-4xl mx-auto mb-4 shadow-lg"></div>
-                <p className={`mb-6 font-semibold text-lg ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Нет заданий</p>
+              <div className={`text-center py-16 rounded-2xl border-2 border-dashed ${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'}`}>
+                <div className="w-20 h-20 bg-gradient-to-br from-[#C67B4B] to-[#8B3A3A] rounded-full flex items-center justify-center text-white text-4xl mx-auto mb-4 shadow-lg">📝</div>
+                <p className={`mb-6 font-semibold text-lg ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>Нет заданий</p>
                 <div className="flex gap-3 justify-center">
-                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowBank(true)} className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2"><Database className="w-4 h-4" /> Из банка</motion.button>
-                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={addSection} className="px-6 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2"><Plus className="w-4 h-4" /> Вручную</motion.button>
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowBank(true)} className="px-6 py-3 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2">
+                    <Database className="w-4 h-4" /> Из банка
+                  </motion.button>
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={addSection} className="px-6 py-3 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2">
+                    <Plus className="w-4 h-4" /> Вручную
+                  </motion.button>
                 </div>
               </div>
             )}
@@ -1075,60 +1144,81 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
         </div>
 
         <div className={`${bgFooter} px-8 py-5 border-t-2 flex gap-4`}>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSave} disabled={saving} className="flex-1 px-8 py-4 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-base">
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSave} disabled={saving} className="flex-1 px-8 py-4 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-base">
             {saving ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Сохранение...</>) : (<><CheckCircle className="w-5 h-5" /> Сохранить</>)}
           </motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onClose} className={`px-8 py-4 ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'bg-white border-2 border-orange-300 text-gray-700'} rounded-xl font-semibold hover:bg-orange-50 transition text-base`}>Отмена</motion.button>
+          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onClose} className={`px-8 py-4 ${darkMode ? 'bg-[#3D2817] text-[#F5E6D3]' : 'bg-white border-2 border-[#E8DCC8] text-[#6B4E3A]'} rounded-xl font-semibold hover:bg-[#FAF3E8] transition text-base`}>
+            Отмена
+          </motion.button>
         </div>
       </motion.div>
 
       {showBank && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={() => setShowBank(false)}>
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`${bgModal} rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col`} onClick={e => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-5 flex items-center justify-between">
+            <div className="bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center"><Database className="w-7 h-7 text-white" /></div>
+                <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
+                  <Database className="w-7 h-7 text-white" />
+                </div>
                 <div>
                   <h2 className="text-xl font-bold text-white">Добавить из банка</h2>
                   <p className="text-white/80 text-sm">Выберите задания</p>
                 </div>
               </div>
-              <button onClick={() => setShowBank(false)} className="text-white/80 hover:text-white text-2xl" aria-label="Закрыть">✕</button>
+              <button onClick={() => setShowBank(false)} className="text-white/80 hover:text-white text-2xl">✕</button>
             </div>
 
             <div className="flex-1 overflow-hidden flex">
-              <div className={`w-64 border-r-2 p-4 overflow-y-auto ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-b from-purple-50 to-pink-50 border-purple-200'}`}>
-                <h3 className={`font-bold mb-3 flex items-center gap-2 text-base ${darkMode ? 'text-purple-300' : 'text-purple-900'}`}><Folder className="w-5 h-5" />Папки</h3>
-                <button onClick={() => setSelectedBankFolder('all')} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold mb-2 transition ${selectedBankFolder === 'all' ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow' : darkMode ? 'bg-gray-700 text-purple-300 hover:bg-gray-600' : 'bg-white text-purple-700 hover:bg-purple-100'}`}>📋 Все задания</button>
+              <div className={`w-64 border-r-2 p-4 overflow-y-auto ${darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]'}`}>
+                <h3 className={`font-bold mb-3 flex items-center gap-2 text-base ${darkMode ? 'text-[#C67B4B]' : 'text-[#8B3A3A]'}`}>
+                  <Folder className="w-5 h-5" /> Папки
+                </h3>
+                <button onClick={() => setSelectedBankFolder('all')} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold mb-2 transition ${selectedBankFolder === 'all' ? 'bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white shadow' : darkMode ? 'bg-[#2A2420] text-[#B8A898] hover:bg-[#3D2817]' : 'bg-white text-[#6B4E3A] hover:bg-[#F5EBD8]'}`}>
+                  📋 Все задания
+                </button>
                 {bankFolders.map(folder => (
-                  <button key={folder.id} onClick={() => setSelectedBankFolder(folder.id)} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold mb-2 transition ${selectedBankFolder === folder.id ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow' : darkMode ? 'bg-gray-700 text-purple-300 hover:bg-gray-600' : 'bg-white text-purple-700 hover:bg-purple-100'}`}>📁 {folder.name}</button>
+                  <button key={folder.id} onClick={() => setSelectedBankFolder(folder.id)} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold mb-2 transition ${selectedBankFolder === folder.id ? 'bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white shadow' : darkMode ? 'bg-[#2A2420] text-[#B8A898] hover:bg-[#3D2817]' : 'bg-white text-[#6B4E3A] hover:bg-[#F5EBD8]'}`}>
+                     {folder.name}
+                  </button>
                 ))}
               </div>
 
               <div className="flex-1 overflow-y-auto p-6">
                 {loadingBank ? (
-                  <div className="text-center py-12"><div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto"></div></div>
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 border-4 border-[#C67B4B] border-t-transparent rounded-full animate-spin mx-auto"></div>
+                  </div>
                 ) : filteredBankTasks.length === 0 ? (
-                  <div className="text-center py-12"><div className="text-6xl mb-4"></div><p className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Нет заданий</p></div>
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">📭</div>
+                    <p className={`font-semibold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>Нет заданий</p>
+                  </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className={`flex items-center justify-between mb-4 rounded-xl p-3 ${darkMode ? 'bg-gray-800' : 'bg-purple-50'}`}>
-                      <p className={`text-sm ${darkMode ? 'text-purple-300' : 'text-purple-900'}`}>Выбрано: <span className="font-bold">{selectedBankTasks.length}</span> / {filteredBankTasks.length}</p>
-                      <button onClick={() => setSelectedBankTasks(selectedBankTasks.length === filteredBankTasks.length ? [] : filteredBankTasks.map(t => t.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>{selectedBankTasks.length === filteredBankTasks.length ? 'Снять все' : 'Выбрать все'}</button>
+                    <div className={`flex items-center justify-between mb-4 rounded-xl p-3 ${darkMode ? 'bg-[#1A1614]' : 'bg-[#FAF3E8]'}`}>
+                      <p className={`text-sm ${darkMode ? 'text-[#C67B4B]' : 'text-[#8B3A3A]'}`}>
+                        Выбрано: <span className="font-bold">{selectedBankTasks.length}</span> / {filteredBankTasks.length}
+                      </p>
+                      <button onClick={() => setSelectedBankTasks(selectedBankTasks.length === filteredBankTasks.length ? [] : filteredBankTasks.map(t => t.id))} className={`text-sm font-semibold ${darkMode ? 'text-[#B8A898] hover:text-[#C67B4B]' : 'text-[#6B4E3A] hover:text-[#C67B4B]'}`}>
+                        {selectedBankTasks.length === filteredBankTasks.length ? 'Снять все' : 'Выбрать все'}
+                      </button>
                     </div>
                     {filteredBankTasks.map(task => {
                       const isSelected = selectedBankTasks.includes(task.id);
                       return (
-                        <motion.div key={task.id} whileHover={{ scale: 1.01 }} className={`p-4 rounded-xl border-2 cursor-pointer transition ${isSelected ? (darkMode ? 'bg-gray-800 border-purple-400 shadow' : 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 shadow') : (darkMode ? 'bg-gray-700 border-gray-600 hover:border-purple-300' : 'bg-white border-gray-200 hover:border-purple-300')}`} onClick={() => setSelectedBankTasks(prev => prev.includes(task.id) ? prev.filter(id => id !== task.id) : [...prev, task.id])}>
+                        <motion.div key={task.id} whileHover={{ scale: 1.01 }} className={`p-4 rounded-xl border-2 cursor-pointer transition ${isSelected ? (darkMode ? 'bg-[#2A2420] border-[#C67B4B] shadow' : 'bg-[#FAF3E8] border-[#C67B4B] shadow') : (darkMode ? 'bg-[#1A1614] border-[#3D2817] hover:border-[#C67B4B]' : 'bg-white border-[#E8DCC8] hover:border-[#C67B4B]')}`} onClick={() => setSelectedBankTasks(prev => prev.includes(task.id) ? prev.filter(id => id !== task.id) : [...prev, task.id])}>
                           <div className="flex items-start gap-3">
-                            <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 mt-1 ${isSelected ? 'bg-purple-500 border-purple-500' : darkMode ? 'border-gray-600' : 'border-gray-300'}`}>{isSelected && <Check className="w-4 h-4 text-white" />}</div>
+                            <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 mt-1 ${isSelected ? 'bg-[#C67B4B] border-[#C67B4B]' : darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'}`}>
+                              {isSelected && <Check className="w-4 h-4 text-white" />}
+                            </div>
                             <div className="flex-1">
                               <h4 className={`font-bold text-base mb-1 ${textPrimary}`}>{task.title}</h4>
-                              <p className={`text-sm line-clamp-2 mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{task.task_text}</p>
+                              <p className={`text-sm line-clamp-2 mb-2 ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>{task.task_text}</p>
                               <div className="flex flex-wrap gap-2">
-                                <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>{task.type}</span>
-                                {task.topic_num && <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>№{task.topic_num}</span>}
-                                <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>⭐ {task.max_score} б.</span>
+                                <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${darkMode ? 'bg-[#6B705C]/20 text-[#6B705C]' : 'bg-[#6B705C]/20 text-[#6B4E3A]'}`}>{task.type}</span>
+                                {task.topic_num && <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]'}`}>№{task.topic_num}</span>}
+                                <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]'}`}>⭐ {task.max_score} б.</span>
                               </div>
                             </div>
                           </div>
@@ -1141,8 +1231,12 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
             </div>
 
             <div className={`${bgFooter} px-6 py-4 border-t-2 flex gap-3`}>
-              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={addFromBank} disabled={selectedBankTasks.length === 0} className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-base"><Plus className="w-5 h-5" /> Добавить {selectedBankTasks.length > 0 ? `(${selectedBankTasks.length})` : ''}</motion.button>
-              <button onClick={() => setShowBank(false)} className={`px-6 py-3 rounded-xl font-semibold transition text-base ${darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-white border-2 border-gray-300 text-gray-700 hover:bg-gray-50'}`}>Отмена</button>
+              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={addFromBank} disabled={selectedBankTasks.length === 0} className="flex-1 px-6 py-3 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 text-base">
+                <Plus className="w-5 h-5" /> Добавить {selectedBankTasks.length > 0 ? `(${selectedBankTasks.length})` : ''}
+              </motion.button>
+              <button onClick={() => setShowBank(false)} className={`px-6 py-3 rounded-xl font-semibold transition text-base ${darkMode ? 'bg-[#3D2817] border-2 border-[#3D2817] text-[#F5E6D3] hover:bg-[#4A3828]' : 'bg-white border-2 border-[#E8DCC8] text-[#6B4E3A] hover:bg-[#FAF3E8]'}`}>
+                Отмена
+              </button>
             </div>
           </motion.div>
         </motion.div>
@@ -1151,7 +1245,6 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
   );
 }
 
-// ✅ НОВАЯ ФУНКЦИЯ: Отправка Telegram-уведомления ученику
 const sendTelegramNotification = async (studentId: string, message: string) => {
   try {
     const studentSnap = await getDoc(doc(db, "profiles", studentId));
@@ -1170,14 +1263,13 @@ const sendTelegramNotification = async (studentId: string, message: string) => {
   }
 };
 
-// ✅ ОБНОВЛЁННЫЙ AssignModal с поддержкой групп и Telegram-уведомлениями
 function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
   const [students, setStudents] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]); // ✅ НОВОЕ
+  const [groups, setGroups] = useState<any[]>([]);
   const [selectedStudents, setSelectedStudents] = useState<string[]>(hw?.assigned_students || []);
   const [selectedCourses, setSelectedCourses] = useState<string[]>(hw?.assigned_courses || []);
-  const [selectedGroups, setSelectedGroups] = useState<string[]>(hw?.assigned_groups || []); // ✅ НОВОЕ
+  const [selectedGroups, setSelectedGroups] = useState<string[]>(hw?.assigned_groups || []);
   const [dueDate, setDueDate] = useState(hw?.due_date || '');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1189,7 +1281,6 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
         setStudents(studentsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         const coursesSnap = await getDocs(query(collection(db, "courses"), where("tutor_id", "==", tutorId)));
         setCourses(coursesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        // ✅ Загрузка групп
         const groupsSnap = await getDocs(query(collection(db, "groups"), where("tutor_id", "==", tutorId)));
         setGroups(groupsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         setLoading(false);
@@ -1201,11 +1292,9 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
   const toggleStudent = (studentId: string) => {
     setSelectedStudents(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
   };
-
   const toggleCourse = (courseId: string) => {
     setSelectedCourses(prev => prev.includes(courseId) ? prev.filter(id => id !== courseId) : [...prev, courseId]);
   };
-
   const toggleGroup = (groupId: string) => {
     setSelectedGroups(prev => prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]);
   };
@@ -1213,7 +1302,6 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
   const saveAssignment = async () => {
     setSaving(true);
     try {
-      // ✅ Собираем всех учеников из выбранных групп
       const studentsFromGroups: string[] = [];
       for (const groupId of selectedGroups) {
         const group = groups.find(g => g.id === groupId);
@@ -1221,43 +1309,37 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
           studentsFromGroups.push(...group.student_ids);
         }
       }
-      // Объединяем вручную выбранных + из групп (без дубликатов)
       const allStudents = [...new Set([...selectedStudents, ...studentsFromGroups])];
-
       await updateDoc(doc(db, "homeworks", hw.id), {
         assigned_students: allStudents,
         assigned_courses: selectedCourses,
-        assigned_groups: selectedGroups, // ✅ Сохраняем ID групп
+        assigned_groups: selectedGroups,
         due_date: dueDate || null,
         updated_at: new Date().toISOString()
       });
-
-      // ✅ Отправляем Telegram-уведомления всем ученикам
       const dueDateStr = dueDate ? `\n Дедлайн: ${new Date(dueDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` : '';
-      const notificationMessage = `📚 Новое домашнее задание!\n\n"${hw.title}"\n\n${hw.description || ''}${dueDateStr}\n\nЗайди в личный кабинет, чтобы начать 👉`;
-      
+      const notificationMessage = `📚 Новое домашнее задание!\n"${hw.title}"\n${hw.description || ''}${dueDateStr}\nЗайди в личный кабинет, чтобы начать 👉`;
       for (const studentId of allStudents) {
         await sendTelegramNotification(studentId, notificationMessage);
       }
-
-      toast.success(`✅ ДЗ назначено! (${allStudents.length} учеников, ${selectedGroups.length} групп)\n Уведомления отправлены в Telegram`);
+      toast.success(`✅ ДЗ назначено! (${allStudents.length} учеников, ${selectedGroups.length} групп)\nУведомления отправлены в Telegram`);
       onClose();
     } catch (error: any) { toast.error("Ошибка: " + error.message); }
     finally { setSaving(false); }
   };
 
-  const bgModal = darkMode ? 'bg-gray-900' : 'bg-white';
-  const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-purple-50 border-purple-200 text-gray-900';
-  const bgFooter = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200';
-  const textPrimary = darkMode ? 'text-white' : 'text-stone-800';
-  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-500';
+  const bgModal = darkMode ? 'bg-[#2A2420]' : 'bg-white';
+  const bgInput = darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#3D2817]';
+  const bgFooter = darkMode ? 'bg-[#1A1614] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
 
   if (loading) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div className={`${bgModal} rounded-2xl p-8 text-center`}>
-          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className={`mt-4 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Загрузка...</p>
+          <div className="w-12 h-12 border-4 border-[#C67B4B] border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className={`mt-4 ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>Загрузка...</p>
         </div>
       </motion.div>
     );
@@ -1266,44 +1348,43 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className={`${bgModal} rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col`} onClick={e => e.stopPropagation()}>
-        <div className="bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-5 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center"><Users className="w-7 h-7 text-white" /></div>
+            <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
+              <Users className="w-7 h-7 text-white" />
+            </div>
             <div>
               <h2 className="text-2xl font-bold text-white">Назначить ДЗ</h2>
               <p className="text-white/80 text-sm">{hw.title}</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl" aria-label="Закрыть"></button>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">✕</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* ✅ НОВАЯ СЕКЦИЯ: ГРУППЫ (первая по порядку) */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>
-                <Users className="w-5 h-5 text-purple-500" />
+                <Users className="w-5 h-5 text-[#C67B4B]" />
                 👥 Группы
               </h3>
-              <button onClick={() => setSelectedGroups(selectedGroups.length === groups.length ? [] : groups.map(g => g.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>
+              <button onClick={() => setSelectedGroups(selectedGroups.length === groups.length ? [] : groups.map(g => g.id))} className={`text-sm font-semibold ${darkMode ? 'text-[#C67B4B] hover:text-[#B8860B]' : 'text-[#C67B4B] hover:text-[#8B3A3A]'}`}>
                 {selectedGroups.length === groups.length ? 'Снять все' : 'Выбрать все'}
               </button>
             </div>
             <div className={`max-h-48 overflow-y-auto space-y-2 rounded-xl p-3 border-2 ${bgInput}`}>
               {groups.length === 0 ? (
-                <p className={`text-center py-4 ${textSecondary}`}>
-                  Нет групп. Создайте группы в разделе "Группы".
-                </p>
+                <p className={`text-center py-4 ${textSecondary}`}>Нет групп. Создайте группы в разделе "Группы".</p>
               ) : (
                 groups.map(group => {
                   const studentCount = group.student_ids?.length || 0;
                   return (
-                    <label key={group.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-white'}`}>
-                      <input type="checkbox" checked={selectedGroups.includes(group.id)} onChange={() => toggleGroup(group.id)} className="w-5 h-5 accent-purple-500" />
+                    <label key={group.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${darkMode ? 'hover:bg-[#2A2420]' : 'hover:bg-white'}`}>
+                      <input type="checkbox" checked={selectedGroups.includes(group.id)} onChange={() => toggleGroup(group.id)} className="w-5 h-5 accent-[#C67B4B]" />
                       <div className="flex-1">
                         <p className={`font-semibold ${textPrimary}`}>{group.name}</p>
                         <p className={`text-xs ${textSecondary}`}>
-                          {group.subject === 'chemistry' ? ' Химия' : '🧬 Биология'} • {studentCount} ученик(ов)
+                          {group.subject === 'chemistry' ? '🧪 Химия' : '🧬 Биология'} • {studentCount} ученик(ов)
                         </p>
                       </div>
                     </label>
@@ -1312,20 +1393,17 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
               )}
             </div>
             {selectedGroups.length > 0 && (
-              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>
+              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`}>
                 Выбрано: {selectedGroups.length} групп(ы)
               </p>
             )}
           </div>
 
-          {/* СЕКЦИЯ: УЧЕНИКИ */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>
-                👤 Ученики (дополнительно)
-              </h3>
-              <button onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>
-                {selectedStudents.length === students.length ? 'Снять все' : 'Выбрать всех'}
+              <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>👤 Ученики (дополнительно)</h3>
+              <button onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))} className={`text-sm font-semibold ${darkMode ? 'text-[#C67B4B] hover:text-[#B8860B]' : 'text-[#C67B4B] hover:text-[#8B3A3A]'}`}>
+                {selectedStudents.length === students.length ? 'Снять всех' : 'Выбрать всех'}
               </button>
             </div>
             <div className={`max-h-48 overflow-y-auto space-y-2 rounded-xl p-3 border-2 ${bgInput}`}>
@@ -1333,10 +1411,10 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
                 <p className={`text-center py-4 ${textSecondary}`}>Нет учеников</p>
               ) : (
                 students.map(student => (
-                  <label key={student.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-white'}`}>
-                    <input type="checkbox" checked={selectedStudents.includes(student.id)} onChange={() => toggleStudent(student.id)} className="w-5 h-5 accent-purple-500" />
+                  <label key={student.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition ${darkMode ? 'hover:bg-[#2A2420]' : 'hover:bg-white'}`}>
+                    <input type="checkbox" checked={selectedStudents.includes(student.id)} onChange={() => toggleStudent(student.id)} className="w-5 h-5 accent-[#C67B4B]" />
                     <div className="flex-1">
-                      <p className={`font-semibold ${textPrimary}`}>{student.name || student.email || student.id}</p>
+                      <p className={`font-semibold ${textPrimary}`}>{student.full_name || student.name || student.email || student.id}</p>
                       <p className={`text-xs ${textSecondary}`}>{student.email}</p>
                     </div>
                   </label>
@@ -1344,19 +1422,16 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
               )}
             </div>
             {selectedStudents.length > 0 && (
-              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>
+              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`}>
                 Выбрано: {selectedStudents.length} ученик(ов)
               </p>
             )}
           </div>
 
-          {/* СЕКЦИЯ: КУРСЫ */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>
-                📚 Курсы
-              </h3>
-              <button onClick={() => setSelectedCourses(selectedCourses.length === courses.length ? [] : courses.map(c => c.id))} className={`text-sm font-semibold ${darkMode ? 'text-purple-400 hover:text-purple-300' : 'text-purple-600 hover:text-purple-800'}`}>
+              <h3 className={`font-bold text-lg ${textPrimary} flex items-center gap-2`}>📚 Курсы</h3>
+              <button onClick={() => setSelectedCourses(selectedCourses.length === courses.length ? [] : courses.map(c => c.id))} className={`text-sm font-semibold ${darkMode ? 'text-[#C67B4B] hover:text-[#B8860B]' : 'text-[#C67B4B] hover:text-[#8B3A3A]'}`}>
                 {selectedCourses.length === courses.length ? 'Снять все' : 'Выбрать все'}
               </button>
             </div>
@@ -1365,8 +1440,8 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
                 <p className={`text-center py-4 ${textSecondary}`}>Нет курсов</p>
               ) : (
                 courses.map(course => (
-                  <label key={course.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-white'}`}>
-                    <input type="checkbox" checked={selectedCourses.includes(course.id)} onChange={() => toggleCourse(course.id)} className="w-5 h-5 accent-purple-500" />
+                  <label key={course.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition ${darkMode ? 'hover:bg-[#2A2420]' : 'hover:bg-white'}`}>
+                    <input type="checkbox" checked={selectedCourses.includes(course.id)} onChange={() => toggleCourse(course.id)} className="w-5 h-5 accent-[#C67B4B]" />
                     <div className="flex-1">
                       <p className={`font-semibold ${textPrimary}`}>{course.title || course.name || course.id}</p>
                       {course.description && (<p className={`text-xs ${textSecondary}`}>{course.description}</p>)}
@@ -1376,29 +1451,33 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
               )}
             </div>
             {selectedCourses.length > 0 && (
-              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-purple-300' : 'text-purple-700'}`}>
+              <p className={`text-sm mt-2 font-semibold ${darkMode ? 'text-[#C67B4B]' : 'text-[#C67B4B]'}`}>
                 Выбрано: {selectedCourses.length} курс(ов)
               </p>
             )}
           </div>
 
           <div>
-            <label className={`block text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-stone-700'} mb-2`}>📅 Дедлайн (необязательно)</label>
-            <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-orange-500 focus:outline-none text-base ${darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900'}`} />
+            <label className={`block text-sm font-bold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'} mb-2`}>📅 Дедлайн (необязательно)</label>
+            <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={`w-full px-4 py-3 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none text-base ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]'}`} />
           </div>
 
           {selectedStudents.length === 0 && selectedCourses.length === 0 && selectedGroups.length === 0 && (
-            <div className={`rounded-xl p-4 ${darkMode ? 'bg-amber-900/20 border-amber-700' : 'bg-amber-50 border-amber-200'} border-2`}>
-              <p className={`text-sm ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>⚠️ Если не выбрать учеников, курсы или группы, <b>ДЗ не будет доступно никому</b>.</p>
+            <div className={`rounded-xl p-4 ${darkMode ? 'bg-[#B8860B]/10 border-[#B8860B]/30' : 'bg-[#B8860B]/10 border-[#B8860B]/30'} border-2`}>
+              <p className={`text-sm ${darkMode ? 'text-[#B8860B]' : 'text-[#B8860B]'}`}>
+                ⚠️ Если не выбрать учеников, курсы или группы, <b>ДЗ не будет доступно никому</b>.
+              </p>
             </div>
           )}
         </div>
 
         <div className={`${bgFooter} px-6 py-4 border-t-2 flex gap-3`}>
-          <button onClick={saveAssignment} disabled={saving} className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2">
+          <button onClick={saveAssignment} disabled={saving} className="flex-1 px-6 py-3 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl font-bold hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Сохранение...</>) : (<><CheckCircle className="w-5 h-5" /> Сохранить</>)}
           </button>
-          <button onClick={onClose} className={`px-6 py-3 rounded-xl font-bold transition ${darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-white border-2 border-gray-300 text-gray-700 hover:bg-gray-50'}`}>Отмена</button>
+          <button onClick={onClose} className={`px-6 py-3 rounded-xl font-bold transition ${darkMode ? 'bg-[#3D2817] border-2 border-[#3D2817] text-[#F5E6D3] hover:bg-[#4A3828]' : 'bg-white border-2 border-[#E8DCC8] text-[#6B4E3A] hover:bg-[#FAF3E8]'}`}>
+            Отмена
+          </button>
         </div>
       </motion.div>
     </motion.div>
@@ -1413,14 +1492,24 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
   const [submissionScore, setSubmissionScore] = useState<number | null>(null);
   const [studentSubmissions, setStudentSubmissions] = useState<any[]>([]);
   const [studentNames, setStudentNames] = useState<Record<string, string>>({});
+  const [showMenu, setShowMenu] = useState(false);
+  const [menuDirection, setMenuDirection] = useState<'down' | 'up'>('down');
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!mounted || !uid || isTutor) return;
-    const q = query(collection(db, "submissions"), where("homework_id", "==", hw.id));
+    // Раньше запрос шёл только по homework_id — под открытыми правилами
+    // (if true) это работало, потому что можно было получить ЧУЖИЕ
+    // submissions и отфильтровать нужную на клиенте. Под новыми правилами
+    // такой запрос теоретически может вернуть submission другого ученика,
+    // а значит отклоняется целиком. Добавляем student_id в сам запрос —
+    // теперь он структурно гарантированно возвращает не больше одной
+    // (своей) записи, и Firestore может проверить его по правилу заранее.
+    const q = query(collection(db, "submissions"), where("homework_id", "==", hw.id), where("student_id", "==", uid));
     const unsub = onSnapshot(q, (snap) => {
-      const userSub = snap.docs.find(doc => doc.data().student_id === uid);
+      const userSub = snap.docs[0];
       if (userSub) {
         const subData = userSub.data();
         setSubmissionStatus(subData.status);
@@ -1447,7 +1536,7 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
           const profSnap = await getDocs(query(collection(db, "profiles"), where("__name__", "in", chunk)));
           profSnap.docs.forEach(doc => {
             const data = doc.data();
-            names[doc.id] = data.name || data.email || doc.id;
+            names[doc.id] = data.full_name || data.name || data.email || doc.id;
           });
         } catch (e) { console.error('Ошибка загрузки профилей:', e); }
       }
@@ -1479,13 +1568,13 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
   const getButtonConfig = () => {
     if (isTutor) return null;
     if (!mounted || !submissionStatus) {
-      return { text: "Начать", icon: Zap, gradient: "from-orange-500 via-amber-500 to-pink-500" };
+      return { text: "Начать", icon: Zap, gradient: "from-[#C67B4B] via-[#B8860B] to-[#8B3A3A]" };
     }
     switch (submissionStatus) {
-      case "submitted": return { text: "На проверке", icon: Clock, gradient: "from-blue-500 to-cyan-500" };
-      case "needs_revision": return { text: "Исправить", icon: RotateCcw, gradient: "from-rose-500 to-pink-500" };
-      case "approved": return { text: `Результат: ${submissionScore ?? 0}/${hw.max_score}`, icon: CheckCircle, gradient: "from-emerald-500 to-teal-500" };
-      default: return { text: "Начать", icon: Zap, gradient: "from-orange-500 via-amber-500 to-pink-500" };
+      case "submitted": return { text: "На проверке", icon: Clock, gradient: "from-[#6B705C] to-[#6B4E3A]" };
+      case "needs_revision": return { text: "Исправить", icon: RotateCcw, gradient: "from-[#8B3A3A] to-[#7A2F2F]" };
+      case "approved": return { text: `Результат: ${submissionScore ?? 0}/${hw.max_score}`, icon: CheckCircle, gradient: "from-[#6B705C] to-[#5A5F4D]" };
+      default: return { text: "Начать", icon: Zap, gradient: "from-[#C67B4B] via-[#B8860B] to-[#8B3A3A]" };
     }
   };
 
@@ -1493,10 +1582,10 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
 
   const getHomeworkStatus = () => {
     if (isTutor || !mounted) return null;
-    if (!submissionStatus) return { label: '🔥 Нужно сделать', color: darkMode ? 'border-2 border-orange-500' : 'border-2 border-orange-400 shadow-orange-500/20', urgent: true };
-    if (submissionStatus === 'needs_revision') return { label: '⟳ На доработке', color: darkMode ? 'border-2 border-rose-500' : 'border-2 border-rose-400 shadow-rose-500/20', urgent: true };
-    if (submissionStatus === 'submitted') return { label: '⏳ На проверке', color: darkMode ? 'border-2 border-blue-500' : 'border-2 border-blue-300 shadow-blue-500/10', urgent: false };
-    if (submissionStatus === 'approved') return { label: '✅ Выполнено', color: darkMode ? 'border-2 border-emerald-500 opacity-80' : 'border-2 border-emerald-300 opacity-80', urgent: false };
+    if (!submissionStatus) return { label: '🔥 Нужно сделать', color: darkMode ? 'border-2 border-[#C67B4B]' : 'border-2 border-[#C67B4B]', urgent: true };
+    if (submissionStatus === 'needs_revision') return { label: '⟳ На доработке', color: darkMode ? 'border-2 border-[#8B3A3A]' : 'border-2 border-[#8B3A3A]', urgent: true };
+    if (submissionStatus === 'submitted') return { label: '⏳ На проверке', color: darkMode ? 'border-2 border-[#B8860B]' : 'border-2 border-[#B8860B]', urgent: false };
+    if (submissionStatus === 'approved') return { label: '✅ Выполнено', color: darkMode ? 'border-2 border-[#6B705C] opacity-80' : 'border-2 border-[#6B705C] opacity-80', urgent: false };
     return null;
   };
 
@@ -1520,166 +1609,398 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
   const getDeadlineInfo = () => {
     if (!hw.due_date) return null;
     const due = new Date(hw.due_date); const now = new Date(); const diff = due.getTime() - now.getTime();
-    if (diff <= 0) return { text: '🔴 Просрочено', color: darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700', urgent: true };
+    if (diff <= 0) return { text: '🔴 Просрочено', color: darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]', urgent: true };
     const hours = Math.floor(diff / (1000 * 60 * 60)); const days = Math.floor(hours / 24);
-    if (days > 0) return { text: `⏰ ${days} дн.`, color: darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700', urgent: false };
-    if (hours > 0) return { text: ` ${hours} ч.`, color: darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700', urgent: true };
+    if (days > 0) return { text: `⏰ ${days} дн.`, color: darkMode ? 'bg-[#6B705C]/20 text-[#6B705C]' : 'bg-[#6B705C]/20 text-[#6B705C]', urgent: false };
+    if (hours > 0) return { text: ` ${hours} ч.`, color: darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]', urgent: true };
     const minutes = Math.floor(diff / (1000 * 60));
-    return { text: `⏰ ${minutes} мин.`, color: darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700', urgent: true };
+    return { text: `⏰ ${minutes} мин.`, color: darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]', urgent: true };
   };
 
   const deadlineInfo = getDeadlineInfo();
 
-  const bgCard = darkMode ? 'bg-gray-800' : 'bg-white';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-500';
-  const textMuted = darkMode ? 'text-gray-500' : 'text-gray-400';
+  const bgCard = darkMode ? 'bg-[#2A2420]' : 'bg-white';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
+  const textMuted = darkMode ? 'text-[#6B4E3A]' : 'text-[#B8A898]';
+
+  const stripColor = !submissionStatus
+    ? 'bg-[#C67B4B]'
+    : submissionStatus === 'needs_revision'
+      ? 'bg-[#8B3A3A]'
+      : submissionStatus === 'submitted'
+        ? 'bg-[#B8860B]'
+        : 'bg-[#6B705C]';
 
   return (
-    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} whileHover={{ y: -4, boxShadow: "0 20px 40px rgba(0,0,0,0.08)" }} className={`${bgCard} rounded-2xl overflow-hidden transition-all duration-300 ${hwStatus?.color || (darkMode ? 'border border-gray-700' : 'border border-gray-200')}`}>
-      {!isTutor && hwStatus?.label && (
-        <div className={`px-4 py-2 text-xs font-bold text-center ${
-          hwStatus.urgent ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white'
-          : submissionStatus === 'approved' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
-          : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
-        }`}>
-          {hwStatus.label}
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2, boxShadow: "0 12px 28px rgba(0,0,0,0.07)" }} style={{ position: 'relative', zIndex: showMenu ? 30 : 'auto' }} className={`${bgCard} rounded-2xl overflow-visible transition-all duration-300 ${hwStatus?.color || (darkMode ? 'border border-[#3D2817]' : 'border border-[#E8DCC8]')}`}>
+      <div className="flex items-stretch flex-wrap">
+        {!isTutor && (
+          <div className={`w-2 flex-shrink-0 rounded-l-2xl ${stripColor}`}></div>
+        )}
+
+        <div className={`flex items-center justify-center flex-shrink-0 ${darkMode ? 'bg-[#1A1614]' : 'bg-[#FAF3E8]'} ${!isTutor ? 'rounded-none' : 'rounded-l-2xl'}`} style={{ width: 64 }}>
+          <span className="text-2xl">{isTrialExam ? '⏱️' : '📚'}</span>
         </div>
-      )}
 
-      <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 h-1.5"></div>
-
-      <div className="p-5">
-        <div className="flex items-start gap-3 mb-4">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${darkMode ? 'bg-gray-700' : 'bg-gradient-to-br from-orange-100 to-pink-100'}`}>
-            {isTrialExam ? '⏱️' : ''}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h4 className={`font-bold text-lg mb-1 truncate ${textPrimary}`}>{hw.title}</h4>
-            <p className={`text-sm line-clamp-2 ${textSecondary}`}>{hw.description || 'Без описания'}</p>
-            {hw.tags && hw.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {hw.tags.map((tag: string) => (
-                  <span key={tag} className={`px-1.5 py-0.5 rounded text-xs ${darkMode ? 'bg-orange-900/30 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>#{tag}</span>
-                ))}
-              </div>
+        <div className="flex-1 min-w-[220px] py-3 px-4">
+          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+            <h4 className={`font-bold text-[15px] ${textPrimary}`}>{hw.title}</h4>
+            {!isTutor && hwStatus?.label && (
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full text-white ${
+                hwStatus.urgent ? 'bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A]'
+                : submissionStatus === 'approved' ? 'bg-gradient-to-r from-[#6B705C] to-[#6B4E3A]'
+                : 'bg-gradient-to-r from-[#B8860B] to-[#C67B4B]'
+              }`}>{hwStatus.label}</span>
             )}
           </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2 mb-4">
-          {isTrialExam && (
-            <span className="px-3 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1"><Timer className="w-3 h-3" /> Пробник • {hw.time_limit} мин</span>
-          )}
-          {!isTrialExam && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${darkMode ? 'bg-orange-900/30 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>{typeInfo.label}</span>
-          )}
-          {hw.difficulty && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${
-              hw.difficulty === 'easy' ? (darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
-              : hw.difficulty === 'medium' ? (darkMode ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-100 text-amber-700')
-              : (darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700')
-            }`}>{diffInfo.label}</span>
-          )}
-          {hw.assigned_students?.length > 0 && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-100 text-purple-700'}`}> {hw.assigned_students.length}</span>
-          )}
-          {/* ✅ НОВОЕ: Отображение групп */}
-          {hw.assigned_groups?.length > 0 && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
-              👥 {hw.assigned_groups.length} групп(ы)
+          <div className="flex flex-wrap gap-1.5 items-center text-xs">
+            {isTrialExam && (
+              <span className="px-2 py-0.5 bg-gradient-to-r from-[#8B3A3A] to-[#C67B4B] text-white rounded-md font-semibold flex items-center gap-1">
+                <Timer className="w-3 h-3" /> Пробник • {hw.time_limit} мин
+              </span>
+            )}
+            {!isTrialExam && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold ${darkMode ? 'bg-[#C67B4B]/20 text-[#C67B4B]' : 'bg-[#C67B4B]/20 text-[#8B3A3A]'}`}>{typeInfo.label}</span>
+            )}
+            {hw.difficulty && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold ${
+                hw.difficulty === 'easy' ? (darkMode ? 'bg-[#6B705C]/20 text-[#6B705C]' : 'bg-[#6B705C]/20 text-[#6B4E3A]')
+                : hw.difficulty === 'medium' ? (darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]')
+                : (darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]')
+              }`}>{diffInfo.label}</span>
+            )}
+            <span className={`px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#3D2817] text-[#B8A898]' : 'bg-[#E8DCC8] text-[#6B4E3A]'}`}>
+              <Star className="w-3 h-3 text-[#B8860B] fill-[#B8860B]" /> {hw.max_score}
             </span>
-          )}
-          {hw.conversion_scale && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-pink-900/30 text-pink-300' : 'bg-pink-100 text-pink-700'}`} title="Есть шкала конвертации баллов">🎯 Конвертация</span>
-          )}
-          {deadlineInfo && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${deadlineInfo.color} ${deadlineInfo.urgent ? 'animate-pulse' : ''}`}>{deadlineInfo.text}</span>
-          )}
-          {!isTutor && submissionStatus === 'approved' && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>⭐ {submissionScore}/{hw.max_score}</span>
-          )}
-          {hw.scheduled_at && (
-            <span className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700'}`}><Calendar className="w-3 h-3" /> {new Date(hw.scheduled_at).toLocaleDateString('ru-RU')}</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4 mb-4 text-sm">
-          <div className={`flex items-center gap-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-            <span className="font-semibold">{hw.max_score}</span>
-            <span className={`text-xs ${textMuted}`}>баллов</span>
-          </div>
-          <div className={`w-px h-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}></div>
-          <div className={`flex items-center gap-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            <BookOpen className="w-4 h-4 text-pink-500" />
-            <span className="font-semibold">{hw.sections?.length || 0}</span>
-            <span className={`text-xs ${textMuted}`}>зад.</span>
+            <span className={`px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#3D2817] text-[#B8A898]' : 'bg-[#E8DCC8] text-[#6B4E3A]'}`}>
+              <BookOpen className="w-3 h-3 text-[#C67B4B]" /> {hw.sections?.length || 0}
+            </span>
+            {hw.assigned_students?.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#6B705C]/20 text-[#6B705C]' : 'bg-[#6B705C]/20 text-[#6B4E3A]'}`}>👤 {hw.assigned_students.length}</span>
+            )}
+            {hw.assigned_groups?.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]'}`}>👥 {hw.assigned_groups.length}</span>
+            )}
+            {hw.conversion_scale && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold ${darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]'}`} title="Есть шкала конвертации баллов">🎯</span>
+            )}
+            {deadlineInfo && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold ${deadlineInfo.color} ${deadlineInfo.urgent ? 'animate-pulse' : ''}`}>{deadlineInfo.text}</span>
+            )}
+            {!isTutor && submissionStatus === 'approved' && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#6B705C]/20 text-[#6B705C]' : 'bg-[#6B705C]/20 text-[#6B4E3A]'}`}>⭐ {submissionScore}/{hw.max_score}</span>
+            )}
+            {hw.scheduled_at && (
+              <span className={`px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]'}`}><Calendar className="w-3 h-3" /> {new Date(hw.scheduled_at).toLocaleDateString('ru-RU')}</span>
+            )}
           </div>
         </div>
 
         {isTutor && studentStats && (
-          <div className={`mb-4 p-3 rounded-xl border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200'}`}>
-            <p className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>📊 Статус учеников:</p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div><span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>Принято: <b>{studentStats.approved}</b></span></div>
-              <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>На проверке: <b>{studentStats.submitted}</b></span></div>
-              <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-rose-500"></div><span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>На доработке: <b>{studentStats.needsRevision}</b></span></div>
-              <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-gray-400"></div><span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>Не начали: <b>{studentStats.notStarted}</b></span></div>
+          <div className={`hidden lg:flex items-center gap-3 px-4 border-l flex-shrink-0 ${darkMode ? 'border-[#3D2817]' : 'border-[#E8DCC8]'}`}>
+            <div className="flex items-center gap-1.5 text-xs" title="Принято">
+              <span className="w-2 h-2 rounded-full bg-[#6B705C] flex-shrink-0"></span>
+              <span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}><b>{studentStats.approved}</b></span>
             </div>
-            {studentSubmissions.length > 0 && (
-              <div className={`mt-3 pt-3 border-t space-y-1.5 max-h-32 overflow-y-auto ${darkMode ? 'border-gray-600' : 'border-orange-200'}`}>
-                {studentSubmissions.map((sub) => {
-                  const name = studentNames[sub.student_id] || sub.student_id;
-                  const statusColors: any = {
-                    approved: darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700',
-                    submitted: darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700',
-                    needs_revision: darkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-100 text-rose-700'
-                  };
-                  const statusLabels: any = {
-                    approved: `✓ ${sub.score}/${hw.max_score}`,
-                    submitted: '⏳ На проверке',
-                    needs_revision: '⟳ На доработке'
-                  };
-                  return (
-                    <div key={sub.id} className="flex items-center justify-between text-xs">
-                      <span className={`truncate flex-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{name}</span>
-                      <span className={`px-2 py-0.5 rounded-full font-semibold ${statusColors[sub.status] || (darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-600')}`}>{statusLabels[sub.status] || sub.status}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 text-xs" title="На проверке">
+              <span className="w-2 h-2 rounded-full bg-[#B8860B] flex-shrink-0"></span>
+              <span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}><b>{studentStats.submitted}</b></span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs" title="На доработке">
+              <span className="w-2 h-2 rounded-full bg-[#8B3A3A] flex-shrink-0"></span>
+              <span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}><b>{studentStats.needsRevision}</b></span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs" title="Не начали">
+              <span className="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"></span>
+              <span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}><b>{studentStats.notStarted}</b></span>
+            </div>
           </div>
         )}
 
-        {isTutor ? (
-          <div className="space-y-2">
-            <button onClick={() => onEdit(hw)} className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl text-sm font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"><Edit className="w-4 h-4" /> Редактировать</button>
-            <div className="flex gap-2">
-              <button onClick={() => onAssign(hw)} className="flex-1 px-3 py-2 bg-purple-500 text-white rounded-xl text-xs font-semibold hover:bg-purple-600 transition flex items-center justify-center gap-1"><Users className="w-3.5 h-3.5" /> Назначить</button>
-              <button onClick={handleReview} className="flex-1 px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-semibold hover:bg-emerald-600 transition flex items-center justify-center gap-1"><Eye className="w-3.5 h-3.5" /> Проверить</button>
-            </div>
-            <div className={`flex gap-2 pt-2 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-              <button onClick={handlePreview} className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 ${darkMode ? 'bg-blue-900/20 text-blue-300 hover:bg-blue-800/20' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}><Eye className="w-3.5 h-3.5" /> Предпросмотр</button>
-              <button onClick={exportToCSV} className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 ${darkMode ? 'bg-emerald-900/20 text-emerald-300 hover:bg-emerald-800/20' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`} title="Экспорт результатов в CSV"><Download className="w-3.5 h-3.5" /> CSV</button>
-              <button onClick={() => onDuplicate(hw)} className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Copy className="w-3.5 h-3.5" /> Копия</button>
-              <button onClick={() => onDelete(hw)} className={`flex-1 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 ${darkMode ? 'bg-rose-900/20 text-rose-300 hover:bg-rose-800/20' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}><Trash2 className="w-3.5 h-3.5" /> Удалить</button>
-            </div>
-          </div>
-        ) : buttonConfig && (
-          <button onClick={handleStart} className={`w-full px-4 py-3 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
-            submissionStatus === 'approved' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:shadow-lg'
-            : submissionStatus === 'needs_revision' ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white hover:shadow-lg animate-pulse'
-            : submissionStatus === 'submitted' ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:shadow-lg'
-            : 'bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white hover:shadow-lg'
-          }`}>
-            {submissionStatus === 'approved' ? (<><CheckCircle className="w-4 h-4" /> Результат: {submissionScore}/{hw.max_score}</>)
-            : submissionStatus === 'needs_revision' ? (<><RotateCcw className="w-4 h-4" /> Исправить</>)
-            : submissionStatus === 'submitted' ? (<><Clock className="w-4 h-4" /> На проверке</>)
-            : (<><Zap className="w-4 h-4" /> Начать</>)}
-          </button>
-        )}
+        <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0">
+          {isTutor ? (
+            <>
+              <button onClick={() => onEdit(hw)} className="px-3 py-2 bg-gradient-to-r from-[#6B705C] to-[#6B4E3A] text-white rounded-lg text-xs font-semibold hover:shadow-md transition flex items-center gap-1.5 whitespace-nowrap">
+                <Edit className="w-3.5 h-3.5" /> Редактировать
+              </button>
+              <button onClick={() => onAssign(hw)} title="Назначить" className="p-2 bg-[#C67B4B] text-white rounded-lg hover:bg-[#A86535] transition">
+                <Users className="w-4 h-4" />
+              </button>
+              <button onClick={handleReview} title="Проверить" className="p-2 bg-[#6B705C] text-white rounded-lg hover:bg-[#5A5F4D] transition">
+                <Eye className="w-4 h-4" />
+              </button>
+              <div className="relative">
+                <button
+                  ref={menuButtonRef}
+                  onClick={() => {
+                    if (!showMenu && menuButtonRef.current) {
+                      // Меню — 4 пункта, ~185px высотой. Если снизу от кнопки
+                      // до края окна меньше этого — открываем вверх, иначе
+                      // вниз (как раньше). Раньше меню всегда открывалось
+                      // вниз и обрезалось краем окна браузера, если карточка
+                      // оказывалась ближе к низу видимой страницы.
+                      const rect = menuButtonRef.current.getBoundingClientRect();
+                      const spaceBelow = window.innerHeight - rect.bottom;
+                      setMenuDirection(spaceBelow < 200 ? 'up' : 'down');
+                    }
+                    setShowMenu(v => !v);
+                  }}
+                  title="Ещё"
+                  className={`p-2 rounded-lg transition ${darkMode ? 'bg-[#1A1614] text-[#B8A898] hover:bg-[#3D2817]' : 'bg-[#FAF3E8] text-[#6B4E3A] hover:bg-[#F0E8D8]'}`}
+                >
+                  <span className="text-base leading-none font-bold">⋯</span>
+                </button>
+                {showMenu && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)}></div>
+                    <div className={`absolute right-0 z-20 w-44 rounded-xl shadow-xl border overflow-hidden ${menuDirection === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'} ${darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'}`}>
+                      <button onClick={() => { setShowMenu(false); handlePreview(); }} className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 ${darkMode ? 'text-[#B8A898] hover:bg-[#1A1614]' : 'text-[#6B4E3A] hover:bg-[#FAF3E8]'}`}>
+                        <Eye className="w-3.5 h-3.5" /> Предпросмотр
+                      </button>
+                      <button onClick={() => { setShowMenu(false); exportToCSV(); }} className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 ${darkMode ? 'text-[#B8A898] hover:bg-[#1A1614]' : 'text-[#6B4E3A] hover:bg-[#FAF3E8]'}`}>
+                        <Download className="w-3.5 h-3.5" /> CSV
+                      </button>
+                      <button onClick={() => { setShowMenu(false); onDuplicate(hw); }} className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 ${darkMode ? 'text-[#B8A898] hover:bg-[#1A1614]' : 'text-[#6B4E3A] hover:bg-[#FAF3E8]'}`}>
+                        <Copy className="w-3.5 h-3.5" /> Копия
+                      </button>
+                      <button onClick={() => { setShowMenu(false); onDelete(hw); }} className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 border-t ${darkMode ? 'text-[#8B3A3A] border-[#3D2817] hover:bg-[#1A1614]' : 'text-[#8B3A3A] border-[#E8DCC8] hover:bg-[#8B3A3A]/10'}`}>
+                        <Trash2 className="w-3.5 h-3.5" /> Удалить
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          ) : buttonConfig && (
+            <button onClick={handleStart} className={`px-4 py-2.5 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 bg-gradient-to-r ${buttonConfig.gradient} text-white hover:shadow-md whitespace-nowrap`}>
+              {submissionStatus === 'approved' ? (<><CheckCircle className="w-4 h-4" /> {submissionScore}/{hw.max_score}</>)
+              : submissionStatus === 'needs_revision' ? (<><RotateCcw className="w-4 h-4" /> Исправить</>)
+              : submissionStatus === 'submitted' ? (<><Clock className="w-4 h-4" /> На проверке</>)
+              : (<><Zap className="w-4 h-4" /> Начать</>)}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {isTutor && studentStats && (
+        <div className={`lg:hidden flex items-center gap-3 px-4 pb-3 text-xs flex-wrap ${darkMode ? 'border-t border-[#3D2817]' : 'border-t border-[#E8DCC8]'} pt-2.5`}>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#6B705C]"></span><span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}>Принято: <b>{studentStats.approved}</b></span></span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#B8860B]"></span><span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}>Проверка: <b>{studentStats.submitted}</b></span></span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#8B3A3A]"></span><span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}>Доработка: <b>{studentStats.needsRevision}</b></span></span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400"></span><span className={darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}>Не начали: <b>{studentStats.notStarted}</b></span></span>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ===================== СТАТИСТИКА =====================
+function useStats(homeworks: Homework[], submissions: any[], isTutor: boolean, uid: string) {
+  return useMemo(() => {
+    if (isTutor) {
+      const pendingReview = submissions.filter(s => s.status === 'submitted').length;
+      const activeHomeworks = homeworks.filter(h => h.status === 'published' || h.status === 'scheduled').length;
+      const totalApproved = submissions.filter(s => s.status === 'approved').length;
+      const totalSubmissions = submissions.length;
+      const onTimePercent = totalSubmissions > 0 ? Math.round((totalApproved / totalSubmissions) * 100) : 0;
+      const now = new Date();
+      const overdue = homeworks.filter(h => {
+        if (!h.due_date) return false;
+        const due = new Date(h.due_date);
+        if (due >= now) return false;
+        const assigned = h.assigned_students || [];
+        const submittedForHw = submissions.filter(s => s.homework_id === h.id);
+        const approvedCount = submittedForHw.filter(s => s.status === 'approved').length;
+        return approvedCount < assigned.length;
+      }).length;
+      return { pendingReview, activeHomeworks, onTimePercent, overdue };
+    } else {
+      const now = new Date();
+      const mySubmissions = submissions.filter(s => s.student_id === uid);
+      const urgent = homeworks.filter(h => {
+        if (!h.due_date) return false;
+        const due = new Date(h.due_date);
+        const diff = due.getTime() - now.getTime();
+        const mySub = mySubmissions.find(s => s.homework_id === h.id);
+        return diff < 2 * 24 * 60 * 60 * 1000 && (!mySub || mySub.status === 'draft' || mySub.status === 'needs_revision');
+      }).length;
+      const inProgress = mySubmissions.filter(s => s.status === 'draft' || s.status === 'in_progress').length;
+      const pending = mySubmissions.filter(s => s.status === 'submitted').length;
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const doneMonth = mySubmissions.filter(s => s.status === 'approved' && s.submitted_at && new Date(s.submitted_at) >= monthAgo).length;
+      return { urgent, inProgress, pending, doneMonth };
+    }
+  }, [homeworks, submissions, isTutor, uid]);
+}
+
+function StatCard({ icon: Icon, value, label, color, darkMode }: any) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-2xl p-5 border-2 transition-all ${
+        darkMode
+          ? 'bg-[#2A2420] border-[#3D2817] hover:border-[#C67B4B]'
+          : 'bg-white border-[#E8DCC8] hover:border-[#C67B4B] hover:shadow-lg'
+      }`}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
+          <Icon className="w-5 h-5 text-white" />
+        </div>
+      </div>
+      <div className={`text-3xl font-black mb-1 ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>
+        {value}
+      </div>
+      <div className={`text-sm font-medium ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
+        {label}
+      </div>
+    </motion.div>
+  );
+}
+
+function TabButton({ active, onClick, label, count, darkMode }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
+        active
+          ? 'bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white shadow-md'
+          : darkMode
+            ? 'bg-[#2A2420] text-[#B8A898] hover:bg-[#3D2817] border-2 border-[#3D2817]'
+            : 'bg-white text-[#6B4E3A] hover:bg-[#FAF3E8] border-2 border-[#E8DCC8]'
+      }`}
+    >
+      {label}
+      {count !== undefined && count > 0 && (
+        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+          active ? 'bg-white/20' : darkMode ? 'bg-[#3D2817]' : 'bg-[#E8DCC8]'
+        }`}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function SubmissionJournal({ homeworks, submissions, students, darkMode }: any) {
+  const recentHomeworks = homeworks
+    .filter(h => h.status === 'published' || h.status === 'scheduled')
+    .sort((a: any, b: any) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 6);
+
+  if (recentHomeworks.length === 0 || students.length === 0) {
+    return (
+      <div className={`rounded-2xl p-12 text-center border-2 border-dashed ${
+        darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'
+      }`}>
+        <BarChart3 className={`w-12 h-12 mx-auto mb-3 ${darkMode ? 'text-[#6B4E3A]' : 'text-[#B8A898]'}`} />
+        <p className={`font-semibold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
+          Нет данных для журнала
+        </p>
+      </div>
+    );
+  }
+
+  const getCellData = (studentId: string, hwId: string) => {
+    const sub = submissions.find((s: any) => s.student_id === studentId && s.homework_id === hwId);
+    if (!sub) return { status: 'empty', label: '—', color: darkMode ? 'bg-[#3D2817] text-[#6B4E3A]' : 'bg-[#E8DCC8] text-[#B8A898]' };
+    if (sub.status === 'approved') return { status: 'approved', label: `${sub.score || 0}`, color: 'bg-[#6B705C] text-white' };
+    if (sub.status === 'submitted') return { status: 'submitted', label: '⏳', color: darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]' };
+    if (sub.status === 'needs_revision') return { status: 'revision', label: '⟳', color: darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]' };
+    return { status: 'draft', label: '…', color: darkMode ? 'bg-[#3D2817] text-[#6B4E3A]' : 'bg-[#E8DCC8] text-[#B8A898]' };
+  };
+
+  return (
+    <div className={`rounded-2xl border-2 overflow-hidden ${
+      darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'
+    }`}>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className={darkMode ? 'bg-[#3D2817]' : 'bg-[#FAF3E8]'}>
+              <th className={`px-4 py-3 text-left text-xs font-bold uppercase tracking-wider ${
+                darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'
+              }`}>
+                Ученик
+              </th>
+              {recentHomeworks.map((hw: any) => (
+                <th key={hw.id} className={`px-3 py-3 text-center text-xs font-bold uppercase tracking-wider ${
+                  darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'
+                }`}>
+                  <div className="truncate max-w-[100px]" title={hw.title}>
+                    {hw.title}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {students.map((student: any, idx: number) => (
+              <tr key={student.id} className={`border-t ${
+                darkMode
+                  ? `border-[#3D2817] ${idx % 2 === 0 ? 'bg-[#2A2420]' : 'bg-[#252018]'}`
+                  : `border-[#E8DCC8] ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FAF3E8]/50'}`
+              }`}>
+                <td className={`px-4 py-3 font-semibold text-sm ${
+                  darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'
+                }`}>
+                  {student.full_name || student.name || student.email || 'Ученик'}
+                </td>
+                {recentHomeworks.map((hw: any) => {
+                  const cell = getCellData(student.id, hw.id);
+                  return (
+                    <td key={hw.id} className="px-3 py-3 text-center">
+                      <div className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold ${cell.color}`}>
+                        {cell.label}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ReviewCard({ submission, studentName, hw, darkMode, onReview }: any) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      className={`rounded-2xl p-4 border-2 transition-all ${
+        darkMode
+          ? 'bg-[#2A2420] border-[#3D2817] hover:border-[#C67B4B]'
+          : 'bg-white border-[#E8DCC8] hover:border-[#C67B4B]'
+      }`}
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#C67B4B] to-[#8B3A3A] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+          {(studentName || '??').charAt(0).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className={`font-bold text-base truncate ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>
+            {studentName || 'Ученик'}
+          </h4>
+          <p className={`text-xs truncate ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
+            {hw.title}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
+          сдано {submission.submitted_at ? new Date(submission.submitted_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : 'недавно'}
+        </span>
+        <button
+          onClick={onReview}
+          className="px-4 py-2 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-xl text-sm font-semibold hover:shadow-md transition flex items-center gap-1"
+        >
+          <Eye className="w-4 h-4" /> Проверить
+        </button>
       </div>
     </motion.div>
   );
@@ -1690,9 +2011,12 @@ function HomeworksContent() {
   const [profile, setProfile] = useState<any>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [homeworks, setHomeworks] = useState<any[]>([]);
+  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [diffFilter, setDiffFilter] = useState('all');
   const [folderFilter, setFolderFilter] = useState<string>('all');
@@ -1723,14 +2047,14 @@ function HomeworksContent() {
   const role = profile?.role || "student";
   const isTutor = role === "tutor";
 
-  const bg = darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-orange-50 via-amber-50 to-pink-50';
-  const bgHeader = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 backdrop-blur border-orange-200';
-  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-orange-200';
-  const bgInput = darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-orange-200 text-gray-900';
-  const bgEmpty = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-orange-200';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
-  const textMuted = darkMode ? 'text-gray-500' : 'text-gray-400';
+  const bg = darkMode ? 'bg-[#1A1614]' : 'bg-[#FAF3E8]';
+  const bgHeader = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white/80 backdrop-blur border-[#E8DCC8]';
+  const bgCard = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]';
+  const bgInput = darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#F5E6D3]' : 'bg-white border-[#E8DCC8] text-[#3D2817]';
+  const bgEmpty = darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8]';
+  const textPrimary = darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]';
+  const textSecondary = darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]';
+  const textMuted = darkMode ? 'text-[#6B4E3A]' : 'text-[#B8A898]';
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u: any) => {
@@ -1758,37 +2082,124 @@ function HomeworksContent() {
 
   useEffect(() => {
     if (!user || !profile || !coursesLoaded) return;
-    let q;
-    if (isTutor) q = query(collection(db, "homeworks"), where("tutor_id", "==", user.uid));
-    else q = query(collection(db, "homeworks"));
-    const unsubHomeworks = onSnapshot(q, (snap) => {
-      let allHomeworks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (!isTutor) {
-        allHomeworks = allHomeworks.filter(hw => {
-          const hasStudents = hw.assigned_students && hw.assigned_students.length > 0;
-          const hasCourses = hw.assigned_courses && hw.assigned_courses.length > 0;
-          if (!hasStudents && !hasCourses) return false;
-          if (hasStudents && hw.assigned_students.includes(user.uid)) return true;
-          if (hasCourses) {
-            const hasMatchingCourse = hw.assigned_courses.some((courseId: string) => studentCourses.includes(courseId));
-            if (hasMatchingCourse) return true;
-          }
-          return false;
-        });
-      }
-      setHomeworks(allHomeworks);
+
+    if (isTutor) {
+      const q = query(collection(db, "homeworks"), where("tutor_id", "==", user.uid));
+      const unsubHomeworks = onSnapshot(q, (snap) => {
+        setHomeworks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+        setLoadError(false);
+      }, (error) => {
+        console.error('Ошибка загрузки ДЗ:', error);
+        setLoadError(true);
+        setLoading(false);
+      });
+
+      const unsubFolders = onSnapshot(query(collection(db, "homework_folders"), where("tutor_id", "==", user.uid)), (snap) => {
+        setFolders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+
+      return () => { unsubHomeworks(); unsubFolders(); };
+    }
+
+    // Для ученика: раньше был один незафильтрованный
+    // query(collection(db, "homeworks")) с фильтрацией на клиенте после
+    // получения данных. Firestore Rules так не работают — запрос, который
+    // теоретически МОГ БЫ вернуть чужой документ (а мог: коллекция общая
+    // на всех репетиторов), отклоняется целиком ещё до выполнения, а не
+    // "подрезается" по правилу постфактум. Поэтому здесь два узких запроса,
+    // каждый заранее ограничен ровно тем, что разрешает правило безопасности.
+    const byStudent: Record<string, any> = {};
+    const byCourse: Record<string, any> = {};
+    let studentLoaded = false;
+    let courseLoaded = studentCourses.length === 0;
+
+    const commitHomeworks = () => {
+      if (!studentLoaded || !courseLoaded) return;
+      setHomeworks(Object.values({ ...byCourse, ...byStudent }));
       setLoading(false);
       setLoadError(false);
+    };
+
+    const qStudent = query(collection(db, "homeworks"), where("assigned_students", "array-contains", user.uid));
+    const unsubStudent = onSnapshot(qStudent, (snap) => {
+      Object.keys(byStudent).forEach(k => delete byStudent[k]);
+      snap.docs.forEach(d => { byStudent[d.id] = { id: d.id, ...d.data() }; });
+      studentLoaded = true;
+      commitHomeworks();
     }, (error) => {
-      console.error('Ошибка загрузки ДЗ:', error);
+      console.error('Ошибка загрузки ДЗ (по ученику):', error);
       setLoadError(true);
       setLoading(false);
     });
-    const unsubFolders = onSnapshot(query(collection(db, "homework_folders"), where("tutor_id", "==", user.uid)), (snap) => {
-      setFolders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => { unsubHomeworks(); unsubFolders(); };
+
+    // array-contains-any требует непустой массив и максимум 10 значений за
+    // раз — подписываемся отдельным листенером на каждый чанк из 10 курсов.
+    const courseUnsubs: (() => void)[] = [];
+    if (studentCourses.length > 0) {
+      const chunks: string[][] = [];
+      for (let i = 0; i < studentCourses.length; i += 10) chunks.push(studentCourses.slice(i, i + 10));
+      let chunksLoaded = 0;
+      chunks.forEach((chunk) => {
+        const qCourse = query(collection(db, "homeworks"), where("assigned_courses", "array-contains-any", chunk));
+        const unsub = onSnapshot(qCourse, (snap) => {
+          snap.docs.forEach(d => { byCourse[d.id] = { id: d.id, ...d.data() }; });
+          chunksLoaded++;
+          if (chunksLoaded >= chunks.length) courseLoaded = true;
+          commitHomeworks();
+        }, (error) => {
+          console.error('Ошибка загрузки ДЗ (по курсам):', error);
+        });
+        courseUnsubs.push(unsub);
+      });
+    }
+
+    return () => {
+      unsubStudent();
+      courseUnsubs.forEach(u => u());
+    };
   }, [user, isTutor, profile, studentCourses, coursesLoaded]);
+
+  useEffect(() => {
+    if (!user || !profile) return;
+    let q;
+    if (isTutor) {
+      const hwIds = homeworks.map(h => h.id);
+      if (hwIds.length === 0) { setSubmissions([]); return; }
+      const chunks = [];
+      for (let i = 0; i < hwIds.length; i += 10) {
+        chunks.push(hwIds.slice(i, i + 10));
+      }
+      const unsubs = chunks.map(chunk => {
+        return onSnapshot(query(collection(db, "submissions"), where("homework_id", "in", chunk)), (snap) => {
+          const newSubs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          setSubmissions(prev => {
+            const prevIds = new Set(prev.map(s => s.id));
+            const filtered = prev.filter(s => !chunk.includes(s.homework_id));
+            return [...filtered, ...newSubs];
+          });
+        });
+      });
+      return () => unsubs.forEach(u => u());
+    } else {
+      q = query(collection(db, "submissions"), where("student_id", "==", user.uid));
+      const unsub = onSnapshot(q, (snap) => {
+        setSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsub();
+    }
+  }, [user, profile, isTutor, homeworks]);
+
+  useEffect(() => {
+    if (!isTutor || !user) return;
+    const unsub = onSnapshot(
+      query(collection(db, "profiles"), where("role", "==", "student")),
+      (snap) => setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, [isTutor, user]);
+
+  const stats = useStats(homeworks, submissions, isTutor, uid);
 
   const createFolder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1827,13 +2238,13 @@ function HomeworksContent() {
         hwSnap.docs.forEach(doc => batch.update(doc.ref, { folder_id: null }));
         await batch.commit();
       }
-      toast.success('️ Папка удалена');
+      toast.success('🗑️ Папка удалена');
       setDeletingFolder(null);
       if (folderFilter === deletingFolder.id) setFolderFilter('all');
     } catch (error: any) { toast.error('Ошибка: ' + error.message); }
   };
 
-  const filtered = (() => {
+  const filtered = useMemo(() => {
     let result = [...homeworks];
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -1842,7 +2253,43 @@ function HomeworksContent() {
     if (folderFilter !== 'all') result = result.filter(h => h.folder_id === folderFilter);
     if (typeFilter !== 'all') result = result.filter(h => h.type === typeFilter);
     if (diffFilter !== 'all') result = result.filter(h => h.difficulty === diffFilter);
-    if (!isTutor) {
+
+    if (isTutor) {
+      if (activeTab === 'pending') {
+        const pendingHwIds = new Set(submissions.filter(s => s.status === 'submitted').map(s => s.homework_id));
+        result = result.filter(h => pendingHwIds.has(h.id));
+      } else if (activeTab === 'overdue') {
+        const now = new Date();
+        result = result.filter(h => h.due_date && new Date(h.due_date) < now);
+      } else if (activeTab === 'drafts') {
+        result = result.filter(h => h.status === 'draft' || h.status === 'scheduled');
+      }
+      result.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    } else {
+      if (activeTab === 'urgent') {
+        const now = new Date();
+        result = result.filter(h => {
+          if (!h.due_date) return false;
+          const diff = new Date(h.due_date).getTime() - now.getTime();
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return diff < 2 * 24 * 60 * 60 * 1000 && (!mySub || mySub.status !== 'approved');
+        });
+      } else if (activeTab === 'progress') {
+        result = result.filter(h => {
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return mySub && (mySub.status === 'draft' || mySub.status === 'in_progress' || mySub.status === 'needs_revision');
+        });
+      } else if (activeTab === 'pending') {
+        result = result.filter(h => {
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return mySub && mySub.status === 'submitted';
+        });
+      } else if (activeTab === 'done') {
+        result = result.filter(h => {
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return mySub && mySub.status === 'approved';
+        });
+      }
       result.sort((a, b) => {
         const aActive = !a.submissionStatus || a.submissionStatus === 'needs_revision';
         const bActive = !b.submissionStatus || b.submissionStatus === 'needs_revision';
@@ -1850,14 +2297,48 @@ function HomeworksContent() {
         if (!aActive && bActive) return 1;
         return b.created_at.localeCompare(a.created_at);
       });
-    } else {
-      result.sort((a, b) => b.created_at.localeCompare(a.created_at));
     }
     return result;
-  })();
+  }, [homeworks, search, folderFilter, typeFilter, diffFilter, activeTab, submissions, isTutor, uid]);
+
+  const tabCounts = useMemo(() => {
+    if (isTutor) {
+      const pendingHwIds = new Set(submissions.filter(s => s.status === 'submitted').map(s => s.homework_id));
+      const now = new Date();
+      return {
+        all: homeworks.length,
+        pending: pendingHwIds.size,
+        overdue: homeworks.filter(h => h.due_date && new Date(h.due_date) < now).length,
+        drafts: homeworks.filter(h => h.status === 'draft' || h.status === 'scheduled').length,
+      };
+    } else {
+      const now = new Date();
+      return {
+        all: homeworks.length,
+        urgent: homeworks.filter(h => {
+          if (!h.due_date) return false;
+          const diff = new Date(h.due_date).getTime() - now.getTime();
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return diff < 2 * 24 * 60 * 60 * 1000 && (!mySub || mySub.status !== 'approved');
+        }).length,
+        progress: homeworks.filter(h => {
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return mySub && (mySub.status === 'draft' || mySub.status === 'in_progress' || mySub.status === 'needs_revision');
+        }).length,
+        pending: homeworks.filter(h => {
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return mySub && mySub.status === 'submitted';
+        }).length,
+        done: homeworks.filter(h => {
+          const mySub = submissions.find(s => s.homework_id === h.id && s.student_id === uid);
+          return mySub && mySub.status === 'approved';
+        }).length,
+      };
+    }
+  }, [homeworks, submissions, isTutor, uid]);
 
   async function deleteHomework(hw: any) {
-    try { await deleteDoc(doc(db, "homeworks", hw.id)); toast.success('🗑️ Удалено'); setDeletingHw(null); }
+    try { await deleteDoc(doc(db, "homeworks", hw.id)); toast.success('️ Удалено'); setDeletingHw(null); }
     catch (e: any) { toast.error('Ошибка: ' + e.message); }
   }
 
@@ -1875,7 +2356,7 @@ function HomeworksContent() {
   if (loadingAuth || loading) {
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center`}>
-        <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-16 h-16 border-4 border-[#C67B4B] border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -1886,7 +2367,7 @@ function HomeworksContent() {
         <div className={`${bgCard} rounded-xl p-6 border-2 text-center shadow-xl max-w-md`}>
           <div className="text-5xl mb-3">🔒</div>
           <h2 className={`text-xl font-bold mb-2 ${textPrimary}`}>Войдите в аккаунт</h2>
-          <Link href="/login" className="inline-block mt-3 px-5 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg font-semibold">Войти</Link>
+          <Link href="/login" className="inline-block mt-3 px-5 py-2 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg font-semibold">Войти</Link>
         </div>
       </div>
     );
@@ -1895,46 +2376,45 @@ function HomeworksContent() {
   return (
     <div className={`min-h-screen ${bg} transition-colors duration-300 relative overflow-hidden`}>
       <Toaster position="top-right" />
-      {/* Фоновые элементы */}
+
       <div className="fixed inset-0 pointer-events-none opacity-10">
-        <div className="absolute top-10 left-10 text-8xl"></div>
-        <div className="absolute bottom-20 right-10 text-7xl">📚</div>
+        <div className="absolute top-10 left-10 text-8xl">📝</div>
+        <div className="absolute bottom-20 right-10 text-7xl"></div>
         <div className="absolute top-1/3 right-1/4 text-6xl">✏️</div>
         <div className="absolute bottom-1/3 left-1/4 text-6xl">📖</div>
       </div>
 
       <div className="max-w-7xl mx-auto p-6 relative z-10">
-        {/* ШАПКА ПО ЦЕНТРУ */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-2">
             <span className="text-4xl">📝</span>
-            <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-orange-600 via-amber-600 to-pink-600 drop-shadow-sm">
+            <h1 className={`text-4xl sm:text-5xl font-black uppercase tracking-tight ${
+              darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'
+            }`}>
               ДОМАШНИЕ ЗАДАНИЯ
             </h1>
-            <span className="text-4xl">📚</span>
+            <span className="text-4xl"></span>
           </div>
-          <p className="text-orange-600/70 font-serif italic text-sm">
+          <p className={`font-serif italic text-sm ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
             "I can see you, but I can't reach you"
           </p>
         </motion.div>
 
-        {/* Кнопки управления */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div className="flex-1"></div>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`p-2.5 rounded-2xl border shadow-sm transition ${darkMode ? 'bg-gray-800 text-yellow-400 border-gray-700' : 'bg-white text-gray-600 border-orange-200'}`}
-              aria-label="Переключить тему"
+              className={`p-2.5 rounded-2xl border-2 shadow-sm transition ${darkMode ? 'bg-[#2A2420] text-[#B8860B] border-[#3D2817]' : 'bg-white text-[#6B4E3A] border-[#E8DCC8]'}`}
             >
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             {isTutor && (
               <>
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowFolderForm(true)} className={`px-5 py-3 rounded-xl font-semibold transition flex items-center gap-2 text-base ${darkMode ? 'bg-gray-700 border-2 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-white border-2 border-orange-200 text-gray-700 hover:border-orange-400 hover:shadow-md'}`}>
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowFolderForm(true)} className={`px-5 py-3 rounded-xl font-semibold transition flex items-center gap-2 text-base ${darkMode ? 'bg-[#2A2420] border-2 border-[#3D2817] text-[#F5E6D3] hover:bg-[#3D2817]' : 'bg-white border-2 border-[#E8DCC8] text-[#6B4E3A] hover:border-[#C67B4B] hover:shadow-md'}`}>
                   <Folder className="w-5 h-5" /> Папка
                 </motion.button>
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)} className="px-5 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2 text-base">
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)} className="px-5 py-3 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition flex items-center gap-2 text-base">
                   <Plus className="w-5 h-5" /> Новое ДЗ
                 </motion.button>
               </>
@@ -1942,22 +2422,39 @@ function HomeworksContent() {
           </div>
         </motion.div>
 
-        {/* Фильтры */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`${bgHeader} rounded-3xl p-4 shadow-sm border mb-8`}>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {isTutor ? (
+            <>
+              <StatCard icon={Eye} value={stats.pendingReview} label="Ждут проверки" color="bg-[#6B705C]" darkMode={darkMode} />
+              <StatCard icon={BookOpen} value={stats.activeHomeworks} label="Активных ДЗ" color="bg-[#C67B4B]" darkMode={darkMode} />
+              <StatCard icon={TrendingUp} value={`${stats.onTimePercent}%`} label="Сдано в срок" color="bg-[#6B705C]" darkMode={darkMode} />
+              <StatCard icon={AlertCircle} value={stats.overdue} label="Просрочено" color="bg-[#8B3A3A]" darkMode={darkMode} />
+            </>
+          ) : (
+            <>
+              <StatCard icon={Flame} value={stats.urgent} label="Горит дедлайн" color="bg-[#8B3A3A]" darkMode={darkMode} />
+              <StatCard icon={Edit} value={stats.inProgress} label="В процессе" color="bg-[#B8860B]" darkMode={darkMode} />
+              <StatCard icon={Clock} value={stats.pending} label="На проверке" color="bg-[#6B705C]" darkMode={darkMode} />
+              <StatCard icon={CheckCircle} value={stats.doneMonth} label="Сделано за месяц" color="bg-[#6B705C]" darkMode={darkMode} />
+            </>
+          )}
+        </div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`${bgHeader} rounded-3xl p-4 shadow-sm border-2 mb-6`}>
           <div className="flex flex-wrap gap-3 items-center">
             <div className="flex-1 min-w-[250px] relative">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Поиск заданий..." className={`w-full px-5 py-3 pl-12 border-2 rounded-xl focus:border-orange-400 focus:outline-none focus:ring-4 focus:ring-orange-500/10 text-base shadow-sm ${bgInput}`} aria-label="Поиск" />
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Поиск заданий..." className={`w-full px-5 py-3 pl-12 border-2 rounded-xl focus:border-[#C67B4B] focus:outline-none text-base shadow-sm ${bgInput}`} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#B8A898]" />
             </div>
-            <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} className={`px-5 py-3 border-2 rounded-xl text-base focus:border-orange-400 focus:outline-none cursor-pointer shadow-sm ${bgInput}`} aria-label="Фильтр по папке">
+            <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} className={`px-5 py-3 border-2 rounded-xl text-base focus:border-[#C67B4B] focus:outline-none cursor-pointer shadow-sm ${bgInput}`}>
               <option value="all">📁 Все папки</option>
               {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={`px-5 py-3 border-2 rounded-xl text-base focus:border-orange-400 focus:outline-none cursor-pointer shadow-sm ${bgInput}`} aria-label="Фильтр по типу">
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={`px-5 py-3 border-2 rounded-xl text-base focus:border-[#C67B4B] focus:outline-none cursor-pointer shadow-sm ${bgInput}`}>
               <option value="all">📋 Все типы</option>
               {HOMEWORK_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
-            <select value={diffFilter} onChange={(e) => setDiffFilter(e.target.value)} className={`px-5 py-3 border-2 rounded-xl text-base focus:border-orange-400 focus:outline-none cursor-pointer shadow-sm ${bgInput}`} aria-label="Фильтр по сложности">
+            <select value={diffFilter} onChange={(e) => setDiffFilter(e.target.value)} className={`px-5 py-3 border-2 rounded-xl text-base focus:border-[#C67B4B] focus:outline-none cursor-pointer shadow-sm ${bgInput}`}>
               <option value="all">🎯 Любая сложность</option>
               <option value="easy">🟢 Лёгкие</option>
               <option value="medium">🟡 Средние</option>
@@ -1966,31 +2463,107 @@ function HomeworksContent() {
           </div>
         </motion.div>
 
+        <div className="flex flex-wrap gap-2 mb-6">
+          {isTutor ? (
+            <>
+              <TabButton active={activeTab === 'all'} onClick={() => setActiveTab('all')} label="Все" count={tabCounts.all} darkMode={darkMode} />
+              <TabButton active={activeTab === 'pending'} onClick={() => setActiveTab('pending')} label="Ждут проверки" count={tabCounts.pending} darkMode={darkMode} />
+              <TabButton active={activeTab === 'overdue'} onClick={() => setActiveTab('overdue')} label="Просрочено" count={tabCounts.overdue} darkMode={darkMode} />
+              <TabButton active={activeTab === 'drafts'} onClick={() => setActiveTab('drafts')} label="Черновики" count={tabCounts.drafts} darkMode={darkMode} />
+            </>
+          ) : (
+            <>
+              <TabButton active={activeTab === 'all'} onClick={() => setActiveTab('all')} label="Все" count={tabCounts.all} darkMode={darkMode} />
+              <TabButton active={activeTab === 'urgent'} onClick={() => setActiveTab('urgent')} label="Горит дедлайн" count={tabCounts.urgent} darkMode={darkMode} />
+              <TabButton active={activeTab === 'progress'} onClick={() => setActiveTab('progress')} label="В процессе" count={tabCounts.progress} darkMode={darkMode} />
+              <TabButton active={activeTab === 'pending'} onClick={() => setActiveTab('pending')} label="На проверке" count={tabCounts.pending} darkMode={darkMode} />
+              <TabButton active={activeTab === 'done'} onClick={() => setActiveTab('done')} label="Сделано" count={tabCounts.done} darkMode={darkMode} />
+            </>
+          )}
+        </div>
+
         {loadError && (
-          <div className={`mb-6 rounded-2xl p-6 text-center ${darkMode ? 'bg-rose-900/20 border-rose-700' : 'bg-rose-50 border-rose-200'} border-2`}>
-            <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
-            <p className={`font-semibold mb-3 ${darkMode ? 'text-rose-300' : 'text-rose-700'}`}>Ошибка загрузки данных</p>
-            <button onClick={() => window.location.reload()} className="px-6 py-2 bg-rose-500 text-white rounded-xl font-semibold hover:bg-rose-600 transition flex items-center gap-2 mx-auto"><RotateCcw className="w-4 h-4" /> Повторить попытку</button>
+          <div className={`mb-6 rounded-2xl p-6 text-center ${darkMode ? 'bg-[#8B3A3A]/10 border-[#8B3A3A]/30' : 'bg-[#8B3A3A]/10 border-[#8B3A3A]/30'} border-2`}>
+            <AlertTriangle className="w-12 h-12 text-[#8B3A3A] mx-auto mb-3" />
+            <p className={`font-semibold mb-3 ${darkMode ? 'text-[#8B3A3A]' : 'text-[#8B3A3A]'}`}>Ошибка загрузки данных</p>
+            <button onClick={() => window.location.reload()} className="px-6 py-2 bg-[#8B3A3A] text-white rounded-xl font-semibold hover:bg-[#7A2F2F] transition flex items-center gap-2 mx-auto">
+              <RotateCcw className="w-4 h-4" /> Повторить попытку
+            </button>
+          </div>
+        )}
+
+        {isTutor && activeTab === 'pending' && (
+          <div className="mb-8">
+            <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${textPrimary}`}>
+              <UserCheck className="w-5 h-5 text-[#C67B4B]" />
+              Ждут проверки
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {submissions
+                .filter(s => s.status === 'submitted')
+                .map(sub => {
+                  const hw = homeworks.find(h => h.id === sub.homework_id);
+                  const student = students.find(s => s.id === sub.student_id);
+                  if (!hw) return null;
+                  return (
+                    <ReviewCard
+                      key={sub.id}
+                      submission={sub}
+                      studentName={student?.full_name || student?.name || 'Ученик'}
+                      hw={hw}
+                      darkMode={darkMode}
+                      onReview={() => window.location.href = `/homeworks/${hw.id}?mode=review`}
+                    />
+                  );
+                })}
+            </div>
+            {submissions.filter(s => s.status === 'submitted').length === 0 && (
+              <div className={`rounded-2xl p-12 text-center border-2 border-dashed ${
+                darkMode ? 'bg-[#2A2420] border-[#3D2817]' : 'bg-white border-[#E8DCC8]'
+              }`}>
+                <CheckCircle className={`w-12 h-12 mx-auto mb-3 ${darkMode ? 'text-[#6B705C]' : 'text-[#B8A898]'}`} />
+                <p className={`font-semibold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
+                  Всё проверено! 🎉
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isTutor && (
+          <div className="mb-8">
+            <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${textPrimary}`}>
+              <BarChart3 className="w-5 h-5 text-[#C67B4B]" />
+              Журнал сдачи
+            </h3>
+            <SubmissionJournal
+              homeworks={homeworks}
+              submissions={submissions}
+              students={students}
+              darkMode={darkMode}
+            />
           </div>
         )}
 
         {folders.length > 0 && (
           <div className="mb-6">
-            <h3 className={`text-sm font-bold mb-3 flex items-center gap-2 ${textSecondary}`}><Folder className="w-4 h-4 text-orange-500" />Папки</h3>
+            <h3 className={`text-sm font-bold mb-3 flex items-center gap-2 ${textSecondary}`}>
+              <Folder className="w-4 h-4 text-[#C67B4B]" /> Папки
+            </h3>
             <div className="flex flex-wrap gap-3">
-              <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => setFolderFilter('all')} className={`flex flex-col items-center gap-2 px-5 py-4 rounded-2xl border-2 transition-all shadow-md ${folderFilter === 'all' ? 'bg-gradient-to-br from-orange-500 to-amber-500 text-white border-orange-600 shadow-orange-500/30' : `${bgCard} hover:border-orange-400 hover:shadow-lg`}`}>
+              <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => setFolderFilter('all')} className={`flex flex-col items-center gap-2 px-5 py-4 rounded-2xl border-2 transition-all shadow-md ${folderFilter === 'all' ? 'bg-gradient-to-br from-[#C67B4B] to-[#B8860B] text-white border-transparent shadow-lg' : `${bgCard} hover:border-[#C67B4B] hover:shadow-lg`}`}>
                 <span className="text-2xl">📁</span>
                 <span className="text-xs font-bold">Все</span>
               </motion.button>
               {folders.map((folder: any, idx: number) => {
-                const colors = ['from-purple-500 to-pink-500', 'from-blue-500 to-cyan-500', 'from-emerald-500 to-teal-500', 'from-rose-500 to-pink-500', 'from-amber-500 to-orange-500', 'from-indigo-500 to-purple-500'];
+                const colors = ['from-[#6B705C] to-[#6B4E3A]', 'from-[#C67B4B] to-[#8B3A3A]', 'from-[#B8860B] to-[#C67B4B]', 'from-[#8B3A3A] to-[#6B4E3A]', 'from-[#6B4E3A] to-[#3D2817]', 'from-[#6B705C] to-[#8B3A3A]'];
                 const color = colors[idx % colors.length];
                 const isActive = folderFilter === folder.id;
                 return (
-                  <div key={folder.id} className={`group relative flex flex-col items-center rounded-2xl border-2 transition-all shadow-md ${isActive ? `bg-gradient-to-br ${color} text-white border-transparent shadow-lg` : `${bgCard} hover:border-orange-400 hover:shadow-lg`}`}>
+                  <div key={folder.id} className={`group relative flex flex-col items-center rounded-2xl border-2 transition-all shadow-md ${isActive ? `bg-gradient-to-br ${color} text-white border-transparent shadow-lg` : `${bgCard} hover:border-[#C67B4B] hover:shadow-lg`}`}>
                     <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                      <button onClick={(e) => { e.stopPropagation(); setEditingFolder(folder); setEditFolderName(folder.name); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-gray-700 border-gray-600 hover:bg-blue-900/30' : 'bg-white border-gray-200 hover:bg-blue-50'}`} title="Редактировать" aria-label="Редактировать папку">✏️</button>
-                      <button onClick={(e) => { e.stopPropagation(); setDeletingFolder(folder); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-gray-700 border-gray-600 hover:bg-rose-900/30' : 'bg-white border-gray-200 hover:bg-rose-50'}`} title="Удалить" aria-label="Удалить папку">️</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingFolder(folder); setEditFolderName(folder.name); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-[#2A2420] border-[#3D2817] hover:bg-[#3D2817]' : 'bg-white border-[#E8DCC8] hover:bg-[#FAF3E8]'}`} title="Редактировать">️</button>
+                      <button onClick={(e) => { e.stopPropagation(); setDeletingFolder(folder); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-[#2A2420] border-[#3D2817] hover:bg-[#8B3A3A]/20' : 'bg-white border-[#E8DCC8] hover:bg-[#8B3A3A]/10'}`} title="Удалить">🗑️</button>
                     </div>
                     <button onClick={() => setFolderFilter(folder.id)} className="flex flex-col items-center gap-2 px-5 py-4">
                       <span className="text-2xl">📁</span>
@@ -2005,16 +2578,18 @@ function HomeworksContent() {
 
         {filtered.length === 0 ? (
           <div className={`text-center py-24 rounded-3xl border-2 border-dashed ${bgEmpty}`}>
-            <div className={`w-24 h-24 rounded-full flex items-center justify-center text-5xl mx-auto mb-6 shadow-inner ${darkMode ? 'bg-gray-700' : 'bg-gradient-to-br from-orange-200 to-pink-200'}`}>📝</div>
-            <p className={`text-xl mb-3 font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+            <div className={`w-24 h-24 rounded-full flex items-center justify-center text-5xl mx-auto mb-6 shadow-inner ${darkMode ? 'bg-[#2A2420]' : 'bg-[#FAF3E8]'}`}>📝</div>
+            <p className={`text-xl mb-3 font-bold ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
               {search || typeFilter !== 'all' || diffFilter !== 'all' ? 'Ничего не найдено' : isTutor ? 'У вас ещё нет ДЗ' : 'Нет доступных заданий'}
             </p>
             {isTutor && (
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)} className="px-8 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-pink-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition text-lg">➕ Создать первое ДЗ</motion.button>
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)} className="px-8 py-3 bg-gradient-to-r from-[#C67B4B] via-[#B8860B] to-[#8B3A3A] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition text-lg">
+                ➕ Создать первое ДЗ
+              </motion.button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="flex flex-col gap-3">
             {filtered.map((hw: any) => (
               <HomeworkCard key={hw.id} hw={hw} isTutor={isTutor} uid={uid} role={role} folders={folders} onDelete={setDeletingHw} onDuplicate={duplicateHomework} onEdit={setEditingHw} onAssign={setAssigningHw} darkMode={darkMode} />
             ))}
@@ -2025,12 +2600,14 @@ function HomeworksContent() {
       {showFolderForm && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowFolderForm(false)}>
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`${bgCard} rounded-xl p-5 max-w-md border-2 shadow-2xl`} onClick={e => e.stopPropagation()}>
-            <h3 className={`text-lg font-bold mb-3 flex items-center gap-2 ${textPrimary}`}><Folder className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />Новая папка</h3>
+            <h3 className={`text-lg font-bold mb-3 flex items-center gap-2 ${textPrimary}`}>
+              <Folder className={`w-5 h-5 text-[#C67B4B]`} /> Новая папка
+            </h3>
             <form onSubmit={createFolder}>
-              <input autoFocus value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Название папки" className={`w-full px-3 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none mb-3 text-sm ${bgInput}`} />
+              <input autoFocus value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Название папки" className={`w-full px-3 py-2 border-2 rounded-lg focus:border-[#C67B4B] focus:outline-none mb-3 text-sm ${bgInput}`} />
               <div className="flex gap-2">
-                <button type="submit" className="flex-1 px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg font-semibold text-sm">Создать</button>
-                <button type="button" onClick={() => setShowFolderForm(false)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>Отмена</button>
+                <button type="submit" className="flex-1 px-3 py-2 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg font-semibold text-sm">Создать</button>
+                <button type="button" onClick={() => setShowFolderForm(false)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-[#3D2817] text-[#F5E6D3]' : 'bg-[#E8DCC8] text-[#6B4E3A]'}`}>Отмена</button>
               </div>
             </form>
           </motion.div>
@@ -2040,12 +2617,14 @@ function HomeworksContent() {
       {editingFolder && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setEditingFolder(null)}>
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`${bgCard} rounded-xl p-5 max-w-md border-2 shadow-2xl`} onClick={e => e.stopPropagation()}>
-            <h3 className={`text-lg font-bold mb-3 flex items-center gap-2 ${textPrimary}`}><Folder className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />Редактировать папку</h3>
+            <h3 className={`text-lg font-bold mb-3 flex items-center gap-2 ${textPrimary}`}>
+              <Folder className={`w-5 h-5 text-[#C67B4B]`} /> Редактировать папку
+            </h3>
             <form onSubmit={updateFolder}>
-              <input autoFocus value={editFolderName} onChange={(e) => setEditFolderName(e.target.value)} placeholder="Новое название папки" className={`w-full px-3 py-2 border-2 rounded-lg focus:border-orange-500 focus:outline-none mb-3 text-sm ${bgInput}`} />
+              <input autoFocus value={editFolderName} onChange={(e) => setEditFolderName(e.target.value)} placeholder="Новое название папки" className={`w-full px-3 py-2 border-2 rounded-lg focus:border-[#C67B4B] focus:outline-none mb-3 text-sm ${bgInput}`} />
               <div className="flex gap-2">
-                <button type="submit" className="flex-1 px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg font-semibold text-sm">Сохранить</button>
-                <button type="button" onClick={() => setEditingFolder(null)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>Отмена</button>
+                <button type="submit" className="flex-1 px-3 py-2 bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white rounded-lg font-semibold text-sm">Сохранить</button>
+                <button type="button" onClick={() => setEditingFolder(null)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-[#3D2817] text-[#F5E6D3]' : 'bg-[#E8DCC8] text-[#6B4E3A]'}`}>Отмена</button>
               </div>
             </form>
           </motion.div>
@@ -2055,23 +2634,23 @@ function HomeworksContent() {
       <AnimatePresence>
         {deletingFolder && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setDeletingFolder(null)}>
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className={`${bgCard} rounded-xl p-5 max-w-md border-2 shadow-2xl ${darkMode ? 'border-rose-700' : 'border-rose-200'}`} onClick={e => e.stopPropagation()}>
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className={`${bgCard} rounded-xl p-5 max-w-md border-2 shadow-2xl ${darkMode ? 'border-[#8B3A3A]' : 'border-[#8B3A3A]'}`} onClick={e => e.stopPropagation()}>
               <h3 className={`text-lg font-bold mb-2 ${textPrimary}`}>Удалить папку?</h3>
-              <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Папка <b>"{deletingFolder.name}"</b> будет удалена. ДЗ не пострадают.</p>
+              <p className={`text-sm mb-4 ${textSecondary}`}>Папка <b>"{deletingFolder.name}"</b> будет удалена. ДЗ не пострадают.</p>
               <div className="flex gap-2">
-                <button onClick={deleteFolder} className="flex-1 px-3 py-2 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-lg font-semibold text-sm">🗑️ Удалить</button>
-                <button onClick={() => setDeletingFolder(null)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>Отмена</button>
+                <button onClick={deleteFolder} className="flex-1 px-3 py-2 bg-gradient-to-r from-[#8B3A3A] to-[#7A2F2F] text-white rounded-lg font-semibold text-sm">🗑️ Удалить</button>
+                <button onClick={() => setDeletingFolder(null)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-[#3D2817] text-[#F5E6D3]' : 'bg-[#E8DCC8] text-[#6B4E3A]'}`}>Отмена</button>
               </div>
             </motion.div>
           </motion.div>
         )}
         {deletingHw && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setDeletingHw(null)}>
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className={`${bgCard} rounded-xl p-5 max-w-md border-2 shadow-2xl ${darkMode ? 'border-rose-700' : 'border-rose-200'}`} onClick={e => e.stopPropagation()}>
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className={`${bgCard} rounded-xl p-5 max-w-md border-2 shadow-2xl ${darkMode ? 'border-[#8B3A3A]' : 'border-[#8B3A3A]'}`} onClick={e => e.stopPropagation()}>
               <h3 className={`text-lg font-bold mb-3 ${textPrimary}`}>Удалить ДЗ?</h3>
               <div className="flex gap-2">
-                <button onClick={() => deleteHomework(deletingHw)} className="flex-1 px-3 py-2 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-lg font-semibold text-sm">🗑️ Удалить</button>
-                <button onClick={() => setDeletingHw(null)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>Отмена</button>
+                <button onClick={() => deleteHomework(deletingHw)} className="flex-1 px-3 py-2 bg-gradient-to-r from-[#8B3A3A] to-[#7A2F2F] text-white rounded-lg font-semibold text-sm">🗑️ Удалить</button>
+                <button onClick={() => setDeletingHw(null)} className={`px-4 py-2 rounded-lg font-semibold text-sm ${darkMode ? 'bg-[#3D2817] text-[#F5E6D3]' : 'bg-[#E8DCC8] text-[#6B4E3A]'}`}>Отмена</button>
               </div>
             </motion.div>
           </motion.div>
@@ -2092,8 +2671,8 @@ function HomeworksContent() {
 export default function HomeworksPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-[#FAF3E8] dark:bg-[#1A1614] flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-[#C67B4B] border-t-transparent rounded-full animate-spin"></div>
       </div>
     }>
       <HomeworksContent />
