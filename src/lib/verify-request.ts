@@ -1,8 +1,10 @@
 import { adminAuth, adminDb } from './firebase-admin';
 
-export async function verifyTutorRequest(request: Request): Promise
-  { ok: true; uid: string } | { ok: false; error: string; status: number }
-> {
+type VerifyResult =
+  | { ok: true; uid: string }
+  | { ok: false; error: string; status: number };
+
+export async function verifyTutorRequest(request: Request): Promise<VerifyResult> {
   const authHeader = request.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     return { ok: false, error: 'Нет токена авторизации', status: 401 };

@@ -3,6 +3,10 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
 
+  experimental: {
+    serverComponentsExternalPackages: ['firebase-admin'],
+  },
+
   // Фикс сборки для Konva: не пытаемся собрать серверную зависимость 'canvas'.
   // Доска работает только в браузере, серверная ветка konva никогда не запускается.
   webpack: (config, { isServer, webpack }) => {
