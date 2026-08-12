@@ -1,67 +1,48 @@
-import { NextResponse } from 'next/server';
-import { verifyTutorRequest } from '@/lib/verify-request';
+// Замени существующую функцию improveTask на эту версию.
+// Единственное отличие — данные от GPT прогоняются через sanitizeTask()
+// перед тем как попасть в состояние React, чтобы объект случайно не попал
+// туда, где ожидается строка (это и роняло страницу с "Minified React error #31").
 
-const improvementPrompts: Record<string, string> = {
-  harder: 'Сделай задание сложнее: добавь больше шагов решения, используй более сложные вещества/понятия, увеличь количество вариантов ответа.',
-  easier: 'Сделай задание проще: упрости условие, добавь подсказку, уменьши количество вариантов ответа.',
-  hint: 'Добавь подробную подсказку к заданию, которая поможет ученику решить его самостоятельно.',
-  explain: 'Добавь более подробное объяснение решения с пошаговым разбором.',
-  variants: 'Добавь ещё 2 варианта ответа (всего должно быть 6 вариантов).'
-};
+function sanitizeTask(raw: any) {
+  const toStr = (v: any): string => {
+    if (typeof v === 'string') return v;
+    if (v === null || v === undefined) return '';
+    // GPT иногда возвращает объект/массив там, где ждали строку — сериализуем,
+    // чтобы страница не падала, а показала как есть (можно будет поправить вручную).
+    return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  };
 
-export async function POST(request: Request) {
-  const auth = await verifyTutorRequest(request);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
-
-  try {
-    const { task, improvementType } = await request.json();
-
-    if (!task || !improvementType) {
-      return NextResponse.json({ error: 'Не хватает параметров' }, { status: 400 });
-    }
-
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API ключ не настроен' }, { status: 500 });
-    }
-
-    const systemPrompt = `Ты — методист ЕГЭ. Улучши задание согласно запросу: "${improvementPrompts[improvementType] || improvementType}"
-
-ИСХОДНОЕ ЗАДАНИЕ:
-${JSON.stringify(task, null, 2)}
-
-ВЕРНИ УЛУЧШЕННУЮ ВЕРСИЮ В ТОМ ЖЕ ФОРМАТЕ JSON. Не меняй структуру, только улучши содержание согласно запросу.`;
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: "Улучши задание" }
-        ],
-        temperature: 0.3,
-        max_tokens: 2048,
-        response_format: { type: "json_object" }
-      }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message);
-
-    let rawContent = data.choices[0].message.content.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-    const improvedTask = JSON.parse(rawContent);
-
-    return NextResponse.json({ success: true, task: improvedTask });
-
-  } catch (error: any) {
-    console.error("Ошибка улучшения задания:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  return {
+    ...raw,
+    title: toStr(raw.title),
+    task_text: toStr(raw.task_text),
+    correct_answer: toStr(raw.correct_answer),
+    explanation: toStr(raw.explanation),
+    variants: Array.isArray(raw.variants) ? raw.variants.map(toStr) : [],
+    tags: Array.isArray(raw.tags) ? raw.tags.map(toStr) : [],
+  };
 }
+
+const improveTask = async (index: number, improvementType: string) => {
+  const task = aiPreview[index];
+  if (!task) return;
+
+  setIsImproving(index);
+  try {
+    const res = await authedFetch('/api/improve-task', { task, improvementType });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    if (data.task) {
+      const safeTask = sanitizeTask(data.task);
+      const newPreview = [...aiPreview];
+      newPreview[index] = { ...safeTask, id: task.id };
+      setAiPreview(newPreview);
+      toast.success("Задание улучшено!");
+    }
+  } catch (e: any) {
+    toast.error(e.message || "Ошибка улучшения");
+  } finally {
+    setIsImproving(null);
+  }
+};

@@ -69,6 +69,29 @@ const EGE_TASK_NUMBERS: { number: number; name: string; subject: string; type: s
   { number: 23, name: "Экосистемы и их компоненты", subject: "biology", type: "matching" },
 ];
 
+// Данные от GPT не всегда строго следуют запрошенной структуре — иногда поле,
+// которое должно быть строкой, приходит объектом или массивом. React не умеет
+// рендерить объекты напрямую и падает с "Minified React error #31", роняя всю
+// страницу. sanitizeTask приводит все текстовые поля к строкам перед тем, как
+// они попадут в состояние компонента.
+function sanitizeTask(raw: any) {
+  const toStr = (v: any): string => {
+    if (typeof v === 'string') return v;
+    if (v === null || v === undefined) return '';
+    return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  };
+
+  return {
+    ...raw,
+    title: toStr(raw.title),
+    task_text: toStr(raw.task_text),
+    correct_answer: toStr(raw.correct_answer),
+    explanation: toStr(raw.explanation),
+    variants: Array.isArray(raw.variants) ? raw.variants.map(toStr) : [],
+    tags: Array.isArray(raw.tags) ? raw.tags.map(toStr) : [],
+  };
+}
+
 function AIGeneratorContent() {
   const searchParams = useSearchParams();
   const uid = searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "";
@@ -192,7 +215,7 @@ function AIGeneratorContent() {
 
       if (data.tasks && data.tasks.length > 0) {
         const newPreview = [...aiPreview];
-        newPreview[index] = { ...data.tasks[0], id: `regen-${Date.now()}` };
+        newPreview[index] = { ...sanitizeTask(data.tasks[0]), id: `regen-${Date.now()}` };
         setAiPreview(newPreview);
         toast.success("Задание перегенерировано!");
       }
@@ -215,7 +238,7 @@ function AIGeneratorContent() {
 
       if (data.task) {
         const newPreview = [...aiPreview];
-        newPreview[index] = { ...data.task, id: task.id };
+        newPreview[index] = { ...sanitizeTask(data.task), id: task.id };
         setAiPreview(newPreview);
         toast.success("Задание улучшено!");
       }
@@ -458,7 +481,7 @@ function AIGeneratorContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      const tasksWithIds = data.tasks.map((t: any) => ({ ...t, id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
+      const tasksWithIds = data.tasks.map((t: any) => ({ ...sanitizeTask(t), id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
       setAiPreview(tasksWithIds);
       toast.success(`🤖 Сгенерировано ${tasksWithIds.length} заданий`);
     } catch (e: any) {
