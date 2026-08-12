@@ -1,4 +1,4 @@
-import { adminAuth, adminDb } from './firebase-admin';
+import { getAdminAuth, getAdminDb } from './firebase-admin-debug';
 
 type VerifyResult =
   | { ok: true; uid: string }
@@ -13,6 +13,9 @@ export async function verifyTutorRequest(request: Request): Promise<VerifyResult
   const idToken = authHeader.slice('Bearer '.length);
 
   try {
+    const adminAuth = getAdminAuth();
+    const adminDb = getAdminDb();
+
     const decoded = await adminAuth.verifyIdToken(idToken);
     const uid = decoded.uid;
 
@@ -27,8 +30,10 @@ export async function verifyTutorRequest(request: Request): Promise<VerifyResult
     }
 
     return { ok: true, uid };
-  } catch (e) {
+  } catch (e: any) {
+    // ВРЕМЕННО: возвращаем текст реальной ошибки в ответе, чтобы видеть её через curl
+    // без необходимости лезть в Vercel Logs. Убрать e?.message из ответа после отладки.
     console.error('Ошибка верификации токена:', e);
-    return { ok: false, error: 'Недействительный токен', status: 401 };
+    return { ok: false, error: `Недействительный токен: ${e?.message || e}`, status: 401 };
   }
 }
