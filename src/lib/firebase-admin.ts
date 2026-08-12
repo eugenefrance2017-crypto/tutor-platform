@@ -1,6 +1,10 @@
 import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+
+// ВАЖНО: намеренно НЕ импортируем 'firebase-admin/auth' — именно этот модуль
+// тянет за собой jwks-rsa -> jose (ESM-only в новых версиях), что вызывало
+// Error [ERR_REQUIRE_ESM] на Vercel. Проверку ID-токена делаем через REST API
+// Google напрямую (см. verify-request.ts), Firestore это не затрагивает.
 
 let app: App;
 let initError: string | null = null;
@@ -28,11 +32,6 @@ try {
 } catch (e: any) {
   initError = e?.message || String(e);
   console.error('Firebase Admin init failed:', initError);
-}
-
-export function getAdminAuth() {
-  if (initError) throw new Error(`Firebase Admin не инициализирован: ${initError}`);
-  return getAuth(app);
 }
 
 export function getAdminDb() {
