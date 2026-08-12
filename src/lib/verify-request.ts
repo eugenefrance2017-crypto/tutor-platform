@@ -1,4 +1,4 @@
-import { getAdminAuth, getAdminDb } from './firebase-admin-debug';
+import { getAdminAuth, getAdminDb } from './firebase-admin';
 
 type VerifyResult =
   | { ok: true; uid: string }
