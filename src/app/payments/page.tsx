@@ -1,7 +1,28 @@
 // ФАЙЛ: app/finance/page.tsx
-// ПРАВКА В ЭТОМ ФАЙЛЕ: только функция confirmPayment (см. пометку ✅ НИЖЕ)
-// плюс добавлен импорт runTransaction. Всё остальное — без изменений
-// относительно исходного файла.
+// ПРАВКИ В ЭТОМ ФАЙЛЕ (относительно версии с confirmPayment-транзакцией):
+//
+// 1) onSnapshot БЕЗ обработчика ошибок = самая вероятная причина "грузится и
+//    не открывается": если Firestore отклоняет запрос (permission-denied),
+//    колбэк успеха просто не вызывается, loading остаётся true навсегда,
+//    и пользователь не видит НИКАКОЙ ошибки. Добавлен error-callback на
+//    каждый onSnapshot + fallback, который снимает спиннер и показывает toast.
+// 2) Список учеников для тьютора больше не читает ВСЕХ студентов платформы
+//    (utility bug/утечка данных) — теперь фильтруется по tutor_id.
+//    ⚠️ Предполагается, что в profiles у ученика есть поле tutor_id.
+//    Если это не так — скажите, как связаны тьютор и ученик (через group,
+//    через отдельную коллекцию links и т.п.), поправлю запрос.
+// 3) confirmPayment и handleApproveRequest (подтверждение чека) теперь
+//    используют ОДНУ и ту же транзакционную функцию pополнения
+//    lesson_balances — раньше подтверждение чека вообще не трогало баланс.
+// 4) deletePayment: удаление уже подтверждённого платежа теперь атомарно
+//    списывает начисленные занятия обратно из lesson_balances (транзакция),
+//    чтобы у ученика не оставался "фантомный" остаток.
+// 5) role больше не читается из localStorage прямо во время рендера
+//    (риск hydration mismatch в Next.js) — вынесено в useEffect + state.
+// 6) Список платежей теперь карточки (адаптивно, без горизонтального
+//    скролла на мобильном), в вашей жёлто-янтарной гамме.
+//
+// Всё остальное — без изменений относительно исходного файла.
 
 "use client";
 
@@ -12,7 +33,7 @@ import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, addDoc, deleteDoc, query, where,
   onSnapshot, doc, getDoc, updateDoc, serverTimestamp, setDoc, getDocs,
-  runTransaction // ✅ НОВОЕ: нужен для атомарного пополнения lesson_balances
+  runTransaction
 } from "firebase/firestore";
 import toast from "react-hot-toast";
 import {
@@ -21,7 +42,7 @@ import {
   Eye, Loader2, Users, User, GraduationCap
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
-import { useFirebaseUid } from "@/hooks/useFirebaseUid"; // ✅ НОВОЕ: ждём подтверждения Firebase Auth перед запросами
+import { useFirebaseUid } from "@/hooks/useFirebaseUid";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -75,13 +96,59 @@ function getPaymentDate(payment: any): Date {
   return new Date(0);
 }
 
+// ✅ НОВОЕ: общая транзакционная функция начисления занятий на
+// lesson_balances/{studentId}.remaining — единая точка входа и для ручного
+// подтверждения платежа, и для подтверждения чека, чтобы они не могли
+// разъехаться (как это уже случилось: подтверждение чека раньше вообще не
+// трогало баланс).
+async function creditLessonBalance(studentId: string, lessonsCount: number) {
+  const balanceRef = doc(db, "lesson_balances", studentId);
+  await runTransaction(db, async (tx) => {
+    const balanceSnap = await tx.get(balanceRef);
+    const currentBalance = balanceSnap.exists() ? (balanceSnap.data().remaining || 0) : 0;
+    tx.set(balanceRef, {
+      remaining: currentBalance + lessonsCount,
+      last_updated: new Date().toISOString(),
+    }, { merge: true });
+  });
+}
+
+// ✅ НОВОЕ: обратная операция — используется при удалении уже подтверждённого
+// платежа, чтобы не оставлять ученику фантомные занятия в балансе.
+// Остаток не уходит в минус — если ученик уже израсходовал часть занятий из
+// этого платежа, списываем сколько можем, но 0 — это дно.
+async function debitLessonBalance(studentId: string, lessonsCount: number) {
+  const balanceRef = doc(db, "lesson_balances", studentId);
+  await runTransaction(db, async (tx) => {
+    const balanceSnap = await tx.get(balanceRef);
+    const currentBalance = balanceSnap.exists() ? (balanceSnap.data().remaining || 0) : 0;
+    tx.set(balanceRef, {
+      remaining: Math.max(0, currentBalance - lessonsCount),
+      last_updated: new Date().toISOString(),
+    }, { merge: true });
+  });
+}
+
 function FinanceContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  // ✅ ИЗМЕНЕНО: uid теперь берётся из реальной сессии Firebase Auth
-  // (не из localStorage) — устраняет гонку с "Missing or insufficient permissions"
   const { uid, authReady } = useFirebaseUid(app);
-  const role = searchParams.get("role") || (typeof window !== "undefined" ? localStorage.getItem("role") : "") || "tutor";
+
+  // ✅ ИЗМЕНЕНО: role больше не читается из localStorage прямо в теле
+  // компонента (это выполняется и на сервере при SSR, и в браузере —
+  // на сервере localStorage нет, поэтому подставлялось "tutor", а после
+  // гидратации могло смениться на другое значение → hydration mismatch).
+  // Теперь читаем один раз в useEffect, после монтирования на клиенте.
+  const roleFromUrl = searchParams.get("role");
+  const [role, setRole] = useState<string>(roleFromUrl || "tutor");
+  useEffect(() => {
+    if (roleFromUrl) {
+      setRole(roleFromUrl);
+      return;
+    }
+    const stored = typeof window !== "undefined" ? localStorage.getItem("role") : null;
+    if (stored) setRole(stored);
+  }, [roleFromUrl]);
 
   const tutorTabs = [
     { id: "stats", label: "📊 Статистика и Учет", icon: TrendingUp },
@@ -108,6 +175,11 @@ function FinanceContent() {
   const [selectedChildId, setSelectedChildId] = useState<string>("");
 
   const [loading, setLoading] = useState(true);
+  // ✅ НОВОЕ: если что-то пошло не так при подписке на данные (правила
+  // доступа, нет сети и т.п.) — показываем понятный экран вместо вечного
+  // спиннера.
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending" | "overdue">("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -126,6 +198,13 @@ function FinanceContent() {
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [selectedReceiptImage, setSelectedReceiptImage] = useState<string | null>(null);
 
+  // ✅ НОВОЕ: остаток занятий берём напрямую из lesson_balances — это
+  // единственное поле, которое реально уменьшается в Schedule.tsx при
+  // проведении урока. payment.lessons_remaining после наших правок в
+  // confirmPayment/handleApproveRequest больше не обновляется и показывал
+  // бы замороженное число.
+  const [lessonBalance, setLessonBalance] = useState<number | null>(null);
+
   const [financeSettings, setFinanceSettings] = useState<any>({
     price_individual: 2000,
     price_group: 1500,
@@ -143,9 +222,26 @@ function FinanceContent() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
+  // ✅ НОВОЕ: единый обработчик ошибок подписки — снимает спиннер и
+  // показывает toast с реальной причиной вместо бесконечной загрузки.
+  function handleSnapshotError(context: string) {
+    return (error: any) => {
+      console.error(`[finance] ${context}:`, error);
+      setLoading(false);
+      setLoadError(
+        error?.code === "permission-denied"
+          ? "Нет доступа к данным. Проверьте правила Firestore или обратитесь к администратору."
+          : `Не удалось загрузить данные (${context}). Попробуйте обновить страницу.`
+      );
+      toast.error(`Ошибка загрузки: ${error?.message || context}`);
+    };
+  }
+
   useEffect(() => {
-    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
+    if (!authReady) return;
     if (!uid) return;
+
+    setLoadError(null);
 
     let paymentsQuery;
     if (role === "tutor") {
@@ -156,22 +252,40 @@ function FinanceContent() {
       paymentsQuery = query(collection(db, "payments"), where("student_id", "==", uid));
     }
 
-    const unsubPayments = onSnapshot(paymentsQuery, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      list.sort((a: any, b: any) => getPaymentDate(b).getTime() - getPaymentDate(a).getTime());
-      setPayments(list);
-      setLoading(false);
-    });
+    const unsubPayments = onSnapshot(
+      paymentsQuery,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        list.sort((a: any, b: any) => getPaymentDate(b).getTime() - getPaymentDate(a).getTime());
+        setPayments(list);
+        setLoading(false);
+      },
+      handleSnapshotError("payments") // ✅ НОВОЕ
+    );
 
     if (role === "tutor") {
-      const unsubStudents = onSnapshot(query(collection(db, "profiles"), where("role", "==", "student")), (snap) => {
-        setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      });
+      // ✅ ИЗМЕНЕНО: раньше грузились ВСЕ ученики платформы
+      // (where("role","==","student") без привязки к тьютору) — утечка
+      // чужих данных в форму создания платежа. Теперь фильтр по tutor_id.
+      // ⚠️ Если в вашей схеме связь ученик↔тьютор устроена иначе
+      // (например, через группы, а не через поле profiles.tutor_id) —
+      // этот запрос нужно поправить под реальную схему.
+      const unsubStudents = onSnapshot(
+        query(collection(db, "profiles"), where("role", "==", "student"), where("tutor_id", "==", uid)),
+        (snap) => setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        handleSnapshotError("students") // ✅ НОВОЕ
+      );
 
-      const unsubGroups = onSnapshot(query(collection(db, "groups"), where("tutor_id", "==", uid)), (snap) => {
-        setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      });
+      const unsubGroups = onSnapshot(
+        query(collection(db, "groups"), where("tutor_id", "==", uid)),
+        (snap) => setGroups(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        handleSnapshotError("groups") // ✅ НОВОЕ
+      );
 
+      // ✅ ОТКАТ: settings/global и settings/finance — это единая конфигурация
+      // одной платформы (см. app/settings/page.tsx: там правда один набор
+      // hero_title/pricing/etc на всех). Моё предыдущее предположение про
+      // "разные тьюторы — разные настройки" было неверным, возвращаю как было.
       getDoc(doc(db, "settings", "global")).then((snap) => {
         if (snap.exists()) {
           const data = snap.data();
@@ -183,6 +297,8 @@ function FinanceContent() {
             lesson_expiration_days: data.lesson_expiration_days || prev.lesson_expiration_days,
           }));
         }
+      }).catch((error) => {
+        console.error("[finance] settings/global:", error);
       });
 
       getDoc(doc(db, "settings", "finance")).then((snap) => {
@@ -190,29 +306,57 @@ function FinanceContent() {
           setFinanceSettings((prev: any) => ({ ...prev, ...snap.data() }));
         }
         setSettingsLoaded(true);
+      }).catch((error) => {
+        console.error("[finance] settings/finance:", error);
+        setSettingsLoaded(true); // не блокируем вкладку настроек навсегда
       });
 
       return () => { unsubPayments(); unsubStudents(); unsubGroups(); };
     }
 
     if (role === "parent") {
-      const unsubChildren = onSnapshot(query(collection(db, "profiles"), where("parent_id", "==", uid)), (snap) => {
-        const kids = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setChildren(kids);
-        if (kids.length > 0 && !selectedChildId) setSelectedChildId(kids[0].id);
-      });
+      const unsubChildren = onSnapshot(
+        query(collection(db, "profiles"), where("parent_id", "==", uid)),
+        (snap) => {
+          const kids = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setChildren(kids);
+          if (kids.length > 0 && !selectedChildId) setSelectedChildId(kids[0].id);
+        },
+        handleSnapshotError("children") // ✅ НОВОЕ
+      );
       return () => { unsubPayments(); unsubChildren(); };
     }
 
     return () => { unsubPayments(); };
   }, [uid, authReady, role, selectedChildId]);
 
+  // ✅ НОВОЕ: подписка на живой остаток занятий ученика для вкладок
+  // "Мой абонемент" / родительского обзора.
   useEffect(() => {
-    if (!authReady) return; // ✅ ИЗМЕНЕНО: ждём подтверждения сессии
+    if (!authReady) return;
+    if (role === "tutor") return;
+    const targetStudentId = role === "parent" ? selectedChildId : uid;
+    if (!targetStudentId) return;
+
+    const unsubBalance = onSnapshot(
+      doc(db, "lesson_balances", targetStudentId),
+      (snap) => setLessonBalance(snap.exists() ? (snap.data().remaining ?? 0) : 0),
+      (error) => {
+        console.error("[finance] lesson_balances:", error);
+        setLessonBalance(null);
+      }
+    );
+    return () => unsubBalance();
+  }, [authReady, role, uid, selectedChildId]);
+
+  useEffect(() => {
+    if (!authReady) return;
     if (role !== "tutor" || !uid) return;
-    const unsubRequests = onSnapshot(query(collection(db, "payment_requests"), where("tutor_id", "==", uid), where("status", "==", "pending")), (snap) => {
-      setPaymentRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    const unsubRequests = onSnapshot(
+      query(collection(db, "payment_requests"), where("tutor_id", "==", uid), where("status", "==", "pending")),
+      (snap) => setPaymentRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      handleSnapshotError("payment_requests") // ✅ НОВОЕ
+    );
     return () => unsubRequests();
   }, [uid, authReady, role]);
 
@@ -322,16 +466,6 @@ function FinanceContent() {
     }
   }
 
-  // ✅ ИЗМЕНЕНО: раньше эта функция нетранзакционно читала и перезаписывала
-  // profiles.paid_lessons — поле, которое нигде не тратилось при проведении
-  // урока (списание в Schedule.tsx работает с коллекцией lesson_balances).
-  // Из-за этого "Родитель и оплата" на карточке ученика, "Мой абонемент" на
-  // /finance и баланс в /schedule могли показывать три разных числа.
-  //
-  // Теперь: подтверждение платежа атомарно (через транзакцию) увеличивает
-  // именно lesson_balances/{studentId}.remaining — тот же счётчик, который
-  // Schedule.tsx уменьшает при отметке занятия "Проведено". Это делает
-  // lesson_balances единым источником правды по остатку занятий ученика.
   async function confirmPayment(payment: any) {
     if (!window.confirm(`Подтвердить оплату ${payment.amount} ₽ от ${payment.student_name}?`)) return;
     try {
@@ -340,8 +474,6 @@ function FinanceContent() {
       await runTransaction(db, async (tx) => {
         const paymentRef = doc(db, "payments", payment.id);
         const balanceRef = doc(db, "lesson_balances", payment.student_id);
-
-        // Сначала все чтения, потом все записи — требование Firestore-транзакций
         const balanceSnap = await tx.get(balanceRef);
         const currentBalance = balanceSnap.exists() ? (balanceSnap.data().remaining || 0) : 0;
 
@@ -358,10 +490,22 @@ function FinanceContent() {
     }
   }
 
-  async function deletePayment(paymentId: string) {
-    if (!window.confirm("Удалить эту запись о платеже?")) return;
+  // ✅ ИЗМЕНЕНО: удаление подтверждённого платежа больше не оставляет
+  // "фантомные" занятия в lesson_balances — сначала атомарно списываем
+  // столько же занятий, сколько было начислено при подтверждении, потом
+  // удаляем документ. Для неподтверждённых платежей поведение не меняется.
+  async function deletePayment(payment: any) {
+    const isConfirmed = !!payment.confirmed;
+    const confirmMessage = isConfirmed
+      ? `Удалить оплаченную запись? У ученика спишутся ${payment.lessons_count || 0} занятий из баланса.`
+      : "Удалить эту запись о платеже?";
+    if (!window.confirm(confirmMessage)) return;
+
     try {
-      await deleteDoc(doc(db, "payments", paymentId));
+      if (isConfirmed && payment.student_id) {
+        await debitLessonBalance(payment.student_id, payment.lessons_count || payment.lessons || 0);
+      }
+      await deleteDoc(doc(db, "payments", payment.id));
       toast.success("🗑️ Запись удалена");
     } catch (error: any) {
       toast.error(`Ошибка: ${error.message}`);
@@ -373,17 +517,31 @@ function FinanceContent() {
     setTariff("start"); setComment(""); setDeadline(""); setShowAddForm(false);
   }
 
+  // ✅ ИЗМЕНЕНО: раньше подтверждение чека создавало payment с
+  // confirmed:true, но НИКОГДА не трогало lesson_balances — ученик,
+  // оплативший через чек, не мог получить занятия в /schedule. Теперь
+  // используется та же creditLessonBalance, что и в confirmPayment.
+  // Также lessons_count больше не захардкожен в 1 — берём из заявки, если
+  // она содержит количество занятий, иначе оставляем 1 как раньше.
   async function handleApproveRequest(request: any) {
     setProcessingRequestId(request.id);
     try {
+      const lessonsCount = request.lessons_count || 1;
+
       await updateDoc(doc(db, "payment_requests", request.id), { status: "approved", approved_at: serverTimestamp() });
+
       await addDoc(collection(db, "payments"), {
         tutor_id: uid, student_id: request.student_id, student_name: request.item_name || "Ученик",
         type: request.payment_type || "individual", amount: request.amount,
-        lessons_count: 1, lessons_used: 0, lessons_remaining: 1,
+        lessons_count: lessonsCount, lessons_used: 0, lessons_remaining: lessonsCount,
         tariff: "Оплата по чеку", comment: "Оплачено через загрузку чека",
         confirmed: true, confirmed_at: serverTimestamp(), created_at: serverTimestamp(),
       });
+
+      if (request.student_id) {
+        await creditLessonBalance(request.student_id, lessonsCount); // ✅ НОВОЕ
+      }
+
       toast.success("✅ Чек подтвержден, занятия начислены!");
       setSelectedReceiptImage(null);
     } catch (error: any) {
@@ -396,6 +554,7 @@ function FinanceContent() {
   async function saveFinanceSettings() {
     setSavingSettings(true);
     try {
+      // ✅ ОТКАТ: обратно единый документ settings/finance
       await setDoc(doc(db, "settings", "finance"), {
         ...financeSettings,
         updated_at: serverTimestamp(),
@@ -418,9 +577,37 @@ function FinanceContent() {
     return true;
   });
 
-  const activeSubscription = payments.find(p => p.confirmed && (p.lessons_remaining || 0) > 0) || null;
+  // ✅ ИЗМЕНЕНО: "активный абонемент" для показа тарифа/типа занятий по-прежнему
+  // берём из последнего оплаченного платежа, но остаток занятий теперь ВСЕГДА
+  // из lessonBalance (lesson_balances), а не из payment.lessons_remaining.
+  const latestConfirmedPayment = payments.filter(p => p.confirmed).sort(
+    (a, b) => getPaymentDate(b).getTime() - getPaymentDate(a).getTime()
+  )[0] || null;
+  const hasActiveBalance = (lessonBalance ?? 0) > 0;
+  const activeSubscription = hasActiveBalance ? latestConfirmedPayment : null;
+  const totalPurchasedLessons = payments.filter(p => p.confirmed).reduce((sum, p) => sum + (p.lessons_count || 0), 0);
+  const usedLessons = Math.max(0, totalPurchasedLessons - (lessonBalance ?? 0));
   const totalReceived = payments.filter(p => p.confirmed).reduce((sum, p) => sum + (p.amount || 0), 0);
   const pendingTotal = payments.filter(p => !p.confirmed && getAutoStatus(p) === "pending").reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  // ✅ НОВОЕ: экран ошибки вместо вечного спиннера
+  if (loadError && payments.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-200 p-6 max-w-md text-center">
+          <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-3" />
+          <p className="font-bold text-gray-800 mb-1">Не удалось загрузить данные</p>
+          <p className="text-sm text-gray-500 mb-4">{loadError}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-amber-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-amber-700 transition"
+          >
+            Обновить страницу
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-100 via-amber-50 to-orange-100 flex items-center justify-center">
@@ -496,7 +683,7 @@ function FinanceContent() {
                       <div className="text-right">
                         <p className="text-sm text-gray-500">Осталось занятий</p>
                         <p className="text-3xl font-black text-indigo-600">
-                          {activeSubscription.lessons_remaining} <span className="text-lg text-gray-400">/ {activeSubscription.lessons_count}</span>
+                          {lessonBalance ?? "—"} <span className="text-lg text-gray-400">/ {totalPurchasedLessons}</span>
                         </p>
                       </div>
                     </div>
@@ -504,14 +691,14 @@ function FinanceContent() {
                     <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
                       <div
                         className="bg-gradient-to-r from-indigo-500 to-purple-500 h-4 rounded-full transition-all duration-1000"
-                        style={{ width: `${((activeSubscription.lessons_count - activeSubscription.lessons_remaining) / activeSubscription.lessons_count) * 100}%` }}
+                        style={{ width: `${totalPurchasedLessons > 0 ? (usedLessons / totalPurchasedLessons) * 100 : 0}%` }}
                       />
                     </div>
                     <p className="text-xs text-gray-500 text-center">
-                      Использовано {activeSubscription.lessons_used} из {activeSubscription.lessons_count} занятий
+                      Использовано {usedLessons} из {totalPurchasedLessons} занятий
                     </p>
 
-                    {activeSubscription.lessons_remaining <= 2 && (
+                    {(lessonBalance ?? 0) <= 2 && (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
                         <AlertTriangle className="text-amber-600 flex-shrink-0" size={20} />
                         <p className="text-sm text-amber-800 font-medium">
@@ -546,37 +733,23 @@ function FinanceContent() {
                   + Пополнить
                 </Link>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-indigo-50/50">
-                    <tr>
-                      <th className="text-left py-3 px-4 text-xs text-indigo-500 font-bold">Дата</th>
-                      <th className="text-left py-3 px-4 text-xs text-indigo-500 font-bold">Тип</th>
-                      <th className="text-right py-3 px-4 text-xs text-indigo-500 font-bold">Сумма</th>
-                      <th className="text-center py-3 px-4 text-xs text-indigo-500 font-bold">Статус</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPayments.length === 0 ? (
-                      <tr><td colSpan={4} className="text-center py-8 text-gray-400">История пуста</td></tr>
-                    ) : filteredPayments.map((p: any) => (
-                      <tr key={p.id} className="border-b border-indigo-50 hover:bg-indigo-50/30 transition">
-                        <td className="py-3 px-4 text-gray-600">{formatDate(p.created_at)}</td>
-                        <td className="py-3 px-4">
-                          <span className="inline-flex items-center gap-1 text-xs font-medium bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                            {p.type === 'group' ? '👥 Группа' : '👤 Индивид'} ({p.lessons_count} зан.)
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-gray-800">{p.amount?.toLocaleString()} ₽</td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${getStatusColor(getAutoStatus(p))}`}>
-                            {getStatusText(getAutoStatus(p))}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="divide-y divide-indigo-50">
+                {filteredPayments.length === 0 ? (
+                  <p className="text-center py-8 text-gray-400">История пуста</p>
+                ) : filteredPayments.map((p: any) => (
+                  <div key={p.id} className="flex items-center gap-3 px-5 py-3 hover:bg-indigo-50/30 transition">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-400">{formatDate(p.created_at)}</p>
+                      <p className="text-xs font-medium text-gray-600 mt-0.5">
+                        {p.type === 'group' ? '👥 Группа' : '👤 Индивид'} · {p.lessons_count} зан.
+                      </p>
+                    </div>
+                    <span className="font-bold text-gray-800 whitespace-nowrap">{p.amount?.toLocaleString()} ₽</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap ${getStatusColor(getAutoStatus(p))}`}>
+                      {getStatusText(getAutoStatus(p))}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -751,7 +924,7 @@ function FinanceContent() {
                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as any)} className="border border-amber-200 rounded-lg p-1.5 text-sm bg-white">
                   <option value="all">Все статусы</option>
                   <option value="paid">✅ Оплачено</option>
-                  <option value="pending"> Ожидание</option>
+                  <option value="pending">⏳ Ожидание</option>
                   <option value="overdue">🔴 Просрочено</option>
                 </select>
                 <div className="relative flex-1 min-w-[150px]">
@@ -760,52 +933,38 @@ function FinanceContent() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-amber-200">
-                      <th className="text-left py-3 px-2 text-xs text-amber-500">Дата</th>
-                      <th className="text-left py-3 px-2 text-xs text-amber-500">Ученик/Группа</th>
-                      <th className="text-left py-3 px-2 text-xs text-amber-500">Тип</th>
-                      <th className="text-right py-3 px-2 text-xs text-amber-500">Сумма</th>
-                      <th className="text-center py-3 px-2 text-xs text-amber-500">Статус</th>
-                      <th className="text-right py-3 px-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPayments.length === 0 ? (
-                      <tr><td colSpan={6} className="text-center py-8 text-gray-400">Нет платежей</td></tr>
-                    ) : filteredPayments.map((payment: any) => {
-                      const autoStatus = getAutoStatus(payment);
-                      return (
-                        <tr key={payment.id} className="border-b border-amber-100 hover:bg-amber-50/50 transition">
-                          <td className="py-3 px-2 text-xs text-gray-500">{formatDate(payment.created_at)}</td>
-                          <td className="py-3 px-2 font-medium text-gray-800">{payment.student_name || "—"}</td>
-                          <td className="py-3 px-2">
-                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${payment.type === 'group' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-                              {payment.type === 'group' ? '👥 Группа' : '👤 Индивид'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-2 text-right font-bold text-amber-600">{payment.amount?.toLocaleString()} ₽</td>
-                          <td className="py-3 px-2 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-xs ${getStatusColor(autoStatus)}`}>
-                              {getStatusText(autoStatus)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-2 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {!payment.confirmed && (
-                                <button onClick={() => confirmPayment(payment)} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition" title="Подтвердить"><CheckCircle size={16} /></button>
-                              )}
-                              <button onClick={() => deletePayment(payment.id)} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition" title="Удалить"><Trash2 size={16} /></button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {/* ✅ ИЗМЕНЕНО: таблица → карточный список. Раньше на мобильном
+                  таблица требовала горизонтального скролла (overflow-x-auto),
+                  теперь всё читается в одну колонку без прокрутки вбок. */}
+              {filteredPayments.length === 0 ? (
+                <p className="text-center py-8 text-gray-400">Нет платежей</p>
+              ) : (
+                <div className="divide-y divide-amber-100">
+                  {filteredPayments.map((payment: any) => {
+                    const autoStatus = getAutoStatus(payment);
+                    return (
+                      <div key={payment.id} className="flex items-center gap-3 py-3 px-1 hover:bg-amber-50/50 transition">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-800 truncate">{payment.student_name || "—"}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {formatDate(payment.created_at)} · {payment.type === 'group' ? '👥 Группа' : '👤 Индивид'} · {payment.lessons_count} зан.
+                          </p>
+                        </div>
+                        <span className="font-bold text-amber-600 whitespace-nowrap">{payment.amount?.toLocaleString()} ₽</span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${getStatusColor(autoStatus)}`}>
+                          {getStatusText(autoStatus)}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {!payment.confirmed && (
+                            <button onClick={() => confirmPayment(payment)} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition" title="Подтвердить"><CheckCircle size={16} /></button>
+                          )}
+                          <button onClick={() => deletePayment(payment)} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition" title="Удалить"><Trash2 size={16} /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -857,11 +1016,11 @@ function FinanceContent() {
                   <input type="number" value={financeSettings.price_individual} disabled className="w-full border border-amber-200 rounded-lg p-2.5 mt-1 text-sm bg-gray-100 text-gray-500 cursor-not-allowed" />
                 </div>
                 <div>
-                  <label className="text-xs text-stone-600 font-medium"> Групповое занятие</label>
+                  <label className="text-xs text-stone-600 font-medium">👥 Групповое занятие</label>
                   <input type="number" value={financeSettings.price_group} disabled className="w-full border border-amber-200 rounded-lg p-2.5 mt-1 text-sm bg-gray-100 text-gray-500 cursor-not-allowed" />
                 </div>
                 <div>
-                  <label className="text-xs text-stone-600 font-medium"> Пробное занятие</label>
+                  <label className="text-xs text-stone-600 font-medium">🎓 Пробное занятие</label>
                   <input type="number" value={financeSettings.price_trial} disabled className="w-full border border-amber-200 rounded-lg p-2.5 mt-1 text-sm bg-gray-100 text-gray-500 cursor-not-allowed" />
                 </div>
               </div>
@@ -872,7 +1031,7 @@ function FinanceContent() {
 
             <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-6 border border-amber-200/50">
               <h3 className="font-bold text-xl text-amber-700 mb-4 flex items-center gap-2">
-                 Платежные системы
+                💳 Платежные системы
               </h3>
               <div className="space-y-4">
                 <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">

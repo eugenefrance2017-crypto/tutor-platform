@@ -122,13 +122,31 @@ function StudentsContent() {
       }
     });
 
-    const unsubBalance = onSnapshot(doc(db, "lesson_balances", selected.id), (snap) => {
-      setStudentBalance(snap.exists() ? (snap.data().remaining || 0) : 0);
-    });
+    // ✅ ДИАГНОСТИКА: именованные обработчики ошибок — покажут в консоли,
+    // какая именно коллекция падает с permission-denied
+    const unsubBalance = onSnapshot(
+      doc(db, "lesson_balances", selected.id),
+      (snap) => {
+        setStudentBalance(snap.exists() ? (snap.data().remaining || 0) : 0);
+      },
+      (error) => console.error("🔴 [lesson_balances] permission error for student", selected.id, ":", error.message)
+    );
 
-    const unsubLessons = onSnapshot(query(collection(db, "lessons"), where("student_id", "==", selected.id)), (snap) => setStudentLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    const unsubHw = onSnapshot(query(collection(db, "homeworks"), where("assigned_students", "array-contains", selected.id)), (snap) => setStudentHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    const unsubSub = onSnapshot(query(collection(db, "submissions"), where("student_id", "==", selected.id)), (snap) => setStudentSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+    const unsubLessons = onSnapshot(
+      query(collection(db, "lessons"), where("student_id", "==", selected.id)),
+      (snap) => setStudentLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (error) => console.error("🔴 [lessons] permission error for student", selected.id, ":", error.message)
+    );
+    const unsubHw = onSnapshot(
+      query(collection(db, "homeworks"), where("assigned_students", "array-contains", selected.id)),
+      (snap) => setStudentHomeworks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (error) => console.error("🔴 [homeworks] permission error for student", selected.id, ":", error.message)
+    );
+    const unsubSub = onSnapshot(
+      query(collection(db, "submissions"), where("student_id", "==", selected.id)),
+      (snap) => setStudentSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (error) => console.error("🔴 [submissions] permission error for student", selected.id, ":", error.message)
+    );
 
     return () => { unsubLessons(); unsubHw(); unsubSub(); unsubBalance(); };
   }, [selected]);
@@ -268,29 +286,25 @@ function StudentsContent() {
   const attendance = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
   const hwRate = totalHw > 0 ? Math.round((doneHw / totalHw) * 100) : 0;
 
-  // ✅ НОВОЕ: пока Firebase Auth ещё не подтвердил сессию — показываем
-  // явный индикатор загрузки, а не пустой список "НЕТ УЧЕНИКОВ".
   if (!authReady) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4 animate-pulse">📸</div>
-          <p className="text-sky-700 font-black uppercase tracking-widest">Проверка авторизации...</p>
+          <p className="text-[#0257b0] font-black tracking-widest">Проверка авторизации...</p>
         </div>
       </div>
     );
   }
 
-  // ✅ НОВОЕ: Auth проверил, но пользователь не залогинен — явное сообщение
-  // вместо мнимого "нет учеников".
   if (!uid) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-white flex items-center justify-center">
-        <div className="text-center bg-white/80 rounded-2xl p-8 border-2 border-sky-200 shadow-lg">
+        <div className="text-center bg-white/90 rounded-2xl p-8 border-2 border-[#7dd3fc] shadow-lg">
           <p className="text-5xl mb-4">🔒</p>
-          <p className="text-sky-700 text-lg font-black uppercase tracking-widest mb-2">Не авторизован</p>
-          <p className="text-sky-500 text-sm mb-4">Сессия истекла или вы ещё не входили в аккаунт</p>
-          <Link href="/auth" className="inline-block px-5 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-lg font-bold uppercase tracking-wide">
+          <p className="text-[#0257b0] text-lg font-black tracking-widest mb-2">Не авторизован</p>
+          <p className="text-[#0284c7] text-sm mb-4">Сессия истекла или вы ещё не входили в аккаунт</p>
+          <Link href="/auth" className="inline-block px-5 py-2.5 text-white rounded-lg font-bold tracking-wide" style={{ background: "linear-gradient(90deg,#0ea5ff,#1d4ed8)" }}>
             Войти
           </Link>
         </div>
@@ -311,7 +325,7 @@ function StudentsContent() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-2">
             <span className="text-4xl">📸</span>
-            <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-tight text-sky-700 drop-shadow-sm">УЧЕНИКИ</h1>
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight drop-shadow-sm" style={{ color: "#0257b0" }}>Ученики</h1>
             <span className="text-4xl">🗽</span>
           </div>
           <p className="text-sky-600/70 font-serif italic text-sm">"Welcome to New York, it's been waiting for you" 🗽</p>
@@ -360,117 +374,123 @@ function StudentsContent() {
           <div className="lg:col-span-2">
             {selected ? (
               <div className="space-y-5">
-                <div className="bg-white/80 backdrop-blur rounded-2xl shadow-xl p-6 border-2 border-sky-200 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-sky-400 to-blue-500 opacity-10 rounded-bl-full"></div>
-
-                  <div className="flex flex-wrap items-center gap-4 mb-5 relative z-10">
-                    <div className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl font-black bg-gradient-to-br ${AVATARS[students.findIndex((x: any) => x.id === selected.id) % AVATARS.length]} shadow-lg ring-4 ring-white`}>
+                <div className="rounded-2xl p-5 relative overflow-hidden" style={{ background: "rgba(255,255,255,0.9)", border: "2px solid #7dd3fc", boxShadow: "0 4px 14px rgba(2,132,199,0.15)" }}>
+                  <div className="flex flex-wrap items-center gap-4 relative z-10">
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-black bg-gradient-to-br ${AVATARS[students.findIndex((x: any) => x.id === selected.id) % AVATARS.length]} shadow-lg`} style={{ background: "linear-gradient(135deg,#0ea5ff,#1d4ed8)" }}>
                       {(selected.full_name || "У")[0].toUpperCase()}
                     </div>
                     <div className="flex-1">
-                      <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{selected.full_name}</h2>
-                      <p className="text-sky-600 text-sm font-medium">{selected.email}</p>
+                      <h2 className="text-lg font-black tracking-tight" style={{ color: "#0f172a" }}>{selected.full_name}</h2>
+                      <p className="text-sm font-semibold" style={{ color: "#0284c7" }}>{selected.email}</p>
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      <button onClick={() => generateShareLinkForStudent(selected.id, selected.full_name)} className="px-3 py-2 bg-sky-100 text-sky-700 rounded-lg text-sm font-bold hover:bg-sky-200 transition uppercase tracking-wide">🔗 Ссылка</button>
-                      <button onClick={exportStudentData} className="px-3 py-2 bg-sky-100 text-sky-700 rounded-lg text-sm font-bold hover:bg-sky-200 transition uppercase tracking-wide">📥 Экспорт</button>
-                      <button onClick={generateAIReport} disabled={generatingReport} className="px-3 py-2 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-lg text-sm font-bold hover:scale-[1.02] transition flex items-center gap-1 shadow-md uppercase tracking-wide">
+                      <button onClick={() => generateShareLinkForStudent(selected.id, selected.full_name)} className="px-3 py-2 rounded-lg text-xs font-bold transition" style={{ background: "#dbeeff", color: "#0257b0" }}>🔗 Ссылка</button>
+                      <button onClick={exportStudentData} className="px-3 py-2 rounded-lg text-xs font-bold transition" style={{ background: "#dbeeff", color: "#0257b0" }}>📥 Экспорт</button>
+                      <button onClick={generateAIReport} disabled={generatingReport} className="px-3 py-2 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-md" style={{ background: "linear-gradient(90deg,#0ea5ff,#1d4ed8)" }}>
                         {generatingReport ? "⏳" : "🤖"} AI
                       </button>
-                      <button onClick={() => { setShowFeedbackModal(true); setFeedbackMessage(generateFeedbackTemplate("praise")); }} className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-200 transition uppercase tracking-wide flex items-center gap-1">💬 Telegram</button>
+                      <button onClick={() => { setShowFeedbackModal(true); setFeedbackMessage(generateFeedbackTemplate("praise")); }} className="px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1" style={{ background: "#d1fae5", color: "#047857" }}>💬 Telegram</button>
                     </div>
                   </div>
 
                   {aiReport && (
-                    <div className="mb-5 bg-sky-50 rounded-xl p-4 border-2 border-sky-200 relative z-10">
+                    <div className="mt-4 rounded-xl p-4 relative z-10" style={{ background: "rgba(224,246,255,0.7)", border: "2px solid #7dd3fc" }}>
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-black text-sky-700 text-sm uppercase tracking-wide">🤖 AI-аналитика</h3>
-                        <button onClick={() => setAiReport(null)} className="text-sky-400 hover:text-sky-700 text-xs font-bold">✕</button>
+                        <h3 className="font-black text-sm" style={{ color: "#1e3a5f" }}>🤖 AI-аналитика</h3>
+                        <button onClick={() => setAiReport(null)} className="text-xs font-bold" style={{ color: "#0ea5ff" }}>✕</button>
                       </div>
                       <pre className="text-sm text-slate-700 whitespace-pre-wrap font-sans">{aiReport}</pre>
                     </div>
                   )}
+                </div>
 
-                  <div className="bg-sky-50/50 rounded-xl p-4 mb-4 border-2 border-sky-100 relative z-10">
-                    <h3 className="font-bold text-sm text-slate-700 uppercase tracking-wide mb-3">📅 Ближайшее занятие</h3>
-                    {nextLesson ? (
-                      <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-sky-200">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{nextLesson.subject === "chemistry" ? "🧪" : "🧬"}</span>
-                          <div>
-                            <p className="text-sm font-bold text-slate-800">
+                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
+                  <div className="flex flex-col gap-3">
+                    <div className="rounded-xl p-4" style={{ background: "rgba(224,246,255,0.7)", border: "2px solid #7dd3fc" }}>
+                      <p className="text-xs font-bold mb-3" style={{ color: "#1e3a5f" }}>📅 Ближайшее занятие</p>
+                      {nextLesson ? (
+                        <>
+                          <div className="bg-white rounded-lg p-3" style={{ border: "1px solid #7dd3fc" }}>
+                            <p className="text-sm font-bold" style={{ color: "#0f172a" }}>
                               {new Date(nextLesson.start_time).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
                             </p>
-                            <p className="text-xs text-sky-600">
+                            <p className="text-xs mt-0.5" style={{ color: "#0284c7" }}>
                               {new Date(nextLesson.start_time).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
                             </p>
                           </div>
-                        </div>
-                        <Link href={`/schedule?lesson=${nextLesson.id}`} className="text-xs font-bold text-sky-600 hover:text-sky-800 uppercase">
-                          В расписание →
-                        </Link>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-dashed border-sky-200">
-                        <p className="text-xs text-slate-500">Занятие не запланировано</p>
-                        <Link href={`/schedule?student=${selected.id}`} className="text-xs font-bold text-sky-600 hover:text-sky-800 uppercase">
-                          Запланировать →
-                        </Link>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="bg-sky-50/50 rounded-xl p-4 mb-4 border-2 border-sky-100 relative z-10">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-bold text-sm text-slate-700 uppercase tracking-wide">👨‍👩‍👧 Родитель и оплата</h3>
-                      {!editingParent ? (
-                        <button onClick={() => setEditingParent(true)} className="text-xs text-sky-600 hover:text-sky-800 font-bold uppercase">✏️ Email</button>
+                          <Link href={`/schedule?lesson=${nextLesson.id}`} className="text-xs font-extrabold mt-2 inline-block" style={{ color: "#0ea5ff" }}>
+                            В расписание →
+                          </Link>
+                        </>
                       ) : (
-                        <div className="flex gap-2">
-                          <button onClick={saveParent} className="text-xs text-emerald-600 hover:text-emerald-800 font-bold uppercase">💾 Сохранить</button>
-                          <button onClick={() => setEditingParent(false)} className="text-xs text-slate-500 hover:text-slate-700 font-bold uppercase">Отмена</button>
+                        <>
+                          <p className="text-xs text-slate-500">Занятие не запланировано</p>
+                          <Link href={`/schedule?student=${selected.id}`} className="text-xs font-extrabold mt-2 inline-block" style={{ color: "#0ea5ff" }}>
+                            Запланировать →
+                          </Link>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl p-4" style={{ background: "rgba(224,246,255,0.7)", border: "2px solid #7dd3fc" }}>
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs font-bold" style={{ color: "#1e3a5f" }}>👨‍👩‍👧 Родитель</p>
+                        {!editingParent ? (
+                          <button onClick={() => setEditingParent(true)} className="text-xs font-extrabold" style={{ color: "#0ea5ff" }}>Email</button>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button onClick={saveParent} className="text-xs font-extrabold text-emerald-600">Сохранить</button>
+                            <button onClick={() => setEditingParent(false)} className="text-xs font-bold text-slate-500">Отмена</button>
+                          </div>
+                        )}
+                      </div>
+                      {editingParent ? (
+                        <div>
+                          <label className="text-xs font-bold text-slate-600">Email родителя</label>
+                          <input value={editParentEmail} onChange={(e) => setEditParentEmail(e.target.value)} placeholder="parent@email.com" className="w-full border-2 rounded-lg p-2 text-xs mt-1 bg-white focus:outline-none" style={{ borderColor: "#7dd3fc" }} />
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs" style={{ color: "#334155" }}>Email: {studentProfile?.parent_email ? <span className="font-bold" style={{ color: "#0257b0" }}>{studentProfile.parent_email}</span> : "Не привязан"}</p>
+                          <p className="text-xs" style={{ color: "#334155" }}>
+                            Осталось: <b style={{ color: studentBalance > 0 ? "#0257b0" : "#e11d48" }}>{studentBalance}</b> занятий
+                          </p>
+                          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "#fecdd3" }}>
+                            <div
+                              className="h-full transition-all duration-500"
+                              style={{ width: studentBalance <= 0 ? "100%" : "60%", background: studentBalance <= 0 ? "linear-gradient(90deg,#f43f5e,#e11d48)" : "linear-gradient(90deg,#0ea5ff,#1d4ed8)" }}
+                            />
+                          </div>
+                          {studentBalance <= 0 && (
+                            <p className="text-xs font-bold" style={{ color: "#e11d48" }}>⚠ Занятия закончились</p>
+                          )}
+                          <Link href={`/finance?tab=stats&studentId=${selected.id}`} className="text-xs font-extrabold inline-block mt-1" style={{ color: "#0ea5ff" }}>
+                            Пополнить / история →
+                          </Link>
                         </div>
                       )}
                     </div>
-                    {editingParent ? (
-                      <div>
-                        <label className="text-xs text-slate-600 font-bold uppercase">Email родителя</label>
-                        <input value={editParentEmail} onChange={(e) => setEditParentEmail(e.target.value)} placeholder="parent@email.com" className="w-full border-2 border-sky-200 rounded-lg p-2 text-xs mt-1 bg-white focus:border-sky-500 focus:outline-none" />
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs text-slate-600 font-medium">Родитель: {studentProfile?.parent_email ? <span className="text-sky-700 font-bold">{studentProfile.parent_email}</span> : "Не привязан"}</p>
-                        <p className="text-xs text-slate-600 font-medium">
-                          Осталось: <b className={studentBalance > 0 ? "text-sky-700" : "text-rose-600"}>{studentBalance}</b> занятий
-                        </p>
-                        <div className="w-full bg-sky-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-500 ${studentBalance <= 0 ? "bg-gradient-to-r from-rose-500 to-red-600" : "bg-gradient-to-r from-sky-500 to-blue-600"}`}
-                            style={{ width: studentBalance <= 0 ? "100%" : "60%" }}
-                          />
-                        </div>
-                        {studentBalance <= 0 && (
-                          <p className="text-xs text-rose-600 font-bold mt-1">⚠️ Занятия закончились</p>
-                        )}
-                        <Link href={`/finance?tab=stats&studentId=${selected.id}`} className="text-xs text-sky-600 hover:text-sky-800 font-bold uppercase inline-block mt-1">
-                          Пополнить / история платежей →
-                        </Link>
-                      </div>
-                    )}
                   </div>
-                </div>
 
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { key: "stats", label: "📸 СТАТИСТИКА" },
-                    { key: "analytics", label: "📈 АНАЛИТИКА" },
-                    { key: "trials", label: "🎓 ПРОБНИКИ" },
-                  ].map((tab: any) => (
-                    <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${activeTab === tab.key ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-md" : "bg-white/60 text-sky-700 hover:bg-white border-2 border-sky-200"}`}>
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-2">
+                      {[
+                        { key: "stats", label: "📸 Статистика" },
+                        { key: "analytics", label: "📈 Аналитика" },
+                        { key: "trials", label: "🎓 Пробники" },
+                      ].map((tab: any) => (
+                        <button
+                          key={tab.key}
+                          onClick={() => setActiveTab(tab.key)}
+                          className="px-4 py-2.5 rounded-lg text-xs font-black transition-all"
+                          style={activeTab === tab.key
+                            ? { background: "linear-gradient(90deg,#0ea5ff,#1d4ed8)", color: "white", boxShadow: "0 2px 8px rgba(14,165,255,0.35)" }
+                            : { background: "rgba(255,255,255,0.7)", color: "#0257b0", border: "2px solid #7dd3fc" }}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
 
                 {activeTab === "stats" && (
                   <>
@@ -538,7 +558,7 @@ function StudentsContent() {
 
                 {activeTab === "trials" && (
                   <div className="bg-white/80 backdrop-blur rounded-2xl p-5 shadow-md border-2 border-sky-100">
-                    <h3 className="font-serif font-bold text-stone-700 mb-4">🎓 ПРОБНИКИ</h3>
+                    <h3 className="font-serif font-bold text-stone-700 mb-4">🎓 Пробники</h3>
                     {(() => {
                       const trials = studentHomeworks.filter((hw: any) => hw.type === 'trial_exam');
                       if (trials.length === 0) return <p className="text-stone-500 text-sm py-4 text-center font-serif italic">Нет назначенных пробников</p>;
@@ -580,6 +600,8 @@ function StudentsContent() {
                     })()}
                   </div>
                 )}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-full">

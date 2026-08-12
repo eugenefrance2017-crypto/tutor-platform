@@ -31,10 +31,6 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
 
-// ===================== EVERMORE ПАЛИТРА =====================
-// Терракота #C67B4B, коричневый #3D2817, оливковый #6B705C, бордовый #8B3A3A, золотой #B8860B
-// Кремовый фон #FAF3E8 (светлый) / #1A1614 (тёмный)
-
 type TaskType = 'text' | 'single_choice' | 'multi_choice' | 'order' | 'match' | 'fill_blanks' | 'assembly' | 'drag_drop' | 'photo';
 
 interface TaskSection {
@@ -85,7 +81,7 @@ interface Homework {
 
 const DIFFICULTY_INFO: any = {
   easy: { label: "🟢 Лёгкое", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" },
-  medium: { label: " Среднее", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" },
+  medium: { label: "🟡 Среднее", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" },
   hard: { label: "🔴 Сложное", color: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300" },
 };
 
@@ -96,7 +92,7 @@ const TASK_TYPES = [
   { value: "order", label: "По порядку", icon: "🔢", color: "from-orange-500 to-amber-500" },
   { value: "match", label: "Соответствие", icon: "🔗", color: "from-rose-500 to-pink-500" },
   { value: "fill_blanks", label: "Заполнить", icon: "✍️", color: "from-indigo-500 to-purple-500" },
-  { value: "assembly", label: "Из частей", icon: "", color: "from-cyan-500 to-blue-500" },
+  { value: "assembly", label: "Из частей", icon: "🧩", color: "from-cyan-500 to-blue-500" },
   { value: "drag_drop", label: "Перетащить", icon: "🎯", color: "from-amber-500 to-orange-500" },
   { value: "photo", label: "Фото-задание", icon: "📷", color: "from-pink-500 to-rose-500" },
 ];
@@ -135,10 +131,15 @@ const EGE_SCALE_LABELS: Record<string, string> = {
   biology: "🧬 Биология ЕГЭ (0-57 → 0-100)"
 };
 
-const SUBSCRIPTS = ['₁','₂','₃','₄','₅','₆','₇'];
-const CHARGES = ['⁵⁻','⁴⁻','³⁻','²⁻','','','⁺','²⁺','³','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
-const OXIDATION = ['⁻⁵','⁴','⁻³','⁻²','⁻¹','','⁺¹','⁺²','⁺³','⁺⁴','⁺','⁺⁶','⁺⁷'];
-const SIGNS = ['→','←','⇄','↑','↓','+','=','t°','°C'];
+// ИСПРАВЛЕНО: тот же класс багов, что и в ChemistryEditor банка заданий и
+// в ChemButton страницы прохождения ДЗ — недостающий индекс ₃, оторванные
+// (пустые строки вместо самого символа) знаки зарядов и степеней
+// окисления. Все три копии теперь используют один и тот же полный набор
+// символов, чтобы редактор в любом месте приложения работал одинаково.
+const SUBSCRIPTS = ['₁','₂','₃','₄','₅','₆','₇','₈','₉','₀'];
+const CHARGES = ['⁵⁻','⁴⁻','³⁻','²⁻','¹⁻','¹⁺','²⁺','³⁺','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
+const OXIDATION = ['⁻⁵','⁻⁴','⁻³','⁻²','⁻¹','⁰','⁺¹','⁺²','⁺³','⁺⁴','⁺⁵','⁺⁶','⁺⁷'];
+const SIGNS = ['→','←','⇄','⇌','↑','↓','+','=','t°','°C'];
 
 function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = "", darkMode = false }: any) {
   const [showPopup, setShowPopup] = useState(false);
@@ -212,7 +213,7 @@ function ChemistryEditor({ value, onChange, placeholder = "", rows = 3, label = 
                   </div>
                 </div>
                 <div>
-                  <p className={`text-sm font-bold ${textLabel} mb-2`}>️ Степени окисления</p>
+                  <p className={`text-sm font-bold ${textLabel} mb-2`}>⚗️ Степени окисления</p>
                   <div className="flex flex-wrap gap-1">
                     {OXIDATION.map(s => (
                       <button key={s} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-2 border-2 rounded-lg text-sm font-bold ${darkMode ? 'bg-[#1A1614] border-[#3D2817] text-[#B8860B] hover:bg-[#3D2817]' : 'bg-[#FAF3E8] border-[#E8DCC8] text-[#B8860B] hover:bg-[#F5EBD8]'}`}>{s}</button>
@@ -357,11 +358,11 @@ function ConversionScaleEditor({ value, onChange, maxPrimaryScore, darkMode = fa
           <div className={`text-xs font-bold ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>Без конвертации</div>
         </button>
         <button type="button" onClick={() => { setScaleType('preset'); applyPreset(selectedPreset); }} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'preset' ? bgBtnActive : `${bgBtn} hover:border-[#C67B4B]`}`}>
-          <div className="text-2xl mb-1"></div>
+          <div className="text-2xl mb-1">📊</div>
           <div className={`text-xs font-bold ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>Стандарт ЕГЭ</div>
         </button>
         <button type="button" onClick={() => setScaleType('custom')} className={`p-3 rounded-xl border-2 transition-all text-center ${scaleType === 'custom' ? bgBtnActive : `${bgBtn} hover:border-[#C67B4B]`}`}>
-          <div className="text-2xl mb-1">️</div>
+          <div className="text-2xl mb-1">✏️</div>
           <div className={`text-xs font-bold ${darkMode ? 'text-[#F5E6D3]' : 'text-[#3D2817]'}`}>Своя шкала</div>
         </button>
       </div>
@@ -1179,7 +1180,7 @@ function HomeworkEditor({ hw, onClose, onSave, tutorId, darkMode = false }: any)
                 </button>
                 {bankFolders.map(folder => (
                   <button key={folder.id} onClick={() => setSelectedBankFolder(folder.id)} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold mb-2 transition ${selectedBankFolder === folder.id ? 'bg-gradient-to-r from-[#C67B4B] to-[#8B3A3A] text-white shadow' : darkMode ? 'bg-[#2A2420] text-[#B8A898] hover:bg-[#3D2817]' : 'bg-white text-[#6B4E3A] hover:bg-[#F5EBD8]'}`}>
-                     {folder.name}
+                    📁 {folder.name}
                   </button>
                 ))}
               </div>
@@ -1317,7 +1318,7 @@ function AssignModal({ hw, onClose, tutorId, darkMode = false }: any) {
         due_date: dueDate || null,
         updated_at: new Date().toISOString()
       });
-      const dueDateStr = dueDate ? `\n Дедлайн: ${new Date(dueDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` : '';
+      const dueDateStr = dueDate ? `\n📅 Дедлайн: ${new Date(dueDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` : '';
       const notificationMessage = `📚 Новое домашнее задание!\n"${hw.title}"\n${hw.description || ''}${dueDateStr}\nЗайди в личный кабинет, чтобы начать 👉`;
       for (const studentId of allStudents) {
         await sendTelegramNotification(studentId, notificationMessage);
@@ -1500,13 +1501,6 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
 
   useEffect(() => {
     if (!mounted || !uid || isTutor) return;
-    // Раньше запрос шёл только по homework_id — под открытыми правилами
-    // (if true) это работало, потому что можно было получить ЧУЖИЕ
-    // submissions и отфильтровать нужную на клиенте. Под новыми правилами
-    // такой запрос теоретически может вернуть submission другого ученика,
-    // а значит отклоняется целиком. Добавляем student_id в сам запрос —
-    // теперь он структурно гарантированно возвращает не больше одной
-    // (своей) записи, и Firestore может проверить его по правилу заранее.
     const q = query(collection(db, "submissions"), where("homework_id", "==", hw.id), where("student_id", "==", uid));
     const unsub = onSnapshot(q, (snap) => {
       const userSub = snap.docs[0];
@@ -1612,7 +1606,7 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
     if (diff <= 0) return { text: '🔴 Просрочено', color: darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]', urgent: true };
     const hours = Math.floor(diff / (1000 * 60 * 60)); const days = Math.floor(hours / 24);
     if (days > 0) return { text: `⏰ ${days} дн.`, color: darkMode ? 'bg-[#6B705C]/20 text-[#6B705C]' : 'bg-[#6B705C]/20 text-[#6B705C]', urgent: false };
-    if (hours > 0) return { text: ` ${hours} ч.`, color: darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]', urgent: true };
+    if (hours > 0) return { text: `⏰ ${hours} ч.`, color: darkMode ? 'bg-[#B8860B]/20 text-[#B8860B]' : 'bg-[#B8860B]/20 text-[#B8860B]', urgent: true };
     const minutes = Math.floor(diff / (1000 * 60));
     return { text: `⏰ ${minutes} мин.`, color: darkMode ? 'bg-[#8B3A3A]/20 text-[#8B3A3A]' : 'bg-[#8B3A3A]/20 text-[#8B3A3A]', urgent: true };
   };
@@ -1735,11 +1729,6 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
                   ref={menuButtonRef}
                   onClick={() => {
                     if (!showMenu && menuButtonRef.current) {
-                      // Меню — 4 пункта, ~185px высотой. Если снизу от кнопки
-                      // до края окна меньше этого — открываем вверх, иначе
-                      // вниз (как раньше). Раньше меню всегда открывалось
-                      // вниз и обрезалось краем окна браузера, если карточка
-                      // оказывалась ближе к низу видимой страницы.
                       const rect = menuButtonRef.current.getBoundingClientRect();
                       const spaceBelow = window.innerHeight - rect.bottom;
                       setMenuDirection(spaceBelow < 200 ? 'up' : 'down');
@@ -1795,7 +1784,6 @@ function HomeworkCard({ hw, isTutor, uid, role, folders, onDelete, onDuplicate, 
   );
 }
 
-// ===================== СТАТИСТИКА =====================
 function useStats(homeworks: Homework[], submissions: any[], isTutor: boolean, uid: string) {
   return useMemo(() => {
     if (isTutor) {
@@ -2102,13 +2090,6 @@ function HomeworksContent() {
       return () => { unsubHomeworks(); unsubFolders(); };
     }
 
-    // Для ученика: раньше был один незафильтрованный
-    // query(collection(db, "homeworks")) с фильтрацией на клиенте после
-    // получения данных. Firestore Rules так не работают — запрос, который
-    // теоретически МОГ БЫ вернуть чужой документ (а мог: коллекция общая
-    // на всех репетиторов), отклоняется целиком ещё до выполнения, а не
-    // "подрезается" по правилу постфактум. Поэтому здесь два узких запроса,
-    // каждый заранее ограничен ровно тем, что разрешает правило безопасности.
     const byStudent: Record<string, any> = {};
     const byCourse: Record<string, any> = {};
     let studentLoaded = false;
@@ -2133,8 +2114,6 @@ function HomeworksContent() {
       setLoading(false);
     });
 
-    // array-contains-any требует непустой массив и максимум 10 значений за
-    // раз — подписываемся отдельным листенером на каждый чанк из 10 курсов.
     const courseUnsubs: (() => void)[] = [];
     if (studentCourses.length > 0) {
       const chunks: string[][] = [];
@@ -2338,7 +2317,7 @@ function HomeworksContent() {
   }, [homeworks, submissions, isTutor, uid]);
 
   async function deleteHomework(hw: any) {
-    try { await deleteDoc(doc(db, "homeworks", hw.id)); toast.success('️ Удалено'); setDeletingHw(null); }
+    try { await deleteDoc(doc(db, "homeworks", hw.id)); toast.success('🗑️ Удалено'); setDeletingHw(null); }
     catch (e: any) { toast.error('Ошибка: ' + e.message); }
   }
 
@@ -2379,7 +2358,7 @@ function HomeworksContent() {
 
       <div className="fixed inset-0 pointer-events-none opacity-10">
         <div className="absolute top-10 left-10 text-8xl">📝</div>
-        <div className="absolute bottom-20 right-10 text-7xl"></div>
+        <div className="absolute bottom-20 right-10 text-7xl">🎓</div>
         <div className="absolute top-1/3 right-1/4 text-6xl">✏️</div>
         <div className="absolute bottom-1/3 left-1/4 text-6xl">📖</div>
       </div>
@@ -2393,7 +2372,7 @@ function HomeworksContent() {
             }`}>
               ДОМАШНИЕ ЗАДАНИЯ
             </h1>
-            <span className="text-4xl"></span>
+            <span className="text-4xl">🎓</span>
           </div>
           <p className={`font-serif italic text-sm ${darkMode ? 'text-[#B8A898]' : 'text-[#6B4E3A]'}`}>
             "I can see you, but I can't reach you"
@@ -2562,7 +2541,7 @@ function HomeworksContent() {
                 return (
                   <div key={folder.id} className={`group relative flex flex-col items-center rounded-2xl border-2 transition-all shadow-md ${isActive ? `bg-gradient-to-br ${color} text-white border-transparent shadow-lg` : `${bgCard} hover:border-[#C67B4B] hover:shadow-lg`}`}>
                     <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                      <button onClick={(e) => { e.stopPropagation(); setEditingFolder(folder); setEditFolderName(folder.name); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-[#2A2420] border-[#3D2817] hover:bg-[#3D2817]' : 'bg-white border-[#E8DCC8] hover:bg-[#FAF3E8]'}`} title="Редактировать">️</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingFolder(folder); setEditFolderName(folder.name); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-[#2A2420] border-[#3D2817] hover:bg-[#3D2817]' : 'bg-white border-[#E8DCC8] hover:bg-[#FAF3E8]'}`} title="Редактировать">✏️</button>
                       <button onClick={(e) => { e.stopPropagation(); setDeletingFolder(folder); }} className={`w-7 h-7 rounded-full shadow-md flex items-center justify-center text-xs transition border ${darkMode ? 'bg-[#2A2420] border-[#3D2817] hover:bg-[#8B3A3A]/20' : 'bg-white border-[#E8DCC8] hover:bg-[#8B3A3A]/10'}`} title="Удалить">🗑️</button>
                     </div>
                     <button onClick={() => setFolderFilter(folder.id)} className="flex flex-col items-center gap-2 px-5 py-4">

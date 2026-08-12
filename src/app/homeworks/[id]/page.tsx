@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, useRef, useMemo } from "react";
+import { useState, useEffect, Suspense, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams, usePathname } from "next/navigation";
 import { getApps, getApp, initializeApp } from "firebase/app";
@@ -48,14 +48,6 @@ const TASK_TYPES: Record<string, { label: string; icon: string }> = {
   photo: { label: "Фото-задание", icon: "📷" },
 };
 
-// Типы, где calcScore() сверяет ответ с объективным ключом без места для
-// человеческого суждения (выбор варианта/порядок/пара/сборка — всё это
-// заранее известные структурные данные, а не свободный текст). "text" и
-// "photo" сюда намеренно НЕ входят — даже с alt_answers остаётся риск
-// незапланированной, но верной формулировки, которую точное сравнение
-// строк отбракует, а "photo" вообще не проверяем автоматически по
-// содержанию. Используется для автоодобрения при первой отправке —
-// см. комментарий в submitAnswer().
 const AUTO_GRADABLE_TYPES = ['single_choice', 'multi_choice', 'order', 'match', 'fill_blanks', 'assembly', 'drag_drop'];
 
 const EGE_SCALES: Record<string, Record<number, number>> = {
@@ -90,9 +82,6 @@ function normalizeText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-// Русское склонение "балл": 1 → балл, 2-4 → балла, 5-20 (и 0, и *5-*9,
-// *11-*14) → баллов. Раньше было жёстко зашито "балла" везде, независимо
-// от числа — "1 балла", "5 балла" и т.д.
 function pluralizeBall(n: number): string {
   const abs = Math.abs(n);
   const mod100 = abs % 100;
@@ -116,13 +105,6 @@ function formatDisplayText(value: any): string {
   return String(value);
 }
 
-// formatDisplayText() выше — общий fallback, но для 5 из 9 типов заданий
-// он показывал ученику на экране результата бессмысленные данные:
-// голые индексы ("2", "2, 0") для single_choice/multi_choice/order/assembly,
-// сырой JSON ({"0":"право1"}) для match/drag_drop. Эта функция знает
-// структуру данных каждого типа (variants/order_items/pairs/
-// assembly_parts/drag_items) и переводит ответ в то, что реально
-// выбрал/расставил/сопоставил ученик — человекочитаемым текстом.
 function formatAnswerForDisplay(section: any, answer: any): string {
   const type = section?.type || 'text';
   const data = section?.data || section || {};
@@ -184,16 +166,9 @@ function formatAnswerForDisplay(section: any, answer: any): string {
       .join('\n');
   }
 
-  // text / photo / fill_blanks — уже читаемая строка, formatDisplayText справляется.
   return formatDisplayText(answer);
 }
 
-// Для структурных типов (не text/photo/fill_blanks) возвращает разбивку
-// ответа по элементам с отметкой верно/неверно для каждого — используется
-// в ResultCard, чтобы после проверки красить каждую строку зелёным/
-// бордовым отдельно, а не показывать один сплошной текстовый блок без
-// цвета. Возвращает null для типов, где такая построчная разбивка не
-// имеет смысла (там остаётся обычный текст через formatAnswerForDisplay).
 function getGradedBreakdown(section: any, answer: any): { label: string; correct: boolean; correctLabel?: string }[] | null {
   const type = section?.type || 'text';
   const data = section?.data || section || {};
@@ -274,8 +249,11 @@ function hasMeaningfulContent(value: any): boolean {
   return Boolean(value);
 }
 
-const SUBSCRIPTS = ['₁','₂','₃','₄','₅','₆','₇'];
-const CHARGES = ['⁵⁻','⁴⁻','³⁻','²⁻','⁻','⁺','²⁺','³','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
+// ИСПРАВЛЕНО: та же группа багов, что и в ChemistryEditor банка заданий —
+// пропущенные индексы и оторванные знаки зарядов/степеней окисления.
+// Наборы приведены к единому виду с версией из библиотеки заданий.
+const SUBSCRIPTS = ['₁','₂','₃','₄','₅','₆','₇','₈','₉','₀'];
+const CHARGES = ['⁵⁻','⁴⁻','³⁻','²⁻','¹⁻','¹⁺','²⁺','³⁺','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
 const OXIDATION = ['⁻⁵','⁻⁴','⁻³','⁻²','⁻¹','⁰','⁺¹','⁺²','⁺³','⁺⁴','⁺⁵','⁺⁶','⁺⁷'];
 const SIGNS = ['→','←','⇄','⇌','↑','↓','+','=','t°','°C'];
 
@@ -497,40 +475,10 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
-// Реализация drag_drop: раньше это был <select> — визуально неотличимый
-// от match, без какого-либо перетаскивания. Здесь — нажатие и удержание
-// точки слева, живая линия тянется за курсором/пальцем (Pointer Events —
-// единый API для мыши и тача, в отличие от HTML5 Drag, который на
-// мобильных браузерах работает нестабильно), отпускание над точкой справа
-// создаёт соединение. Порядок целей (правая колонка) перемешивается один
-// раз на секцию через useMemo — раньше показывался в порядке хранения,
-// что делало задание тривиальным для угадывания.
-// Формат answer не меняется: { [индекс_слева]: "строка_цели" } — та же
-// структура, что была у select-версии, поэтому calcScore для drag_drop
-// не требует изменений.
-// Реализация drag_drop v2: карточка физически поднимается и переносится
-// в ячейку — не "соедини линией" (это была бы та же операция, что у
-// match, просто нарисованная иначе), а "разложи по местам". Карточки
-// живут в общем "пуле" сверху, ячейки — фиксированные слоты с подписью
-// цели снизу; забирая карточку из пула (или из другой ячейки), её
-// отпускают над нужным слотом — определяется через elementFromPoint +
-// closest('[data-slot]') на pointerup.
-//
-// Формат answer НЕ меняется относительно старой select-версии — это
-// по-прежнему { [индекс_элемента]: "строка_цели" }. Внутри компонента
-// это представление конвертируется в удобную для UI форму
-// (слот -> элемент) и обратно при каждом изменении, поэтому calcScore
-// для drag_drop трогать не пришлось.
 function DragDropCards({ dragItems, answer, onChange, readOnly = false, darkMode = false }: any) {
   const items = dragItems.map((d: any) => d.item);
   const slots = dragItems.map((d: any) => d.target);
 
-  // Клавиатурный путь (Tab + Enter/Space) работает параллельно с
-  // Pointer Events и оперирует той же applyPlacement() — та же логика
-  // размещения/вытеснения, что и у перетаскивания мышью/пальцем, просто
-  // без непрерывного жеста. Раньше единственным способом ответить было
-  // физически схватить и перетащить — недоступно ни с клавиатуры, ни
-  // для скринридера.
   const [keyboardSelected, setKeyboardSelected] = useState<number | null>(null);
 
   const shuffledItemOrder = useMemo(() => {
@@ -606,7 +554,6 @@ function DragDropCards({ dragItems, answer, onChange, readOnly = false, darkMode
     document.addEventListener('pointerup', up);
   };
 
-  // Enter/Space на карточке — "взять" (или отпустить, если уже взята эта же).
   const handleChipKeyDown = (itemIdx: number) => (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (readOnly) return;
     if (e.key === 'Enter' || e.key === ' ') {
@@ -617,9 +564,6 @@ function DragDropCards({ dragItems, answer, onChange, readOnly = false, darkMode
     }
   };
 
-  // Enter/Space на ячейке: если что-то взято — кладём сюда (вытесняя
-  // прежнего жильца обратно в пул); если ячейка занята и ничего не
-  // взято — забираем то, что в ней лежит.
   const handleSlotKeyDown = (slotIdx: number, occupiedItemIdx: number | undefined) => (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (readOnly) return;
     if (e.key === 'Enter' || e.key === ' ') {
@@ -647,10 +591,6 @@ function DragDropCards({ dragItems, answer, onChange, readOnly = false, darkMode
   const labelColor = darkMode ? '#B8A898' : '#8A7A65';
   const accentLabelColor = darkMode ? '#D4A017' : '#A8622E';
 
-  // Плоский однотонный цвет вместо градиента терракота→золото — на
-  // маленькой плашке диагональный градиент читался мутным пятном
-  // ("грязным"), особенно рядом с бежевым фоном пула. Один чистый
-  // насыщенный оттенок + белый текст даёт больше контраста.
   const chipStyle = (itemIdx: number): React.CSSProperties => ({
     background: '#D9773F',
     color: '#fff',
@@ -735,19 +675,6 @@ function DragDropCards({ dragItems, answer, onChange, readOnly = false, darkMode
   );
 }
 
-// Реализация order: раньше элементы показывались уже в правильном порядке
-// (данные хранятся как data.order_items в верной последовательности), и
-// ученик просто вписывал 1,2,3... не глядя на содержание. Здесь: порядок
-// отображения перемешивается один раз на секцию (useMemo), а расставить
-// заново можно только стрелками вверх/вниз — сознательно НЕ drag, чтобы
-// не повторить ту же ошибку с доступностью, что была у первой версии
-// drag_drop (обычные <button>, работают с клавиатуры и скринридером
-// из коробки, никакого Pointer Events здесь не нужно).
-//
-// Формат answer меняется: теперь это массив ОРИГИНАЛЬНЫХ индексов в том
-// порядке, в котором их расставил ученик (а не массив вписанных вручную
-// номеров) — поэтому calcScore для order тоже обновлён (см. ниже),
-// сравнивает answer[i] === i вместо старого answer[i] === i+1.
 function OrderableList({ items, answer, onChange, readOnly = false, darkMode = false }: any) {
   const initialOrder = useMemo(() => {
     return shuffleArray(items.map((_: any, i: number) => i));
@@ -795,15 +722,6 @@ function OrderableList({ items, answer, onChange, readOnly = false, darkMode = f
   );
 }
 
-// Реализация assembly: та же болезнь, что была у order — плашки
-// показывались в порядке хранения (= правильном порядке), достаточно
-// было кликать слева направо. Плашки теперь перемешаны (useMemo), плюс
-// добавлена полоска предпросмотра — раньше собранная последовательность
-// нигде не показывалась текстом, только подсветкой самих кнопок, из-за
-// чего порядок клика было легко потерять из виду.
-// calcScore для assembly НЕ менялся: answer как был, так и остаётся
-// массивом оригинальных индексов в порядке клика — просто визуальный
-// порядок плашек больше не совпадает с этим массивом по умолчанию.
 function AssemblyPicker({ assemblyParts, answer, onChange, readOnly = false, darkMode = false }: any) {
   const shuffledOrder = useMemo(() => {
     return shuffleArray(assemblyParts.map((_: any, i: number) => i));
@@ -870,17 +788,6 @@ function AssemblyPicker({ assemblyParts, answer, onChange, readOnly = false, dar
   );
 }
 
-// Реализация match: раньше — <select> с фильтрацией уже занятых right,
-// визуально ничем не отличался от drag_drop до сегодняшних правок.
-// Теперь match и drag_drop выглядят и ощущаются по-разному, но оба
-// современные: drag_drop — физически поднимаешь и роняешь карточку
-// (данные item/target, это "разложи по местам"); match — тянешь линию
-// от точки к точке (данные pairs left/right, это "свяжи пары"). Разная
-// механика отражает разную структуру данных, а не просто разный стиль
-// на одну и ту же задачу.
-//
-// Формат answer не меняется — { [индекс_left]: "строка_right" }, тот же,
-// что был у select-версии, поэтому calcScore для match не тронут.
 function MatchConnector({ pairs, answer, onChange, readOnly = false, darkMode = false }: any) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const leftRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -888,9 +795,6 @@ function MatchConnector({ pairs, answer, onChange, readOnly = false, darkMode = 
   const tempLineRef = useRef<SVGLineElement | null>(null);
   const draggingFrom = useRef<number | null>(null);
 
-  // Клавиатурный путь: Enter/Space на точке слева выбирает её, Enter/Space
-  // на точке справа завершает соединение — тот же принцип "выбери-затем-
-  // подтверди", что и в DragDropCards, работает параллельно перетаскиванию.
   const [keyboardSelected, setKeyboardSelected] = useState<number | null>(null);
 
   const shuffledRight = useMemo(() => {
@@ -1437,17 +1341,15 @@ function calcScore(section: any, answer: any, hasAttachment: boolean = false): n
     if (!ua) return 0;
     const ca = normalizeText(data.correct_answer || '');
     if (ca && ua === ca) return maxScore;
+    // ИСПРАВЛЕНО: поле называется alt_answers (совпадает с банком заданий
+    // и с редактором ДЗ), а не alt_answers/alt_answer вперемешку — теперь
+    // альтернативные ответы реально засчитываются.
     if (data.alt_answers && Array.isArray(data.alt_answers)) { for (const alt of data.alt_answers) { if (ua === normalizeText(alt)) return maxScore; } }
     return 0;
   }
   if (type === 'single_choice') { if (data.correct_indices && Array.isArray(data.correct_indices)) return answer === data.correct_indices[0] ? maxScore : 0; return 0; }
   if (type === 'multi_choice') { if (!Array.isArray(answer) || !data.correct_indices) return 0; const correct = new Set(data.correct_indices); const userAnswer = new Set(answer); if (correct.size !== userAnswer.size) return 0; for (const c of correct) { if (!userAnswer.has(c)) return 0; } return maxScore; }
   if (type === 'order') {
-    // answer теперь — массив ОРИГИНАЛЬНЫХ индексов в том порядке, в котором
-    // их расставил ученик (см. OrderableList). Верно расставленным
-    // считается элемент, чей оригинальный индекс совпал со своей позицией:
-    // answer[i] === i. Раньше сравнивалось с вручную вписанными числами
-    // (answer[i] === i+1), что не имело смысла без перемешивания при показе.
     if (!Array.isArray(answer) || !data.order_items) return 0;
     const n = data.order_items.length;
     if (answer.length !== n) return 0;
@@ -1457,11 +1359,6 @@ function calcScore(section: any, answer: any, hasAttachment: boolean = false): n
   }
   if (type === 'match') { if (!data.pairs || !answer) return 0; let matches = 0; for (let i = 0; i < data.pairs.length; i++) { if (answer[i] === data.pairs[i].right) matches++; } return Math.round((matches / data.pairs.length) * maxScore); }
   if (type === 'fill_blanks') {
-    // Раньше — всё-или-ничего по всей строке целиком: один лишний пробел
-    // или опечатка в одном из нескольких пропусков обнуляла балл за всё
-    // задание. Теперь сверяем по каждому пропуску отдельно (через запятую,
-    // как и просит подсказка в поле ввода) и даём пропорциональный балл —
-    // тот же паттерн частичного зачёта, что уже используется в order/match.
     if (typeof answer !== 'string') return 0;
     const correctParts = (data.correct_answer || '')
       .split(',').map((s: string) => normalizeText(s)).filter((s: string) => s.length > 0);
@@ -1476,6 +1373,34 @@ function calcScore(section: any, answer: any, hasAttachment: boolean = false): n
   if (type === 'assembly') { if (!Array.isArray(answer) || !data.assembly_parts) return 0; const correct = data.assembly_parts.map((_: any, i: number) => i); if (answer.length !== correct.length) return 0; for (let i = 0; i < correct.length; i++) { if (answer[i] !== correct[i]) return 0; } return maxScore; }
   if (type === 'drag_drop') { if (!data.drag_items || !answer) return 0; let matches = 0; for (let i = 0; i < data.drag_items.length; i++) { if (answer[i] === data.drag_items[i].target) matches++; } return Math.round((matches / data.drag_items.length) * maxScore); }
   return 0;
+}
+
+// НОВОЕ: строит копию секций ДЗ без полей с правильными ответами — для
+// передачи в QuestionCard, когда ученик решает задание. ВАЖНО: это не
+// замена полноценной защите. Firestore SDK получает документ ДЗ целиком
+// по сети ДО того, как эта функция отработает — значит человек,
+// открывший вкладку Network в браузере, всё равно увидит правильные
+// ответы в сыром JSON. Полноценная защита требует Cloud Function/
+// серверного эндпоинта, отдающего ученику уже урезанный документ, либо
+// вынесения "ключей" ответов в отдельную коллекцию с более строгими
+// Firestore Rules. Здесь функция лишь не даёт значениям попасть в
+// состояние React и в DOM — минимальная защита от случайного
+// подглядывания через React DevTools, а не от целенаправленного разбора
+// сетевого трафика.
+function redactSectionsForStudent(sections: any[]): any[] {
+  return (sections || []).map((section: any) => {
+    const data = { ...(section.data || {}) };
+    delete data.correct_answer;
+    delete data.correct_indices;
+    delete data.alt_answers;
+    if (Array.isArray(data.pairs)) {
+      data.pairs = data.pairs.map((p: any) => ({ left: p.left }));
+    }
+    if (Array.isArray(data.drag_items)) {
+      data.drag_items = data.drag_items.map((d: any) => ({ item: d.item }));
+    }
+    return { ...section, data };
+  });
 }
 
 function ExamTimer({ timeLimit, onTimeUp, isPaused, startTime, darkMode = false }: { timeLimit: number; onTimeUp: () => void; isPaused?: boolean; startTime?: number; darkMode?: boolean }) {
@@ -1533,18 +1458,6 @@ function ExamTimer({ timeLimit, onTimeUp, isPaused, startTime, darkMode = false 
   );
 }
 
-// Формат ответа для order поменялся сегодня: раньше это были вручную
-// вписанные числа 1..n, теперь — массив ОРИГИНАЛЬНЫХ индексов (0..n-1,
-// без повторов) в порядке, как расставил ученик. Черновик, сохранённый
-// ДО этого изменения (ученик решал order-задание и не успел отправить),
-// всё ещё лежит в старом формате — он тоже проходит поверхностную
-// проверку "это массив нужной длины", но числа в нём будут не те, и
-// OrderableList покажет перепутанный порядок, а calcScore посчитает
-// неверно. Эта функция вызывается при каждом восстановлении ответов
-// (из submission, из homework_drafts, из localStorage) и молча
-// выбрасывает order-ответы, которые не являются валидной перестановкой
-// 0..n-1 — OrderableList в этом случае просто проинициализирует
-// секцию заново перемешанным порядком, как будто ученик её не трогал.
 function sanitizeAnswers(sections: any[], answers: Record<string, any>): Record<string, any> {
   if (!answers || typeof answers !== 'object') return answers;
   const result = { ...answers };
@@ -1726,14 +1639,6 @@ function HomeworkView() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [manualScores, setManualScores] = useState<Record<string, number>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
-  // reviewDecision-стейт убран: раньше кнопки делали setReviewDecision(...)
-  // и сразу следующей строкой звали saveReview(), которая читала
-  // reviewDecision из замыкания — но setState не применяется синхронно,
-  // так что saveReview() видела значение с ПРЕДЫДУЩЕГО рендера. При первом
-  // клике на "На доработку" в сессии это было значение по умолчанию
-  // ("approved"), и работа сохранялась как принятая при клике на "На
-  // доработку". Теперь saveReview(decision) принимает решение параметром
-  // напрямую от кнопки — никакого чтения стейта, никакой гонки.
 
   const [commentTemplates, setCommentTemplates] = useState<string[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -1823,12 +1728,6 @@ function HomeworkView() {
     if (!user) { setError('Необходимо войти в аккаунт'); setLoading(false); return; }
 
     const load = async () => {
-      // ✅ ПАТЧ БЕЗОПАСНОСТИ: доступ к режиму проверки (?mode=review) и
-      // предпросмотру (?preview=true) — только для репетитора. Раньше эта
-      // проверка отсутствовала: любой ученик, изменив URL, получал доступ
-      // к чужим ответам, фото и мог сам выставлять оценки через saveReview.
-      // Проверка стоит в самом начале load(), до getDoc() — значит для
-      // не-репетитора не уходит вообще ни одного запроса к submissions/homeworks.
       if ((isReviewMode || isPreviewMode) && !isTutor) {
         setError('Доступ запрещён');
         setLoading(false);
@@ -1852,12 +1751,18 @@ function HomeworkView() {
           if (!hasAccess) { setError('У вас нет доступа к этому заданию'); setLoading(false); return; }
         }
 
-        if (!isTutor && !isPreviewMode && !isReviewMode) {
-          data.sections = data.sections.map((section: any) => ({
-            ...section, data: { ...section.data, correct_answer: undefined, correct_indices: undefined, alt_answers: undefined }
-          }));
-        }
-
+        // ИСПРАВЛЕНО: раньше здесь стирались correct_answer/correct_indices/
+        // alt_answers прямо в data.sections, и та же (уже урезанная) структура
+        // потом шла в setHw() и использовалась внутри submitAnswer() для
+        // подсчёта calcScore(). Из-за этого calcScore получал пустые поля с
+        // ответами и ВСЕГДА возвращал 0 баллов для text/photo/single_choice/
+        // multi_choice/fill_blanks у любого обычного ученика — это ломало
+        // сам смысл авто-проверки, а не просто "давало утечку ответов".
+        // Теперь в hw.sections всегда попадает полная, неурезанная структура
+        // (нужна submitAnswer/calcScore), а урезанная версия строится через
+        // redactSectionsForStudent() отдельно и уходит только в пропсы
+        // QuestionCard при рендере — так подсчёт очков продолжает работать,
+        // а в React-состоянии, которое отрисовывается на экран, ответов нет.
         setHw({ id: snap.id, ...data });
         if (data.type === 'trial_exam' || data.time_limit) setIsTrialExam(true);
 
@@ -1922,11 +1827,6 @@ function HomeworkView() {
                 setStudentComments(ddata.comments || {});
                 setAttachments(Object.keys(normalized).length > 0 ? normalized : {});
                 if ((data.type === 'trial_exam' || data.time_limit) && typeof ddata.exam_start_time === 'number') {
-                  // Пробник уже был начат раньше (в этой же сессии или до
-                  // перезагрузки страницы) — восстанавливаем startTime вместо
-                  // сброса на экран "Начать экзамен". Раньше examStartTime жил
-                  // только в React-стейте и обнулялся по F5, позволяя начать
-                  // отсчёт заново и продлить себе время.
                   setExamStarted(true);
                   setExamStartTime(ddata.exam_start_time);
                 }
@@ -2108,21 +2008,6 @@ function HomeworkView() {
       const final = Math.round(total);
       const historyEntry = { submitted_at: new Date().toISOString(), score: final, answers: { ...answers } };
 
-      // Автоодобрение: если ВСЕ задания в ДЗ — объективно проверяемых
-      // типов (см. AUTO_GRADABLE_TYPES), результат известен точно так же
-      // надёжно, как если бы его подтвердил репетитор — ждать живого
-      // клика "Принять" для этого не нужно. Осознанный компромисс: балл
-      // считает браузер ученика, а не сервер, значит настоящей защиты от
-      // подделки через прямой запрос к Firestore в обход интерфейса нет
-      // (правила проверяют только "какие поля меняются", не "честно ли
-      // посчитан calcScore()"). Настоящая защита — Cloud Function,
-      // пересчитывающая балл на сервере; здесь её нет, обсуждали отдельно.
-      //
-      // Намеренно применяется ТОЛЬКО к первой отправке (create), не к
-      // пересдаче (update) — у update() в правилах Firestore жёстко
-      // прописано status == 'submitted' для ученика, менять это правило
-      // сейчас не стал, чтобы не трогать ещё раз то, что уже трижды
-      // ломалось за этот заход. Пересдача всегда идёт на ручную проверку.
       const isFullyAutoGradable = secs.length > 0 && secs.every((sec: any) => AUTO_GRADABLE_TYPES.includes(sec.type));
 
       const updateData: any = {
@@ -2342,11 +2227,6 @@ function HomeworkView() {
       }
     };
 
-    // Снимок состояния ДО оптимистичного обновления — нужен для отката,
-    // если запись в Firestore не пройдёт. Раньше при ошибке UI оставался
-    // "проверенным" навсегда (до следующей полной перезагрузки страницы),
-    // хотя в базе работа так и осталась непроверенной — тост с ошибкой
-    // показывался, но ничего в интерфейсе по факту не откатывалось.
     const previousSubSnapshot = currentSub;
 
     setSubmissions(prev => prev.map(s =>
@@ -2374,9 +2254,6 @@ function HomeworkView() {
         void updateStudentProgress(currentSub.student_id, totalScore, hw.max_score || 0, id);
       }
 
-      // Переход к следующей работе — только после подтверждённой записи.
-      // Раньше это срабатывало безусловно через 700мс от вызова функции,
-      // не дожидаясь ответа от Firestore вообще.
       setTimeout(() => {
         if (currentIndex < filteredSubmissions.length - 1) {
           setCurrentIndex(currentIndex + 1);
@@ -2411,6 +2288,14 @@ function HomeworkView() {
       </motion.div>
     </div>
   );
+
+  // НОВОЕ: показываем ученику только урезанную версию секций (без полей
+  // с ответами), а для подсчёта баллов (submitAnswer/calcScore) продолжаем
+  // использовать полные hw.sections. Учитель/предпросмотр/проверка видят
+  // секции как есть — там наличие правильных ответов ожидаемо и нужно.
+  const sectionsForRender = (isTutor || isPreviewMode || isReviewMode)
+    ? (hw.sections || [])
+    : redactSectionsForStudent(hw.sections || []);
 
   if (isReviewMode) {
     const currentSub = filteredSubmissions[currentIndex];
@@ -2627,7 +2512,7 @@ function HomeworkView() {
     );
   }
 
-  const sections = hw.sections || [];
+  const sections = sectionsForRender;
   const section = sections[current];
   const isDeadlinePassed = hw.due_date && new Date(hw.due_date) < new Date();
 
@@ -2686,10 +2571,6 @@ function HomeworkView() {
                 const startTime = Date.now();
                 setExamStarted(true);
                 setExamStartTime(startTime);
-                // Пишем в черновик сразу, не дожидаясь debounce-автосохранения
-                // (оно завязано на answers/attachments и не сработает, если
-                // ученик ещё ничего не ответил) — иначе F5 сразу после старта
-                // потеряет exam_start_time и обнулит отсчёт.
                 setDoc(doc(db, "homework_drafts", `${id}_${uid}`), {
                   homework_id: id, student_id: uid, exam_start_time: startTime, updated_at: new Date().toISOString()
                 }, { merge: true }).catch((e) => console.error('Не удалось сохранить старт экзамена:', e));
@@ -2822,7 +2703,7 @@ function HomeworkView() {
               ) : pendingReview ? (
                 <QuestionCard section={section} answer={answers[section.id]} onChange={() => {}} studentComment={studentComments[section.id]} onCommentChange={() => {}} showComment={false} isStudent={false} attachment={attachments[section.id]} onAttachmentChange={() => {}} studentId={uid} darkMode={darkMode} readOnly={true} />
               ) : (
-                <ResultCard section={section} answer={answers[section.id]} score={scores[section.id] || 0} maxScore={section.max_score || 1} comment={sectionComments[section.id]} conversionScale={conversionScale} studentComment={studentComments[section.id]} teacherReply={currentSubmission?.teacher_replies?.[section.id]} attachment={attachments[section.id]} darkMode={darkMode} pendingReview={false} />
+                <ResultCard section={(hw.sections || [])[current] || section} answer={answers[section.id]} score={scores[section.id] || 0} maxScore={section.max_score || 1} comment={sectionComments[section.id]} conversionScale={conversionScale} studentComment={studentComments[section.id]} teacherReply={currentSubmission?.teacher_replies?.[section.id]} attachment={attachments[section.id]} darkMode={darkMode} pendingReview={false} />
               )}
 
               {!isTutor && reviewStatus === "needs_revision" && (

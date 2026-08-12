@@ -31,6 +31,9 @@ const staggerContainer = { animate: { transition: { staggerChildren: 0.05 } } };
 const staggerItem = { initial: { opacity: 0, x: -20 }, animate: { opacity: 1, x: 0 } };
 
 // ==========  ХИМИЧЕСКИЙ РЕДАКТОР ==========
+// ИСПРАВЛЕНО: раньше массивы символов были повреждены (пропущенные
+// индексы, дублированные/оторванные знаки зарядов и степеней окисления).
+// Теперь наборы полные и согласованы с версией из HomeworkView/ChemButton.
 function ChemistryEditor({ value, onChange, placeholder = "Введите текст...", rows = 3, className = "", darkMode = false }: any) {
   const [showPopup, setShowPopup] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -57,9 +60,9 @@ function ChemistryEditor({ value, onChange, placeholder = "Введите тек
     }, 0);
   }
 
-  const SUBSCRIPTS = ['₁','₂','','₄','₅','₆','₇','₈','₉','₀'];
-  const CHARGES = ['⁵⁻','⁴⁻','³⁻','²','⁻','⁺','²','³⁺','⁴⁺','⁺','⁶⁺','⁷⁺'];
-  const OXIDATION = ['⁻⁵','⁻⁴','⁻³','⁻²','⁻¹','','⁺¹','⁺²','⁺³','⁺⁴','⁺⁵','⁺⁶','⁺⁷'];
+  const SUBSCRIPTS = ['₁','₂','₃','₄','₅','₆','₇','₈','₉','₀'];
+  const CHARGES = ['⁵⁻','⁴⁻','³⁻','²⁻','¹⁻','¹⁺','²⁺','³⁺','⁴⁺','⁵⁺','⁶⁺','⁷⁺'];
+  const OXIDATION = ['⁻⁵','⁻⁴','⁻³','⁻²','⁻¹','⁰','⁺¹','⁺²','⁺³','⁺⁴','⁺⁵','⁺⁶','⁺⁷'];
   const SIGNS = ['→','←','⇄','⇌','↑','↓','+','=','t°','°C'];
 
   const bgInput = darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white/80 border-amber-200 text-stone-800';
@@ -106,7 +109,7 @@ function ChemistryEditor({ value, onChange, placeholder = "Введите тек
                     <div className="flex flex-wrap gap-1">{CHARGES.map(s => (<motion.button key={s} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-1.5 border rounded-lg text-sm font-bold transition ${darkMode ? 'bg-zinc-700 border-zinc-600 text-pink-300 hover:bg-zinc-600' : 'bg-pink-50 border-pink-200 text-pink-800 hover:bg-pink-100'}`}>{s}</motion.button>))}</div>
                   </motion.div>
                   <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }}>
-                    <p className={`text-xs font-bold mb-2 ${textLabel}`}> Степени окисления</p>
+                    <p className={`text-xs font-bold mb-2 ${textLabel}`}>⚗️ Степени окисления</p>
                     <div className="flex flex-wrap gap-1">{OXIDATION.map(s => (<motion.button key={s} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} type="button" onClick={() => insertSymbol(s)} className={`px-3 py-1.5 border rounded-lg text-sm font-bold transition ${darkMode ? 'bg-zinc-700 border-zinc-600 text-red-300 hover:bg-zinc-600' : 'bg-red-50 border-red-200 text-red-800 hover:bg-red-100'}`}>{s}</motion.button>))}</div>
                   </motion.div>
                   <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>
@@ -129,7 +132,7 @@ const TASK_TEMPLATES = [
   { name: "🧬 Генетическая задача", type: "text", subject: "biology", topic: "Генетические задачи", topic_num: 9, text: "У человека карий цвет глаз доминирует над голубым. Гетерозиготный кареглазый мужчина женился на голубоглазой женщине.\n\n1) Какие генотипы у родителей?\n2) Какая вероятность рождения голубоглазых детей?", answer: "1) P: Aa × aa\n2) Вероятность: 50%", difficulty: "medium", max_score: 2, grading: "partial", grading_criteria: [{ condition: "Верно генотипы + вероятность", points: 2 }, { condition: "Только генотипы или только вероятность", points: 1 }, { condition: "Ошибки", points: 0 }], time: 8, tags: "генетика, ЕГЭ" },
   { name: "📝 Тип реакции", type: "single_choice", subject: "chemistry", topic: "Реакции в неорганической химии", topic_num: 8, text: "Реакция 2H₂O₂ → 2H₂O + O₂ относится к типу:", variants: ["Соединения", "Разложения", "Замещения", "Обмена"], correct_indices: [1], difficulty: "easy", max_score: 1, grading: "binary", time: 2, tags: "типы реакций" },
   { name: "🔗 Соответствие: вещество — класс", type: "match", subject: "chemistry", topic: "Классы неорганических веществ", topic_num: 6, text: "Установите соответствие между веществом и его классом:", pairs: [{ left: "H₂SO₄", right: "Кислота" }, { left: "NaOH", right: "Основание" }, { left: "NaCl", right: "Соль" }, { left: "CaO", right: "Основный оксид" }], difficulty: "easy", max_score: 1, grading: "percentage", time: 3, tags: "классы" },
-  { name: " Атомный радиус", type: "order", subject: "chemistry", topic: "Периодический закон", topic_num: 2, text: "Расположите элементы в порядке возрастания атомного радиуса:", order_items: ["Cl", "P", "Si", "Al", "Na"], difficulty: "medium", max_score: 1, grading: "binary", time: 3, tags: "периодичность" },
+  { name: "⚛️ Атомный радиус", type: "order", subject: "chemistry", topic: "Периодический закон", topic_num: 2, text: "Расположите элементы в порядке возрастания атомного радиуса:", order_items: ["Cl", "P", "Si", "Al", "Na"], difficulty: "medium", max_score: 1, grading: "binary", time: 3, tags: "периодичность" },
   { name: "✍️ Пропуски о клетке", type: "fill_blanks", subject: "biology", topic: "Клетка", topic_num: 2, text: "Органоид, отвечающий за синтез белка, называется ___.\nЭнергетические станции клетки — это ___.", answer: "рибосома, митохондрии", difficulty: "easy", max_score: 2, grading: "percentage", time: 2, tags: "клетка" },
 ];
 
@@ -215,6 +218,23 @@ const TASK_TYPES = [
   { value: "drag_drop", label: "Перетащить", icon: "drag" },
   { value: "photo", label: "Фото-задание", icon: "photo" },
 ];
+
+// ИСПРАВЛЕНО: раньше TaskTypeIcon вызывался с task.type (значения из базы:
+// "single_choice", "multi_choice", "fill_blanks", "drag_drop"), но словарь
+// icons внутри компонента ждёт короткие ключи ("single", "multi", "fill",
+// "drag") — для 4 из 9 типов иконка не отрисовывалась вообще. Этот маппинг
+// переводит значение типа из базы в ключ иконки перед вызовом компонента.
+const TYPE_TO_ICON: Record<string, string> = {
+  text: "text",
+  single_choice: "single",
+  multi_choice: "multi",
+  order: "order",
+  match: "match",
+  fill_blanks: "fill",
+  assembly: "assembly",
+  drag_drop: "drag",
+  photo: "photo",
+};
 
 const DIFFICULTY = {
   easy: { label: "Лёгкое", text: "text-emerald-700", bg: "bg-emerald-100" },
@@ -316,7 +336,7 @@ function LibraryContent() {
     if (!file) return;
     if (file.size > 1024 * 1024) { toast.error("Максимум 1MB"); return; }
     const reader = new FileReader();
-    reader.onload = (e) => { setTaskImage(e.target?.result as string); setTaskImageName(file.name); toast.success("️ Загружено!"); };
+    reader.onload = (e) => { setTaskImage(e.target?.result as string); setTaskImageName(file.name); toast.success("🖼️ Загружено!"); };
     reader.readAsDataURL(file);
   }
 
@@ -383,7 +403,13 @@ function LibraryContent() {
     const variants = parseVariants(taskVariants);
     const order = parseOrder(taskOrder);
     const assembly = parseAssembly(taskAssembly);
-    const allCorrectAnswers = [taskAnswer.trim(), ...taskAltAnswers.filter(a => a.trim())].filter(a => a);
+    // ИСПРАВЛЕНО: раньше альтернативные ответы сохранялись в поле
+    // "correct_answers" (множественное число), а HomeworkView/calcScore и
+    // addFromBank в редакторе ДЗ читают поле "alt_answers" — из-за
+    // расхождения имён альтернативные ответы никогда не засчитывались и не
+    // переносились при добавлении задания из банка в ДЗ. Теперь везде
+    // используется единое имя "alt_answers", совпадающее с homeworks.
+    const cleanAltAnswers = taskAltAnswers.filter(a => a.trim());
 
     if ((taskType === "single_choice" || taskType === "multi_choice") && variants.length < 2) { toast.error("Минимум 2 варианта"); return; }
     if (taskType === "single_choice" && taskCorrectIndices.length !== 1) { toast.error("Выберите один правильный ответ"); return; }
@@ -391,6 +417,12 @@ function LibraryContent() {
     if (taskType === "order" && order.length < 2) { toast.error("Минимум 2 элемента"); return; }
     if (taskType === "match" && taskPairs.length < 2) { toast.error("Минимум 2 пары"); return; }
     if (taskType === "fill_blanks" && !taskBlanks.trim()) { toast.error("Введите текст с пропусками"); return; }
+    // ИСПРАВЛЕНО: раньше проверялось только наличие текста с пропусками
+    // (taskBlanks), но не самих ответов (taskAnswer) — можно было
+    // сохранить fill_blanks-задание без единого правильного ответа,
+    // и такое задание в ДЗ автоматически давало бы 0 баллов при любом
+    // ответе ученика.
+    if (taskType === "fill_blanks" && !taskAnswer.trim()) { toast.error("Введите правильные ответы для пропусков"); return; }
     if (taskType === "assembly" && assembly.length < 2) { toast.error("Минимум 2 части"); return; }
     if (taskType === "drag_drop" && taskDragDrop.length < 2) { toast.error("Минимум 2 элемента"); return; }
     if ((taskType === "text" || taskType === "photo") && !taskAnswer.trim()) { toast.error("Введите правильный ответ"); return; }
@@ -403,21 +435,28 @@ function LibraryContent() {
       hint: taskHint.trim() || null, solution: taskSolution.trim() || null,
       folder_id: taskFolderId || null,
       tags: taskTags.split(',').map(t => t.trim()).filter(t => t),
-      correct_answers: allCorrectAnswers, grading: taskGrading,
+      grading: taskGrading,
       grading_criteria: taskGrading === "partial" ? taskGradingCriteria : null,
       usage_count: editingTask?.usage_count || 0, success_rate: editingTask?.success_rate || 0,
       created_at: editingTask?.created_at || new Date().toISOString(), updated_at: new Date().toISOString(),
     };
 
     switch (taskType) {
-      case "text": case "photo": taskData.correct_answer = taskAnswer.trim(); break;
+      case "text": case "photo":
+        taskData.correct_answer = taskAnswer.trim();
+        taskData.alt_answers = cleanAltAnswers;
+        break;
       case "single_choice": case "multi_choice":
         taskData.variants = variants; taskData.correct_indices = taskCorrectIndices;
         taskData.correct_answer = taskCorrectIndices.map(i => variants[i]).join(", ");
         break;
       case "order": taskData.order_items = order; taskData.correct_answer = order.join(" → "); break;
       case "match": taskData.pairs = taskPairs; taskData.correct_answer = taskPairs.map(p => `${p.left} = ${p.right}`).join("; "); break;
-      case "fill_blanks": taskData.blanks_text = taskBlanks; taskData.correct_answer = taskAnswer.trim(); break;
+      case "fill_blanks":
+        taskData.blanks_text = taskBlanks;
+        taskData.correct_answer = taskAnswer.trim();
+        taskData.alt_answers = cleanAltAnswers;
+        break;
       case "assembly": taskData.assembly_parts = assembly; taskData.correct_answer = assembly.join(" + "); break;
       case "drag_drop": taskData.drag_items = taskDragDrop; taskData.correct_answer = taskDragDrop.map(d => `${d.item} → ${d.target}`).join("; "); break;
     }
@@ -441,7 +480,11 @@ function LibraryContent() {
   function editTask(task: any) {
     setEditingTask(task); setTaskType(task.type || "text"); setTaskTitle(task.title || "");
     setTaskText(task.task_text || ""); setTaskImage(task.image_url || ""); setTaskImageName(task.image_name || ""); setTaskAnswer(task.correct_answer || "");
-    setTaskAltAnswers(task.correct_answers?.filter((a: string) => a !== task.correct_answer) || []);
+    // ИСПРАВЛЕНО: раньше читалось несуществующее поле task.correct_answers
+    // (в базе такого поля больше нет — переименовано в alt_answers при
+    // сохранении, см. saveTask). Теперь читаем правильное поле напрямую,
+    // без попытки вычленить альтернативы фильтрацией по correct_answer.
+    setTaskAltAnswers(task.alt_answers || []);
     setTaskVariants(task.variants?.join(", ") || ""); setTaskCorrectIndices(task.correct_indices || []);
     setTaskOrder(task.order_items?.join("\n") || ""); setTaskPairs(task.pairs || []);
     setTaskBlanks(task.blanks_text || ""); setTaskAssembly(task.assembly_parts?.join("\n") || "");
@@ -464,37 +507,19 @@ function LibraryContent() {
     catch (error: any) { toast.error(`Ошибка: ${error.message}`); }
   }
 
-  // ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ УДАЛЕНИЯ С ОТЛАДКОЙ
   async function deleteTask(id: string) {
-    console.log("🔍 ШАГ 1: Функция deleteTask вызвана. ID =", id);
-    
     if (!id) {
-      console.error(" ШАГ 2: Ошибка! ID не передан или равен undefined/null");
       toast.error("Ошибка: ID задания не найден");
       return;
     }
-    
     const isConfirmed = confirm("Удалить задание? Это действие нельзя отменить.");
-    console.log("🔍 ШАГ 3: Пользователь нажал 'OK' в окне подтверждения?", isConfirmed);
-    
-    if (!isConfirmed) {
-      console.log("⏸️ ШАГ 4: Удаление отменено пользователем");
-      return;
-    }
-    
+    if (!isConfirmed) return;
     try {
-      console.log("🔍 ШАГ 5: Создаю ссылку на документ в коллекции 'tasks_bank' с id:", id);
       const taskRef = doc(db, "tasks_bank", id);
-      
-      console.log("🔍 ШАГ 6: Вызываю deleteDoc...");
       await deleteDoc(taskRef);
-      
-      console.log("✅ ШАГ 7: Успешно! Документ удалён из Firebase");
-      toast.success("️ Задание успешно удалено");
+      toast.success("🗑️ Задание успешно удалено");
     } catch (error: any) {
-      console.error("❌ ШАГ 8: КРИТИЧЕСКАЯ ОШИБКА ПРИ УДАЛЕНИИ:", error);
-      console.error("Код ошибки:", error.code);
-      console.error("Сообщение:", error.message);
+      console.error("Ошибка при удалении:", error);
       toast.error(`Ошибка удаления: ${error.message}`);
     }
   }
@@ -547,7 +572,7 @@ function LibraryContent() {
             t.tutor_id = uid; t.created_at = new Date().toISOString();
             await addDoc(collection(db, "tasks_bank"), t); count++;
           }
-          toast.success(` Импортировано ${count} заданий!`);
+          toast.success(`📤 Импортировано ${count} заданий!`);
         } catch { toast.error("Ошибка импорта"); }
       };
       reader.readAsText(file);
@@ -570,7 +595,7 @@ function LibraryContent() {
       await deleteDoc(doc(db, "task_folders", id));
       const subfolders = folders.filter(f => f.parent_id === id);
       for (const sub of subfolders) await deleteDoc(doc(db, "task_folders", sub.id));
-      toast.success("️ Папка удалена");
+      toast.success("🗑️ Папка удалена");
     } catch (error: any) { toast.error(`Ошибка: ${error.message}`); }
   }
 
@@ -615,7 +640,7 @@ function LibraryContent() {
         task.topic?.toLowerCase().includes(q) ||
         task.tags?.some((t: string) => t.toLowerCase().includes(q)) ||
         task.correct_answer?.toLowerCase().includes(q) ||
-        task.correct_answers?.some((a: string) => a.toLowerCase().includes(q))
+        task.alt_answers?.some((a: string) => a.toLowerCase().includes(q))
       );
     }
     return true;
@@ -661,10 +686,10 @@ function LibraryContent() {
             <motion.h1 initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6, delay: 0.2 }} className={`text-4xl sm:text-5xl font-serif font-bold bg-gradient-to-r ${darkMode ? 'from-amber-400 via-orange-400 to-amber-300' : 'from-amber-700 via-orange-600 to-stone-700'} bg-clip-text text-transparent`}>
               Банк заданий
             </motion.h1>
-            <motion.span initial={{ rotate: 180, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} transition={{ duration: 0.8, type: "spring" }} className="text-4xl"></motion.span>
+            <motion.span initial={{ rotate: 180, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} transition={{ duration: 0.8, type: "spring" }} className="text-4xl">🗂️</motion.span>
           </div>
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.4 }} className={`font-serif italic text-sm ${darkMode ? 'text-amber-300/70' : 'text-stone-600'}`}>
-            "I picked these petals in the cold December night" 
+            "I picked these petals in the cold December night" 🍂
           </motion.p>
         </motion.div>
 
@@ -681,7 +706,7 @@ function LibraryContent() {
               {taskSubject === "chemistry" ? "🧪 Химия" : "🧬 Биология"}
             </motion.button>
             <motion.button whileHover={{ scale: 1.05, rotate: 180 }} whileTap={{ scale: 0.95 }} onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-lg transition ${darkMode ? 'bg-zinc-800 text-yellow-400 hover:bg-zinc-700' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`} title="Сменить тему">
-              {darkMode ? '☀️' : ''}
+              {darkMode ? '☀️' : '🌙'}
             </motion.button>
           </div>
         </motion.div>
@@ -699,7 +724,7 @@ function LibraryContent() {
                 + Папка
               </motion.button>
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={exportTasks} className={`px-4 py-2 ${darkMode ? 'bg-zinc-800 text-amber-400 border-zinc-700' : 'bg-white border-amber-200 text-stone-700'} border-2 rounded-xl text-sm font-bold hover:bg-amber-50 transition`}>
-                 Экспорт
+                📥 Экспорт
               </motion.button>
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={importTasks} className={`px-4 py-2 ${darkMode ? 'bg-zinc-800 text-amber-400 border-zinc-700' : 'bg-white border-amber-200 text-stone-700'} border-2 rounded-xl text-sm font-bold hover:bg-amber-50 transition`}>
                 📤 Импорт
@@ -761,10 +786,10 @@ function LibraryContent() {
                 <motion.div key={folder.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3 }}>
                   <div className="flex items-center gap-1 mb-1">
                     <motion.button whileHover={{ scale: 1.02, x: 5 }} whileTap={{ scale: 0.98 }} onClick={() => { if (subfolders.length > 0) toggleFolderExpand(folder.id); setSelectedFolder(folder.id); }} className={`flex-1 text-left px-3 py-2 rounded-xl text-sm transition ${selectedFolder === folder.id ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white" : darkMode ? "hover:bg-zinc-800 text-stone-300" : "hover:bg-amber-50 text-stone-700"}`}>
-                      {subfolders.length > 0 ? (isExpanded ? '' : '📁') : '📄'} {folder.name}
+                      {subfolders.length > 0 ? (isExpanded ? '📂' : '📁') : '📄'} {folder.name}
                     </motion.button>
                     <span className={`text-xs px-1 ${darkMode ? 'text-stone-500' : 'text-stone-500'}`}>{count}</span>
-                    <motion.button whileHover={{ scale: 1.2, rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => deleteFolder(folder.id)} className="text-red-400 hover:text-red-600 text-xs">️</motion.button>
+                    <motion.button whileHover={{ scale: 1.2, rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => deleteFolder(folder.id)} className="text-red-400 hover:text-red-600 text-xs">🗑️</motion.button>
                   </div>
                   <AnimatePresence>
                     {isExpanded && subfolders.length > 0 && (
@@ -820,7 +845,7 @@ function LibraryContent() {
                             <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(task.id)} className="mt-1 w-4 h-4 accent-amber-500" />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className="text-lg"><TaskTypeIcon type={task.type} className="w-5 h-5" /></span>
+                                <span className="text-lg"><TaskTypeIcon type={TYPE_TO_ICON[task.type] ?? task.type} className="w-5 h-5" /></span>
                                 <h4 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-stone-900'}`}>{task.title}</h4>
                                 {task.topic_num && <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${darkMode ? 'bg-zinc-800 text-stone-300' : 'bg-stone-100 text-stone-700'}`}>№{task.topic_num}</span>}
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${diff.bg} ${diff.text}`}>{diff.label}</span>
@@ -830,7 +855,7 @@ function LibraryContent() {
                                   {gradingInfo.label}
                                   {hasCriteria && <span className="ml-1 font-bold">({maxCriteriaPoints} б.)</span>}
                                 </span>
-                                {task.image_url && <span className="text-xs text-amber-600">️</span>}
+                                {task.image_url && <span className="text-xs text-amber-600">🖼️</span>}
                               </div>
                               <p className={`text-xs line-clamp-2 mb-2 ${darkMode ? 'text-stone-300' : 'text-stone-600'}`}>{task.task_text}</p>
                               <div className={`flex items-center gap-2 text-xs flex-wrap ${darkMode ? 'text-stone-400' : 'text-stone-500'}`}>
@@ -838,22 +863,19 @@ function LibraryContent() {
                                 <span>⭐ {task.max_score} б.</span>
                                 {task.hint && <span className="text-amber-600">💡 подсказка</span>}
                                 {task.solution && <span className="text-emerald-600">📖 разбор</span>}
-                                {task.correct_answers?.length > 1 && <span className="text-blue-600">🎯 {task.correct_answers.length} ответов</span>}
+                                {task.alt_answers?.length > 0 && <span className="text-blue-600">🎯 {task.alt_answers.length + 1} ответов</span>}
                                 {task.folder_id && <span>📁 {folders.find(f => f.id === task.folder_id)?.name}</span>}
                               </div>
                             </div>
                             <div className="flex gap-1 flex-shrink-0">
-                              <motion.button whileHover={{ scale: 1.2, rotate: 5 }} whileTap={{ scale: 0.9 }} onClick={() => setPreviewTask(task)} className={`p-2 ${darkMode ? 'bg-blue-900/30 text-blue-400 hover:bg-blue-900/50' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'} rounded-lg transition text-sm`} title="Предпросмотр">️</motion.button>
+                              <motion.button whileHover={{ scale: 1.2, rotate: 5 }} whileTap={{ scale: 0.9 }} onClick={() => setPreviewTask(task)} className={`p-2 ${darkMode ? 'bg-blue-900/30 text-blue-400 hover:bg-blue-900/50' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'} rounded-lg transition text-sm`} title="Предпросмотр">👁️</motion.button>
                               <motion.button whileHover={{ scale: 1.2, rotate: -5 }} whileTap={{ scale: 0.9 }} onClick={() => editTask(task)} className={`p-2 ${darkMode ? 'bg-amber-900/30 text-amber-400 hover:bg-amber-900/50' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'} rounded-lg transition text-sm`} title="Редактировать">✏️</motion.button>
-                              <motion.button whileHover={{ scale: 1.2 }} whileTap={{ scale: 0.9 }} onClick={() => createSimilar(task)} className={`p-2 ${darkMode ? 'bg-purple-900/30 text-purple-400 hover:bg-purple-900/50' : 'bg-purple-50 text-purple-700 hover:bg-purple-100'} rounded-lg transition text-sm`} title="Создать похожее"></motion.button>
+                              <motion.button whileHover={{ scale: 1.2 }} whileTap={{ scale: 0.9 }} onClick={() => createSimilar(task)} className={`p-2 ${darkMode ? 'bg-purple-900/30 text-purple-400 hover:bg-purple-900/50' : 'bg-purple-50 text-purple-700 hover:bg-purple-100'} rounded-lg transition text-sm`} title="Создать похожее">✨</motion.button>
                               <motion.button whileHover={{ scale: 1.2 }} whileTap={{ scale: 0.9 }} onClick={() => duplicateTask(task)} className={`p-2 ${darkMode ? 'bg-zinc-800 text-stone-400 hover:bg-zinc-700' : 'bg-stone-50 text-stone-700 hover:bg-stone-100'} rounded-lg transition text-sm`} title="Дублировать">📋</motion.button>
                               <motion.button 
                                 whileHover={{ scale: 1.2, rotate: 90 }} 
                                 whileTap={{ scale: 0.9 }} 
-                                onClick={() => {
-                                  console.log("️ КНОПКА НАЖАТА! Пытаюсь удалить задание с ID:", task.id);
-                                  deleteTask(task.id);
-                                }} 
+                                onClick={() => deleteTask(task.id)} 
                                 className={`p-2 ${darkMode ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50' : 'bg-red-50 text-red-700 hover:bg-red-100'} rounded-lg transition text-sm`} 
                                 title="Удалить"
                               >
@@ -873,7 +895,7 @@ function LibraryContent() {
                       return (
                         <motion.div key={task.id} variants={staggerItem} whileHover={{ scale: 1.05, y: -5 }} whileTap={{ scale: 0.95 }} className={`p-4 rounded-xl border transition hover:shadow-md cursor-pointer ${isSelected ? (darkMode ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-300') : darkMode ? 'bg-zinc-900/50 border-zinc-700 hover:border-amber-700' : 'bg-white/80 border-amber-200 hover:border-amber-300'}`} onClick={() => setPreviewTask(task)}>
                           <div className="flex items-center gap-2 mb-2">
-                            <TaskTypeIcon type={task.type} className="w-6 h-6" />
+                            <TaskTypeIcon type={TYPE_TO_ICON[task.type] ?? task.type} className="w-6 h-6" />
                             <h4 className={`font-bold text-sm flex-1 truncate ${darkMode ? 'text-white' : 'text-stone-900'}`}>{task.title}</h4>
                           </div>
                           <p className={`text-xs line-clamp-2 mb-3 ${darkMode ? 'text-stone-300' : 'text-stone-600'}`}>{task.task_text}</p>
@@ -911,7 +933,7 @@ function LibraryContent() {
                     return (
                       <motion.div key={idx} variants={staggerItem} whileHover={{ scale: 1.05, y: -5 }} whileTap={{ scale: 0.95 }} className={`${darkMode ? 'bg-zinc-800 border-zinc-700 hover:border-amber-700' : 'bg-gradient-to-br from-white to-amber-50 border-amber-200 hover:border-amber-400'} rounded-2xl p-5 border-2 hover:shadow-lg transition cursor-pointer`}>
                         <div className="flex items-start gap-3 mb-3">
-                          <TaskTypeIcon type={template.type} className={`w-8 h-8 ${darkMode ? 'text-amber-400' : 'text-amber-700'}`} />
+                          <TaskTypeIcon type={TYPE_TO_ICON[template.type] ?? template.type} className={`w-8 h-8 ${darkMode ? 'text-amber-400' : 'text-amber-700'}`} />
                           <div className="flex-1">
                             <h3 className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-stone-900'}`}>{template.name}</h3>
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -940,7 +962,7 @@ function LibraryContent() {
               <div className="bg-gradient-to-r from-amber-600 to-orange-600 p-5 rounded-t-3xl sticky top-0 z-10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><TaskTypeIcon type={taskType} className="w-6 h-6 text-white" /></div>
+                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><TaskTypeIcon type={TYPE_TO_ICON[taskType] ?? taskType} className="w-6 h-6 text-white" /></div>
                     <h2 className="font-serif font-bold text-xl text-white">{editingTask ? "✏️ Редактировать" : "➕ Новое задание"}</h2>
                   </div>
                   <div className="flex gap-2">
@@ -985,13 +1007,13 @@ function LibraryContent() {
                     <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>Предмет</label>
                     <select value={taskSubject} onChange={(e) => { setTaskSubject(e.target.value as any); setTaskTopicNum(""); setTaskTopic(""); }} className={`w-full ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white/80 border-amber-200'} rounded-xl p-2.5 text-sm mt-1 focus:border-amber-500 focus:outline-none`}>
                       <option value="chemistry">🧪 Химия</option>
-                      <option value="biology"> Биология</option>
+                      <option value="biology">🧬 Биология</option>
                     </select>
                   </div>
                 </div>
 
                 <div>
-                  <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}> Номер задания ЕГЭ</label>
+                  <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>🎯 Номер задания ЕГЭ</label>
                   <div className="flex gap-1 mt-1 flex-wrap max-h-32 overflow-y-auto">
                     {TOPICS[taskSubject].map(t => (
                       <motion.button key={t.num} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} type="button" onClick={() => handleTopicNumChange(t.num)} className={`px-2 py-1 rounded-lg text-xs font-bold transition ${taskTopicNum === t.num ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : darkMode ? 'bg-zinc-800 text-stone-300 hover:bg-zinc-700' : 'bg-amber-50 text-stone-700 hover:bg-amber-100'}`} title={t.name}>
@@ -1022,7 +1044,7 @@ function LibraryContent() {
                 </div>
 
                 <div>
-                  <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>️ Картинка к заданию</label>
+                  <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>🖼️ Картинка к заданию</label>
                   <div className="mt-2 space-y-2">
                     <motion.label whileHover={{ scale: 1.02 }} className={`flex items-center justify-center gap-2 p-4 border-2 border-dashed ${darkMode ? 'border-amber-700 hover:bg-amber-900/20' : 'border-amber-300 hover:bg-amber-50'} rounded-xl cursor-pointer transition`}>
                       <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
@@ -1052,7 +1074,7 @@ function LibraryContent() {
                     <select value={taskDifficulty} onChange={(e) => setTaskDifficulty(e.target.value as any)} className={`w-full ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white/80 border-amber-200'} rounded-xl p-2 text-sm mt-1 focus:border-amber-500 focus:outline-none`}>
                       <option value="easy">🟢 Лёгкое</option>
                       <option value="medium">🟡 Среднее</option>
-                      <option value="hard"> Сложное</option>
+                      <option value="hard">🔴 Сложное</option>
                     </select>
                   </div>
                   <div>
@@ -1091,7 +1113,7 @@ function LibraryContent() {
                       </div>
                       {taskGradingCriteria.length === 0 ? (
                         <div className={`text-center py-6 ${darkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white/60 border-amber-300'} rounded-xl border-2 border-dashed`}>
-                          <p className="text-3xl mb-2"></p>
+                          <p className="text-3xl mb-2">📊</p>
                           <p className={`text-xs font-medium ${darkMode ? 'text-amber-400' : 'text-amber-700'}`}>Добавьте критерии</p>
                         </div>
                       ) : (
@@ -1169,7 +1191,7 @@ function LibraryContent() {
                           <input value={pair.left} onChange={(e) => updatePair(i, "left", e.target.value)} placeholder="Левая часть" className={`flex-1 ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white/80 border-amber-200'} rounded-lg p-2 text-sm focus:border-amber-500 focus:outline-none`} />
                           <span className={`font-bold ${darkMode ? 'text-amber-400' : 'text-amber-500'}`}>=</span>
                           <input value={pair.right} onChange={(e) => updatePair(i, "right", e.target.value)} placeholder="Правая часть" className={`flex-1 ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white/80 border-amber-200'} rounded-lg p-2 text-sm focus:border-amber-500 focus:outline-none`} />
-                          <motion.button whileHover={{ scale: 1.2 }} whileTap={{ scale: 0.8 }} type="button" onClick={() => removePair(i)} className="p-2 text-red-400 hover:text-red-600">️</motion.button>
+                          <motion.button whileHover={{ scale: 1.2 }} whileTap={{ scale: 0.8 }} type="button" onClick={() => removePair(i)} className="p-2 text-red-400 hover:text-red-600">🗑️</motion.button>
                         </motion.div>
                       ))}
                     </div>
@@ -1182,7 +1204,7 @@ function LibraryContent() {
                     <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>Текст с пропусками *</label>
                     <ChemistryEditor value={taskBlanks} onChange={setTaskBlanks} placeholder="Используйте ___ для пропусков" rows={4} darkMode={darkMode} />
                     <div className="mt-3">
-                      <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>Правильные ответы (через запятую) *</label>
+                      <label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>Правильные ответы (через запятую, в том же порядке, что и пропуски) *</label>
                       <ChemistryEditor value={taskAnswer} onChange={setTaskAnswer} placeholder="ответ1, ответ2" rows={2} className="mt-1" darkMode={darkMode} />
                     </div>
                   </div>
@@ -1250,7 +1272,7 @@ function LibraryContent() {
             <motion.div {...scaleIn} className={`${darkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-amber-200'} rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border-2`} onClick={(e) => e.stopPropagation()}>
               <div className="bg-gradient-to-r from-amber-600 to-orange-600 p-5 rounded-t-3xl">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3"><TaskTypeIcon type={previewTask.type} className="w-8 h-8 text-white" /><h2 className="font-serif font-bold text-xl text-white">{previewTask.title}</h2></div>
+                  <div className="flex items-center gap-3"><TaskTypeIcon type={TYPE_TO_ICON[previewTask.type] ?? previewTask.type} className="w-8 h-8 text-white" /><h2 className="font-serif font-bold text-xl text-white">{previewTask.title}</h2></div>
                   <motion.button whileHover={{ scale: 1.2, rotate: 90 }} whileTap={{ scale: 0.8 }} onClick={() => setPreviewTask(null)} className="text-white/80 hover:text-white text-3xl">×</motion.button>
                 </div>
               </div>
@@ -1267,12 +1289,12 @@ function LibraryContent() {
                 {previewTask.variants?.length > 0 && (
                   <div className="space-y-2">{previewTask.variants.map((v: string, i: number) => (<div key={i} className={`p-3 rounded-xl border ${previewTask.correct_indices?.includes(i) ? (darkMode ? 'bg-emerald-900/30 border-emerald-700' : 'bg-emerald-50 border-emerald-300') : darkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-amber-200'}`}><span className={`font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>{String.fromCharCode(65 + i)}.</span> {v}{previewTask.correct_indices?.includes(i) && <span className="ml-2 text-emerald-600 font-bold">✓</span>}</div>))}</div>
                 )}
-                {previewTask.hint && (<div className={`${darkMode ? 'bg-amber-900/20 border-amber-700' : 'bg-amber-50 border-amber-200'} rounded-xl p-4 border`}><p className={`text-xs font-bold mb-1 ${darkMode ? 'text-amber-400' : 'text-amber-700'}`}> Подсказка:</p><p className={`text-sm ${darkMode ? 'text-stone-300' : 'text-stone-700'}`}>{previewTask.hint}</p></div>)}
+                {previewTask.hint && (<div className={`${darkMode ? 'bg-amber-900/20 border-amber-700' : 'bg-amber-50 border-amber-200'} rounded-xl p-4 border`}><p className={`text-xs font-bold mb-1 ${darkMode ? 'text-amber-400' : 'text-amber-700'}`}>💡 Подсказка:</p><p className={`text-sm ${darkMode ? 'text-stone-300' : 'text-stone-700'}`}>{previewTask.hint}</p></div>)}
                 {previewTask.solution && (<div className={`${darkMode ? 'bg-emerald-900/20 border-emerald-700' : 'bg-emerald-50 border-emerald-200'} rounded-xl p-4 border`}><p className={`text-xs font-bold mb-1 ${darkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>📖 Разбор:</p><p className={`text-sm ${darkMode ? 'text-stone-300' : 'text-stone-700'} whitespace-pre-wrap`}>{previewTask.solution}</p></div>)}
                 <div className={`${darkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-stone-100 border-stone-200'} rounded-xl p-4 border`}>
                   <p className={`text-xs font-bold mb-1 ${darkMode ? 'text-stone-400' : 'text-stone-600'}`}>✅ Правильный ответ:</p>
                   <p className={`text-sm font-mono ${darkMode ? 'text-white' : 'text-stone-800'}`}>{previewTask.correct_answer}</p>
-                  {previewTask.correct_answers?.length > 1 && (<div className="mt-2 flex flex-wrap gap-1">{previewTask.correct_answers.map((a: string, i: number) => (<span key={i} className={`text-xs px-2 py-1 ${darkMode ? 'bg-emerald-900/50 text-emerald-400' : 'bg-emerald-100 text-emerald-800'} rounded-full`}>✓ {a}</span>))}</div>)}
+                  {previewTask.alt_answers?.length > 0 && (<div className="mt-2 flex flex-wrap gap-1">{previewTask.alt_answers.map((a: string, i: number) => (<span key={i} className={`text-xs px-2 py-1 ${darkMode ? 'bg-emerald-900/50 text-emerald-400' : 'bg-emerald-100 text-emerald-800'} rounded-full`}>✓ {a}</span>))}</div>)}
                 </div>
                 {previewTask.grading === "partial" && previewTask.grading_criteria?.length > 0 && (
                   <div className={`${darkMode ? 'bg-amber-900/20 border-amber-700' : 'bg-amber-50 border-amber-200'} rounded-xl p-4 border`}>
@@ -1295,7 +1317,7 @@ function LibraryContent() {
                 <div><label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>Название папки *</label><input value={folderName} onChange={(e) => setFolderName(e.target.value)} placeholder="Например: ОВР" className={`w-full ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white/80 border-amber-200'} rounded-xl p-2.5 text-sm mt-1 focus:border-amber-500 focus:outline-none`} /></div>
                 <div><label className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-stone-700'}`}>📂 Родительская папка</label><select value={folderParentId} onChange={(e) => setFolderParentId(e.target.value)} className={`w-full ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white/80 border-amber-200'} rounded-xl p-2.5 text-sm mt-1 focus:border-amber-500 focus:outline-none`}><option value="">— Корневая папка —</option>{folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select><p className={`text-xs mt-1 ${darkMode ? 'text-stone-400' : 'text-stone-500'}`}>💡 Оставьте пустым для корневой папки</p></div>
                 <div className="flex gap-3">
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3 rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 transition shadow-lg"> Создать</motion.button>
+                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3 rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 transition shadow-lg">📁 Создать</motion.button>
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="button" onClick={() => setShowFolderForm(false)} className={`px-6 py-3 ${darkMode ? 'bg-zinc-800 text-white hover:bg-zinc-700' : 'bg-stone-200 text-stone-700 hover:bg-stone-300'} rounded-xl font-bold transition`}>Отмена</motion.button>
                 </div>
               </form>
@@ -1328,7 +1350,7 @@ function LibraryContent() {
 export default function LibraryPage() {
   return (
     <AuthGuard allowedRole="tutor">
-      <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-stone-100 flex items-center justify-center"><div className="text-center"><div className="text-6xl mb-4 animate-pulse"></div><p className="text-amber-700 font-serif italic">Загрузка...</p></div></div>}>
+      <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-stone-100 flex items-center justify-center"><div className="text-center"><div className="text-6xl mb-4 animate-pulse">📚</div><p className="text-amber-700 font-serif italic">Загрузка...</p></div></div>}>
         <LibraryContent />
       </Suspense>
     </AuthGuard>

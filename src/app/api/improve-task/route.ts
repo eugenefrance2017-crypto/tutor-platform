@@ -1,9 +1,23 @@
 import { NextResponse } from 'next/server';
+import { verifyTutorRequest } from '@/lib/verify-request';
+
+const improvementPrompts: Record<string, string> = {
+  harder: 'Сделай задание сложнее: добавь больше шагов решения, используй более сложные вещества/понятия, увеличь количество вариантов ответа.',
+  easier: 'Сделай задание проще: упрости условие, добавь подсказку, уменьши количество вариантов ответа.',
+  hint: 'Добавь подробную подсказку к заданию, которая поможет ученику решить его самостоятельно.',
+  explain: 'Добавь более подробное объяснение решения с пошаговым разбором.',
+  variants: 'Добавь ещё 2 варианта ответа (всего должно быть 6 вариантов).'
+};
 
 export async function POST(request: Request) {
+  const auth = await verifyTutorRequest(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const { task, improvementType } = await request.json();
-    
+
     if (!task || !improvementType) {
       return NextResponse.json({ error: 'Не хватает параметров' }, { status: 400 });
     }
@@ -12,14 +26,6 @@ export async function POST(request: Request) {
     if (!apiKey) {
       return NextResponse.json({ error: 'API ключ не настроен' }, { status: 500 });
     }
-
-    const improvementPrompts = {
-      harder: 'Сделай задание сложнее: добавь больше шагов решения, используй более сложные вещества/понятия, увеличь количество вариантов ответа.',
-      easier: 'Сделай задание проще: упрости условие, добавь подсказку, уменьши количество вариантов ответа.',
-      hint: 'Добавь подробную подсказку к заданию, которая поможет ученику решить его самостоятельно.',
-      explain: 'Добавь более подробное объяснение решения с пошаговым разбором.',
-      variants: 'Добавь ещё 2 варианта ответа (всего должно быть 6 вариантов).'
-    };
 
     const systemPrompt = `Ты — методист ЕГЭ. Улучши задание согласно запросу: "${improvementPrompts[improvementType] || improvementType}"
 

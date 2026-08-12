@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import toast from "react-hot-toast";
 import AuthGuard from "@/components/AuthGuard";
+import { authedFetch } from "@/lib/authed-fetch";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA59ya6aCzYA0YfwQo8B91u8Pp94ZUDM-4",
@@ -43,6 +44,31 @@ const HOMEWORK_TOPICS = [
   { name: "Экосистемы", ege: "23-25", subject: "biology" },
 ];
 
+// ВНИМАНИЕ: этот список — рабочая заглушка, а не выверенный официальный кодификатор.
+// В исходном коде EGE_TASK_NUMBERS использовался, но нигде не был объявлен, из-за чего
+// вкладка "ИИ Генерация" падала с ReferenceError при выборе номера задания.
+// Перед боевым использованием сверь номера/темы/типы с актуальным кодификатором ФИПИ
+// на текущий год — здесь они приведены приблизительно, по памяти.
+const EGE_TASK_NUMBERS: { number: number; name: string; subject: string; type: string }[] = [
+  { number: 1, name: "Строение электронной оболочки атома", subject: "chemistry", type: "single_choice" },
+  { number: 2, name: "Периодический закон и строение атома", subject: "chemistry", type: "single_choice" },
+  { number: 4, name: "Электроотрицательность, степень окисления", subject: "chemistry", type: "single_choice" },
+  { number: 7, name: "Химическая связь и строение вещества", subject: "chemistry", type: "single_choice" },
+  { number: 13, name: "Алканы, алкены, алкины — свойства", subject: "chemistry", type: "single_choice" },
+  { number: 14, name: "Спирты и фенолы", subject: "chemistry", type: "single_choice" },
+  { number: 15, name: "Карбоновые кислоты и их производные", subject: "chemistry", type: "single_choice" },
+  { number: 27, name: "Расчёты с использованием массовой доли", subject: "chemistry", type: "text" },
+  { number: 28, name: "Задачи на растворы", subject: "chemistry", type: "text" },
+  { number: 29, name: "Окислительно-восстановительные реакции", subject: "chemistry", type: "text" },
+  { number: 30, name: "Реакции ионного обмена, гидролиз", subject: "chemistry", type: "text" },
+  { number: 31, name: "Электролиз растворов и расплавов", subject: "chemistry", type: "text" },
+  { number: 32, name: "Цепочка превращений неорганических веществ", subject: "chemistry", type: "text" },
+  { number: 2, name: "Строение клетки", subject: "biology", type: "single_choice" },
+  { number: 7, name: "Генетика, законы наследственности", subject: "biology", type: "text" },
+  { number: 19, name: "Эволюция, движущие силы", subject: "biology", type: "single_choice" },
+  { number: 23, name: "Экосистемы и их компоненты", subject: "biology", type: "matching" },
+];
+
 function AIGeneratorContent() {
   const searchParams = useSearchParams();
   const uid = searchParams.get("uid") || (typeof window !== "undefined" ? localStorage.getItem("uid") : "") || "";
@@ -51,9 +77,9 @@ function AIGeneratorContent() {
   const [bankFolders, setBankFolders] = useState<any[]>([]);
   const [bankAllTasks, setBankAllTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [aiMode, setAiMode] = useState<'random' | 'example' | 'ai' | 'internet'>('random');
-  
+
   const [aiConfig, setAiConfig] = useState({
     folderId: null as string | null,
     count: 5,
@@ -64,10 +90,10 @@ function AIGeneratorContent() {
     includeTests: true,
     includeInteractive: true,
   });
-  
+
   const [aiTopicFilter, setAiTopicFilter] = useState("");
   const [aiExample, setAiExample] = useState("");
-  
+
   const [aiGenConfig, setAiGenConfig] = useState({
     topic: "",
     subject: "chemistry",
@@ -76,15 +102,15 @@ function AIGeneratorContent() {
     egeNumber: null as number | null,
   });
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   const [aiPreview, setAiPreview] = useState<any[]>([]);
   const [aiHistory, setAiHistory] = useState<any[]>([]);
-  
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImproving, setIsImproving] = useState<number | null>(null);
-  
+
   const [editingTask, setEditingTask] = useState<any>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
 
@@ -98,7 +124,7 @@ function AIGeneratorContent() {
         const tasks = ts.docs.map(d => ({ id: d.id, ...d.data() }));
         console.log("📚 Загружено заданий из банка:", tasks.length);
         setBankAllTasks(tasks);
-      } catch (e) { 
+      } catch (e) {
         console.error("Ошибка загрузки банка:", e);
         toast.error("Не удалось загрузить банк заданий");
       }
@@ -128,7 +154,7 @@ function AIGeneratorContent() {
 
   const copyToClipboard = (task: any) => {
     let text = `${task.title}\n\n${task.task_text}\n\n`;
-    
+
     if (task.variants && task.variants.length > 0) {
       text += "Варианты ответов:\n";
       task.variants.forEach((v: string, i: number) => {
@@ -136,15 +162,15 @@ function AIGeneratorContent() {
       });
       text += "\n";
     }
-    
+
     if (task.correct_answer) {
       text += `Правильный ответ: ${task.correct_answer}\n`;
     }
-    
+
     if (task.explanation) {
       text += `\nОбъяснение: ${task.explanation}\n`;
     }
-    
+
     navigator.clipboard.writeText(text);
     toast.success("Скопировано в буфер обмена!");
   };
@@ -152,22 +178,18 @@ function AIGeneratorContent() {
   const regenerateSingleTask = async (index: number) => {
     const task = aiPreview[index];
     if (!task) return;
-    
+
     setIsImproving(index);
     try {
-      const res = await fetch('/api/generate-task', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: aiGenConfig.topic || task.title,
-          subject: aiGenConfig.subject,
-          type: task.type,
-          count: 1
-        })
+      const res = await authedFetch('/api/generate-task', {
+        topic: aiGenConfig.topic || task.title,
+        subject: aiGenConfig.subject,
+        type: task.type,
+        count: 1
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
+
       if (data.tasks && data.tasks.length > 0) {
         const newPreview = [...aiPreview];
         newPreview[index] = { ...data.tasks[0], id: `regen-${Date.now()}` };
@@ -184,17 +206,13 @@ function AIGeneratorContent() {
   const improveTask = async (index: number, improvementType: string) => {
     const task = aiPreview[index];
     if (!task) return;
-    
+
     setIsImproving(index);
     try {
-      const res = await fetch('/api/improve-task', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, improvementType })
-      });
+      const res = await authedFetch('/api/improve-task', { task, improvementType });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
+
       if (data.task) {
         const newPreview = [...aiPreview];
         newPreview[index] = { ...data.task, id: task.id };
@@ -246,17 +264,17 @@ function AIGeneratorContent() {
   }
 
   function analyzeExample(text: string) {
-    const a = { 
-      type: "text" as string, 
-      topic: "", 
-      keywords: [] as string[], 
-      hasFormula: false, 
-      hasNumbers: false, 
+    const a = {
+      type: "text" as string,
+      topic: "",
+      keywords: [] as string[],
+      hasFormula: false,
+      hasNumbers: false,
       difficulty: "medium" as string,
       detectedType: "" as string
     };
     const tl = text.toLowerCase();
-    
+
     if (/выберите|какой из|вариант ответа|один из/.test(tl)) {
       a.type = "single_choice";
       a.detectedType = "тест с выбором ответа";
@@ -286,54 +304,54 @@ function AIGeneratorContent() {
       a.type = "text";
       a.detectedType = "текстовое задание";
     }
-    
+
     if (/[A-Z][a-z]?\d|[A-Z][a-z]?₂|[A-Z][a-z]?₃/.test(text)) {
       a.hasFormula = true;
       const f = text.match(/[A-Z][a-z]?[₀-₉]?(?:\([^)]+\)[₀-₉]?)?/g) || [];
       a.keywords = [...new Set(f)].slice(0, 5);
     }
-    
+
     const words = text.split(/\s+/).length;
     if (words > 50 || a.hasFormula) a.difficulty = "hard";
     else if (words > 20) a.difficulty = "medium";
     else a.difficulty = "easy";
-    
+
     return a;
   }
 
   function generateFromExample() {
     console.log("️ Запуск генерации по примеру...");
     console.log("📊 Всего заданий в банке:", bankAllTasks.length);
-    
-    if (!aiExample.trim()) { 
-      toast.error("📜 Введите пример задания"); 
-      return; 
+
+    if (!aiExample.trim()) {
+      toast.error("📜 Введите пример задания");
+      return;
     }
-    
+
     if (bankAllTasks.length === 0) {
       toast.error("📚 Банк заданий пуст! Сначала добавьте задания в банк.");
       return;
     }
-    
+
     const analysis = analyzeExample(aiExample);
     console.log("🔍 Анализ примера:", analysis);
-    
+
     let similar = bankAllTasks.filter(t => t.type === analysis.type);
     console.log(`📝 Найдено заданий типа "${analysis.type}":`, similar.length);
-    
+
     if (similar.length === 0) {
       console.log("⚠️ Заданий нужного типа нет, берём любые...");
       similar = [...bankAllTasks];
     }
-    
+
     if (aiConfig.folderId) {
       similar = similar.filter(t => t.folder_id === aiConfig.folderId);
       console.log("📁 После фильтра по папке:", similar.length);
     }
-    
+
     if (aiTopicFilter) {
-      const byTopic = similar.filter(t => 
-        t.topic === aiTopicFilter || 
+      const byTopic = similar.filter(t =>
+        t.topic === aiTopicFilter ||
         t.tags?.includes(aiTopicFilter) ||
         t.title?.toLowerCase().includes(aiTopicFilter.toLowerCase())
       );
@@ -342,16 +360,16 @@ function AIGeneratorContent() {
         console.log("🎯 После фильтра по теме:", similar.length);
       }
     }
-    
+
     similar = similar.sort(() => Math.random() - 0.5);
     const count = Math.min(aiConfig.count, similar.length);
     const selected = similar.slice(0, count);
-    
+
     console.log(`✅ Выбрано ${count} заданий для вариаций`);
-    
+
     const newSections = selected.map((task, idx) => {
       const base = convertBankTaskToSection(task);
-      
+
       if (task.type === "text" && task.task_text && analysis.hasNumbers) {
         base.data.task_text = task.task_text.replace(/\d+/g, () => {
           const num = Math.floor(Math.random() * 100) + 1;
@@ -359,7 +377,7 @@ function AIGeneratorContent() {
         });
         base.title = `Вариация #${idx + 1}: ${task.title}`;
       }
-      
+
       if ((task.type === "single_choice" || task.type === "multi_choice") && task.questions?.length > 0) {
         base.data.questions = task.questions.map((q: any) => {
           const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
@@ -368,10 +386,10 @@ function AIGeneratorContent() {
         });
         base.title = `Вариация #${idx + 1}: ${task.title}`;
       }
-      
+
       return base;
     });
-    
+
     console.log("🎉 Сгенерировано секций:", newSections.length);
     setAiPreview(newSections);
     toast.success(`️ Сочинено ${newSections.length} вариаций!`);
@@ -380,54 +398,54 @@ function AIGeneratorContent() {
   function previewAIHomework() {
     console.log(" Запуск случайной генерации...");
     console.log("📊 Всего заданий в банке:", bankAllTasks.length);
-    
+
     if (bankAllTasks.length === 0) {
       toast.error(" Банк заданий пуст!");
       return;
     }
-    
+
     let tasks = [...bankAllTasks];
-    
+
     if (aiConfig.folderId) {
       tasks = tasks.filter(t => t.folder_id === aiConfig.folderId);
       console.log("📁 После фильтра по папке:", tasks.length);
     }
-    
+
     if (aiTopicFilter) {
-      tasks = tasks.filter(t => 
-        t.topic === aiTopicFilter || 
+      tasks = tasks.filter(t =>
+        t.topic === aiTopicFilter ||
         t.tags?.includes(aiTopicFilter)
       );
       console.log(" После фильтра по теме:", tasks.length);
     }
-    
+
     const allowed: string[] = [];
     if (aiConfig.includeText) allowed.push('text', 'photo');
     if (aiConfig.includeTests) allowed.push('single_choice', 'multi_choice');
     if (aiConfig.includeInteractive) allowed.push('matching', 'ordering', 'table_fill', 'drag_drop');
-    
+
     if (allowed.length > 0) {
       tasks = tasks.filter(t => allowed.includes(t.type));
       console.log("🎨 После фильтра по типам:", tasks.length);
     }
-    
+
     if (aiConfig.tags.length > 0) {
       tasks = tasks.filter(t => t.tags && aiConfig.tags.some(tag => t.tags.includes(tag)));
       console.log("🏷️ После фильтра по тегам:", tasks.length);
     }
-    
-    if (tasks.length === 0) { 
-      toast.error("📜 Нет заданий по выбранным фильтрам"); 
-      return; 
+
+    if (tasks.length === 0) {
+      toast.error("📜 Нет заданий по выбранным фильтрам");
+      return;
     }
-    
+
     if (aiConfig.shuffle) tasks = tasks.sort(() => Math.random() - 0.5);
-    
+
     const count = Math.min(aiConfig.count, tasks.length);
     const selected = tasks.slice(0, count);
-    
+
     console.log(`✅ Выбрано ${count} заданий`);
-    
+
     setAiPreview(selected.map(convertBankTaskToSection));
     toast.success(` Сгенерировано ${count} заданий!`);
   }
@@ -436,15 +454,11 @@ function AIGeneratorContent() {
     if (!aiGenConfig.topic) { toast.error("Укажите тему для генерации"); return; }
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/generate-task', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(aiGenConfig)
-      });
+      const res = await authedFetch('/api/generate-task', aiGenConfig);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
-      const tasksWithIds = data.tasks.map((t: any) => ({ ...t, id: `ai-${Date.now()}-${Math.random()}` }));
+
+      const tasksWithIds = data.tasks.map((t: any) => ({ ...t, id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
       setAiPreview(tasksWithIds);
       toast.success(`🤖 Сгенерировано ${tasksWithIds.length} заданий`);
     } catch (e: any) {
@@ -458,15 +472,11 @@ function AIGeneratorContent() {
     if (!searchQuery.trim()) { toast.error("Введите поисковый запрос"); return; }
     setIsSearching(true);
     try {
-      const res = await fetch('/api/search-ege', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery, subject: aiGenConfig.subject, count: aiGenConfig.count })
-      });
+      const res = await authedFetch('/api/search-ege', { query: searchQuery, subject: aiGenConfig.subject, count: aiGenConfig.count });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
-      const tasksWithIds = data.tasks.map((t: any) => ({ ...t, id: `net-${Date.now()}-${Math.random()}` }));
+
+      const tasksWithIds = data.tasks.map((t: any) => ({ ...t, id: `net-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
       setAiPreview(tasksWithIds);
       toast.success(` Найдено ${tasksWithIds.length} фрагментов`);
     } catch (e: any) {
@@ -476,15 +486,13 @@ function AIGeneratorContent() {
     }
   };
 
-  // ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ СОХРАНЕНИЯ В БАНК
   const handleSaveToBank = async () => {
     if (aiPreview.length === 0) return;
     setIsSaving(true);
     try {
       const savedTasks = [];
-      
+
       for (const task of aiPreview) {
-        // ✅ ИСПОЛЬЗУЕМ setDoc С ЗАДАННЫМ ID ВМЕСТО addDoc
         const taskRef = doc(db, "tasks_bank", task.id);
         await setDoc(taskRef, {
           ...task,
@@ -495,11 +503,10 @@ function AIGeneratorContent() {
         });
         savedTasks.push({ ...task, id: task.id });
       }
-      
+
       toast.success(`💾 Успешно сохранено ${savedTasks.length} заданий в банк!`);
       setAiPreview([]);
-      
-      // Обновляем список банка
+
       const ts = await getDocs(query(collection(db, "tasks_bank"), where("tutor_id", "==", uid)));
       setBankAllTasks(ts.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (e: any) {
@@ -708,12 +715,12 @@ function AIGeneratorContent() {
           <div className="bg-gradient-to-br from-stone-900 via-stone-800 to-stone-900 rounded-2xl p-6 border border-amber-900/30 shadow-2xl space-y-4">
             <div>
               <label className="text-amber-200/80 text-sm font-serif italic block mb-2">📜 Вставьте пример задания</label>
-              <textarea 
-                value={aiExample} 
-                onChange={(e) => setAiExample(e.target.value)} 
-                placeholder="Например: Рассчитайте массу осадка, образовавшегося при взаимодействии 50 г раствора хлорида бария с избытком раствора серной кислоты..." 
-                rows={6} 
-                className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-4 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none transition resize-none" 
+              <textarea
+                value={aiExample}
+                onChange={(e) => setAiExample(e.target.value)}
+                placeholder="Например: Рассчитайте массу осадка, образовавшегося при взаимодействии 50 г раствора хлорида бария с избытком раствора серной кислоты..."
+                rows={6}
+                className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-4 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none transition resize-none"
               />
               <p className="text-xs text-amber-200/40 font-serif italic mt-2">Чем подробнее пример, тем точнее вариации</p>
             </div>
@@ -787,14 +794,14 @@ function AIGeneratorContent() {
           <div className="bg-gradient-to-br from-stone-900 via-stone-800 to-stone-900 rounded-2xl p-6 border border-amber-900/30 shadow-2xl space-y-4">
             <div>
               <label className="text-amber-200/80 text-sm font-serif italic block mb-2"> Номер задания ЕГЭ (необязательно)</label>
-              <select 
-                value={aiGenConfig.egeNumber || ''} 
+              <select
+                value={aiGenConfig.egeNumber || ''}
                 onChange={(e) => handleEGENumberSelect(parseInt(e.target.value))}
                 className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none transition"
               >
                 <option value="">Выберите номер задания...</option>
                 {EGE_TASK_NUMBERS.map(t => (
-                  <option key={t.number} value={t.number}>Задание {t.number}: {t.name} ({t.type})</option>
+                  <option key={`${t.subject}-${t.number}`} value={t.number}>Задание {t.number}: {t.name} ({t.type})</option>
                 ))}
               </select>
             </div>
@@ -820,10 +827,10 @@ function AIGeneratorContent() {
 
             <div>
               <label className="text-amber-200/80 text-sm font-serif italic block mb-2">📝 Тема для генерации</label>
-              <input 
-                type="text" 
-                value={aiGenConfig.topic} 
-                onChange={(e) => setAiGenConfig({...aiGenConfig, topic: e.target.value})} 
+              <input
+                type="text"
+                value={aiGenConfig.topic}
+                onChange={(e) => setAiGenConfig({...aiGenConfig, topic: e.target.value})}
                 placeholder="Например: Гидролиз солей, задание 21"
                 className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none transition"
               />
@@ -837,9 +844,9 @@ function AIGeneratorContent() {
               </div>
             </div>
 
-            <button 
-              onClick={handleAIGenerate} 
-              disabled={isGenerating || !aiGenConfig.topic} 
+            <button
+              onClick={handleAIGenerate}
+              disabled={isGenerating || !aiGenConfig.topic}
               className="w-full bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-stone-900 py-4 rounded-xl font-serif italic text-lg font-bold transition border border-amber-600/30 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-900/30 flex items-center justify-center gap-2"
             >
               {isGenerating ? <span className="animate-spin">⏳</span> : '🤖'} {isGenerating ? 'Генерация...' : 'Сгенерировать задания'}
@@ -851,10 +858,10 @@ function AIGeneratorContent() {
           <div className="bg-gradient-to-br from-stone-900 via-stone-800 to-stone-900 rounded-2xl p-6 border border-amber-900/30 shadow-2xl space-y-4">
             <div>
               <label className="text-amber-200/80 text-sm font-serif italic block mb-2">🔍 Поисковый запрос</label>
-              <input 
-                type="text" 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Например: ЕГЭ химия задание 13 алкены"
                 className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none transition"
               />
@@ -878,9 +885,9 @@ function AIGeneratorContent() {
               </div>
             </div>
 
-            <button 
-              onClick={handleInternetSearch} 
-              disabled={isSearching || !searchQuery} 
+            <button
+              onClick={handleInternetSearch}
+              disabled={isSearching || !searchQuery}
               className="w-full bg-gradient-to-r from-blue-900/80 to-blue-800/80 hover:from-blue-800 hover:to-blue-700 text-amber-100 py-4 rounded-xl font-serif italic text-lg font-bold transition border border-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2"
             >
               {isSearching ? <span className="animate-spin">⏳</span> : '🌐'} {isSearching ? 'Поиск...' : 'Найти в интернете'}
@@ -895,8 +902,8 @@ function AIGeneratorContent() {
                 <p className="text-amber-200/60 text-xs tracking-[0.3em] uppercase mb-1 font-light">Предпросмотр</p>
                 <h3 className="text-2xl font-serif italic text-amber-100">{aiPreview.length} заданий готовы</h3>
               </div>
-              <button 
-                onClick={handleSaveToBank} 
+              <button
+                onClick={handleSaveToBank}
                 disabled={isSaving}
                 className="bg-green-700/80 hover:bg-green-600/80 text-white px-6 py-3 rounded-xl font-serif italic font-bold transition flex items-center gap-2 disabled:opacity-50"
               >
@@ -946,23 +953,23 @@ function AIGeneratorContent() {
                       {sec.correct_answer && (
                         <p className="text-xs text-green-400/80 font-serif italic mt-2">Ответ: {sec.correct_answer}</p>
                       )}
-                      
+
                       <div className="flex gap-2 mt-3 flex-wrap">
-                        <button 
+                        <button
                           onClick={() => openEditModal(sec)}
                           className="px-3 py-1 bg-blue-900/50 hover:bg-blue-800/50 text-blue-200 rounded-lg text-xs font-serif italic transition flex items-center gap-1"
                           title="Редактировать"
                         >
                           ✏️ Изменить
                         </button>
-                        <button 
+                        <button
                           onClick={() => copyToClipboard(sec)}
                           className="px-3 py-1 bg-purple-900/50 hover:bg-purple-800/50 text-purple-200 rounded-lg text-xs font-serif italic transition flex items-center gap-1"
                           title="Копировать"
                         >
                           📋 Копировать
                         </button>
-                        <button 
+                        <button
                           onClick={() => regenerateSingleTask(idx)}
                           disabled={isImproving === idx}
                           className="px-3 py-1 bg-orange-900/50 hover:bg-orange-800/50 text-orange-200 rounded-lg text-xs font-serif italic transition flex items-center gap-1 disabled:opacity-50"
@@ -970,44 +977,44 @@ function AIGeneratorContent() {
                         >
                           {isImproving === idx ? '' : '🔄'} Перегенерировать
                         </button>
-                        
+
                         <div className="relative group/improve">
-                          <button 
+                          <button
                             className="px-3 py-1 bg-pink-900/50 hover:bg-pink-800/50 text-pink-200 rounded-lg text-xs font-serif italic transition flex items-center gap-1"
                             title="Улучшить с помощью ИИ"
                           >
                              Улучшить
                           </button>
                           <div className="absolute left-0 top-full mt-1 w-48 bg-stone-900 border border-amber-900/30 rounded-lg shadow-xl opacity-0 invisible group-hover/improve:opacity-100 group-hover/improve:visible transition-all z-50">
-                            <button 
+                            <button
                               onClick={() => improveTask(idx, 'harder')}
                               disabled={isImproving === idx}
                               className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition first:rounded-t-lg disabled:opacity-50"
                             >
                               ⚡ Сделать сложнее
                             </button>
-                            <button 
+                            <button
                               onClick={() => improveTask(idx, 'easier')}
                               disabled={isImproving === idx}
                               className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
                             >
                               🌸 Сделать проще
                             </button>
-                            <button 
+                            <button
                               onClick={() => improveTask(idx, 'hint')}
                               disabled={isImproving === idx}
                               className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
                             >
                               💡 Добавить подсказку
                             </button>
-                            <button 
+                            <button
                               onClick={() => improveTask(idx, 'explain')}
                               disabled={isImproving === idx}
                               className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
                             >
                               📚 Подробное объяснение
                             </button>
-                            <button 
+                            <button
                               onClick={() => improveTask(idx, 'variants')}
                               disabled={isImproving === idx}
                               className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition last:rounded-b-lg disabled:opacity-50"
@@ -1044,8 +1051,8 @@ function AIGeneratorContent() {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => { 
-                if (aiMode === 'random') previewAIHomework(); 
+              <button onClick={() => {
+                if (aiMode === 'random') previewAIHomework();
                 else if (aiMode === 'example') generateFromExample();
                 else if (aiMode === 'ai') handleAIGenerate();
                 else if (aiMode === 'internet') handleInternetSearch();
@@ -1070,8 +1077,8 @@ function AIGeneratorContent() {
                     <p className="text-xs text-amber-200/50 font-serif">{new Date(item.date).toLocaleDateString("ru-RU")}</p>
                   </div>
                   <span className="text-xs text-amber-200/40 font-serif italic">
-                    {item.config?.mode === 'example' ? 'по примеру' : 
-                     item.config?.mode === 'ai' ? 'ИИ' : 
+                    {item.config?.mode === 'example' ? 'по примеру' :
+                     item.config?.mode === 'ai' ? 'ИИ' :
                      item.config?.mode === 'internet' ? 'интернет' : 'случайно'}
                   </span>
                 </div>
@@ -1091,13 +1098,13 @@ function AIGeneratorContent() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-stone-900 border border-amber-900/30 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-serif italic text-amber-100 mb-4">✏️ Редактирование задания</h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="text-amber-200/80 text-sm font-serif italic block mb-2">Название</label>
-                <input 
-                  type="text" 
-                  value={editingTask.title || ''} 
+                <input
+                  type="text"
+                  value={editingTask.title || ''}
                   onChange={(e) => setEditingTask({...editingTask, title: e.target.value})}
                   className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none"
                 />
@@ -1105,8 +1112,8 @@ function AIGeneratorContent() {
 
               <div>
                 <label className="text-amber-200/80 text-sm font-serif italic block mb-2">Текст задания</label>
-                <textarea 
-                  value={editingTask.task_text || ''} 
+                <textarea
+                  value={editingTask.task_text || ''}
                   onChange={(e) => setEditingTask({...editingTask, task_text: e.target.value})}
                   rows={4}
                   className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none resize-none"
@@ -1119,9 +1126,9 @@ function AIGeneratorContent() {
                   <div className="space-y-2">
                     {editingTask.variants.map((v: string, i: number) => (
                       <div key={i} className="flex gap-2">
-                        <input 
-                          type="text" 
-                          value={v} 
+                        <input
+                          type="text"
+                          value={v}
                           onChange={(e) => {
                             const newVariants = [...editingTask.variants];
                             newVariants[i] = e.target.value;
@@ -1129,7 +1136,7 @@ function AIGeneratorContent() {
                           }}
                           className="flex-1 bg-stone-950/50 border border-amber-900/30 rounded-lg p-2 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none"
                         />
-                        <button 
+                        <button
                           onClick={() => {
                             const newVariants = editingTask.variants.filter((_: any, idx: number) => idx !== i);
                             setEditingTask({...editingTask, variants: newVariants});
@@ -1140,7 +1147,7 @@ function AIGeneratorContent() {
                         </button>
                       </div>
                     ))}
-                    <button 
+                    <button
                       onClick={() => setEditingTask({...editingTask, variants: [...editingTask.variants, '']})}
                       className="w-full py-2 bg-amber-900/30 hover:bg-amber-800/30 text-amber-200 rounded-lg text-sm font-serif italic transition"
                     >
@@ -1152,9 +1159,9 @@ function AIGeneratorContent() {
 
               <div>
                 <label className="text-amber-200/80 text-sm font-serif italic block mb-2">Правильный ответ</label>
-                <input 
-                  type="text" 
-                  value={editingTask.correct_answer || ''} 
+                <input
+                  type="text"
+                  value={editingTask.correct_answer || ''}
                   onChange={(e) => setEditingTask({...editingTask, correct_answer: e.target.value})}
                   className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none"
                 />
@@ -1162,8 +1169,8 @@ function AIGeneratorContent() {
 
               <div>
                 <label className="text-amber-200/80 text-sm font-serif italic block mb-2">Объяснение</label>
-                <textarea 
-                  value={editingTask.explanation || ''} 
+                <textarea
+                  value={editingTask.explanation || ''}
                   onChange={(e) => setEditingTask({...editingTask, explanation: e.target.value})}
                   rows={3}
                   className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none resize-none"
@@ -1171,13 +1178,13 @@ function AIGeneratorContent() {
               </div>
 
               <div className="flex gap-3 pt-4">
-                <button 
+                <button
                   onClick={saveEditedTask}
                   className="flex-1 bg-gradient-to-r from-green-700 to-green-600 hover:from-green-600 hover:to-green-500 text-white py-3 rounded-xl font-serif italic font-bold transition"
                 >
                   💾 Сохранить изменения
                 </button>
-                <button 
+                <button
                   onClick={() => { setEditModalOpen(false); setEditingTask(null); }}
                   className="flex-1 bg-stone-800 hover:bg-stone-700 text-amber-200 py-3 rounded-xl font-serif italic transition"
                 >

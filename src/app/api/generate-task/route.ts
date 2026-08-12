@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
+import { verifyTutorRequest } from '@/lib/verify-request';
 
 export async function POST(request: Request) {
+  const auth = await verifyTutorRequest(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
-    const { topic, subject, type, count = 1, exam = 'ege' } = await request.json();
-    
+    const { topic, subject, type, count = 1 } = await request.json();
+
     if (!topic || !subject || !type) {
       return NextResponse.json({ error: 'Не хватает параметров' }, { status: 400 });
     }
@@ -108,17 +114,20 @@ export async function POST(request: Request) {
     const parsed = JSON.parse(rawContent);
     const tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
 
-    // ВАЛИДАЦИЯ структуры
-    tasks.forEach((task: any, idx: number) => {
+    // Валидация структуры — отбрасываем задания без обязательных полей
+    const validTasks = tasks.filter((task: any, idx: number) => {
       if (!task.type || !task.task_text) {
-        console.error(`Задание ${idx} не имеет обязательных полей`);
+        console.error(`Задание ${idx} не имеет обязательных полей — пропущено`);
+        return false;
       }
       if (task.type === 'single_choice' && (!task.variants || task.variants.length < 2)) {
-        console.error(`Задание ${idx} типа single_choice не имеет вариантов`);
+        console.error(`Задание ${idx} типа single_choice не имеет вариантов — пропущено`);
+        return false;
       }
+      return true;
     });
 
-    return NextResponse.json({ success: true, tasks });
+    return NextResponse.json({ success: true, tasks: validTasks });
 
   } catch (error: any) {
     console.error("Ошибка:", error);
