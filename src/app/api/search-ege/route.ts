@@ -1,105 +1,83 @@
 import { NextResponse } from 'next/server';
+import * as cheerio from 'cheerio';
+import { verifyTutorRequest } from '@/lib/verify-request';
+
+const SUBJECT_MAP: Record<string, string> = {
+  chemistry: 'chem',
+  biology: 'bio',
+};
 
 export async function POST(request: Request) {
+  const auth = await verifyTutorRequest(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const { query, subject, count = 5 } = await request.json();
-    
-    if (!query) {
-      return NextResponse.json({ error: 'Не указан поисковый запрос' }, { status: 400 });
+    if (!query || !subject) {
+      return NextResponse.json({ error: 'Не хватает параметров' }, { status: 400 });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API ключ не настроен' }, { status: 500 });
+    const subjSlug = SUBJECT_MAP[subject];
+    if (!subjSlug) {
+      return NextResponse.json({ error: 'Неизвестный предмет' }, { status: 400 });
     }
 
-    const subjectName = subject === "chemistry" ? "химии" : "биологии";
-    const maxCount = Math.min(Number(count), 10);
+    // Поиск заданий по ключевым словам в открытом каталоге sdamgia.net
+    const searchUrl = `https://${subjSlug}-ege.sdamgia.net/search?search=${encodeURIComponent(query)}`;
 
-    const systemPrompt = `Ты — эксперт по ЕГЭ/ОГЭ по ${subjectName}. Вспомни ${maxCount} реальных заданий по теме: "${query}".
+    const res = await fetch(searchUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EGEBot/1.0)' },
+    });
+    if (!res.ok) throw new Error(`Не удалось получить страницу: ${res.status}`);
 
-ВАЖНО: Используй структуру JSON СТРОГО как в примерах ниже.
+    const html = await res.text();
+    const $ = cheerio.load(html);
 
-ПРИМЕР 1 (тест с выбором):
-{
-  "tasks": [{
-    "title": "Задание 13. Арены",
-    "type": "single_choice",
-    "task_text": "Из перечня выберите два вещества, с которыми реагирует бензол",
-    "variants": ["бромная вода", "азотная кислота", "водород", "гидроксид натрия"],
-    "correct_indices": [1, 2],
-    "correct_answer": "",
-    "max_score": 2,
-    "explanation": "Бензол реагирует с азотной кислотой и водородом",
-    "tags": ["арены", "задание 13"]
-  }]
-}
+    const tasks: any[] = [];
 
-ПРИМЕР 2 (текстовый ответ):
-{
-  "tasks": [{
-    "title": "Задание 27. Расчёты",
-    "type": "text",
-    "task_text": "Вычислите массу соли для приготовления 200 г 15%-го раствора",
-    "variants": [],
-    "correct_indices": [],
-    "correct_answer": "30",
-    "max_score": 1,
-    "explanation": "m = 200 × 0.15 = 30 г",
-    "tags": ["растворы", "задание 27"]
-  }]
-}
+    $('.prob_maindiv').each((i, el) => {
+      if (tasks.length >= count) return;
 
-ПРАВИЛА:
-- Для single_choice/multi_choice: заполни variants (4 штуки) и correct_indices
-- Для text: заполни correct_answer, variants = []
-- Ответь СТРОГО в формате {"tasks": [...]}, без markdown`;
+      const $el = $(el);
+      const taskId = $el.find('.prob_nums a').first().text().trim();
+      const $body = $el.find('.pbody');
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Вспомни ${maxCount} заданий ЕГЭ по ${subjectName}: ${query}` }
-        ],
-        temperature: 0.2,
-        max_tokens: 4096,
-        response_format: { type: "json_object" }
-      }),
+      // Убираем служебные блоки (кнопки, ссылки на "показать ответ")
+      $body.find('script, .no-print').remove();
+      const taskText = $body.text().replace(/\s+/g, ' ').trim();
+
+      if (!taskText) return;
+
+      // Пытаемся вытащить варианты ответа, если это тест
+      const variants: string[] = [];
+      $el.find('.answer_choices li, .pbody ol li').each((_, li) => {
+        variants.push($(li).text().trim());
+      });
+
+      tasks.push({
+        id: `sdamgia-${taskId || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        title: `Задание из открытого банка (${taskId || 'ID неизвестен'})`,
+        type: variants.length > 0 ? 'single_choice' : 'text',
+        task_text: taskText,
+        variants,
+        correct_answer: '',   // ответ на источнике под спойлером — не парсим автоматически
+        explanation: '',      // репетитор допишет сам
+        max_score: 1,
+        tags: [query],
+        source: 'sdamgia',
+        source_url: `https://${subjSlug}-ege.sdamgia.net/problem?id=${taskId}`,
+      });
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      console.error("OpenAI API error:", data);
-      throw new Error(data.error?.message || "Ошибка API");
+    if (tasks.length === 0) {
+      return NextResponse.json({ error: 'По этому запросу ничего не нашлось на источнике' }, { status: 404 });
     }
 
-    let rawContent = data.choices[0].message.content;
-    rawContent = rawContent.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-
-    let generatedTasks;
-    try {
-      const parsed = JSON.parse(rawContent);
-      generatedTasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
-    } catch (parseError) {
-      console.error("JSON parse error:", rawContent);
-      throw new Error("Некорректный JSON от нейросети");
-    }
-
-    if (generatedTasks.length === 0) {
-      throw new Error("Задания не найдены");
-    }
-
-    return NextResponse.json({ success: true, tasks: generatedTasks });
-
+    return NextResponse.json({ success: true, tasks });
   } catch (error: any) {
-    console.error("Ошибка поиска:", error);
+    console.error('Ошибка поиска в открытых источниках:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

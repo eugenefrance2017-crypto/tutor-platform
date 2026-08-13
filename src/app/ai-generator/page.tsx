@@ -101,7 +101,7 @@ function AIGeneratorContent() {
   const [bankAllTasks, setBankAllTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [aiMode, setAiMode] = useState<'random' | 'example' | 'ai' | 'internet'>('random');
+  const [aiMode, setAiMode] = useState<'random' | 'example' | 'ai' | 'internet' | 'pdf'>('random');
 
   const [aiConfig, setAiConfig] = useState({
     folderId: null as string | null,
@@ -131,8 +131,11 @@ function AIGeneratorContent() {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [isParsingPdf, setIsParsingPdf] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImproving, setIsImproving] = useState<number | null>(null);
+  const [openImproveMenu, setOpenImproveMenu] = useState<number | null>(null);
 
   const [editingTask, setEditingTask] = useState<any>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -499,13 +502,38 @@ function AIGeneratorContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      const tasksWithIds = data.tasks.map((t: any) => ({ ...t, id: `net-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
+      const tasksWithIds = data.tasks.map((t: any) => ({ ...sanitizeTask(t), id: `net-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
       setAiPreview(tasksWithIds);
       toast.success(` Найдено ${tasksWithIds.length} фрагментов`);
     } catch (e: any) {
       toast.error(e.message || "Ошибка поиска");
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handlePdfUpload = async () => {
+    if (!pdfFile) { toast.error("Выберите PDF файл"); return; }
+    setIsParsingPdf(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(pdfFile);
+      });
+
+      const res = await authedFetch('/api/parse-pdf-tasks', { fileBase64: base64, subject: aiGenConfig.subject });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      const tasksWithIds = data.tasks.map((t: any) => ({ ...sanitizeTask(t), id: `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
+      setAiPreview(tasksWithIds);
+      toast.success(`📄 Извлечено ${tasksWithIds.length} заданий из PDF`);
+    } catch (e: any) {
+      toast.error(e.message || "Ошибка разбора PDF");
+    } finally {
+      setIsParsingPdf(false);
     }
   };
 
@@ -522,7 +550,7 @@ function AIGeneratorContent() {
           tutor_id: uid,
           folder_id: aiConfig.folderId || "general",
           created_at: serverTimestamp(),
-          source: aiMode === 'ai' ? 'ai_generated' : aiMode === 'internet' ? 'internet_search' : 'manual'
+          source: aiMode === 'ai' ? 'ai_generated' : aiMode === 'internet' ? 'internet_search' : aiMode === 'pdf' ? 'pdf_upload' : 'manual'
         });
         savedTasks.push({ ...task, id: task.id });
       }
@@ -637,7 +665,7 @@ function AIGeneratorContent() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
           <button onClick={() => { setAiMode('random'); setAiPreview([]); }} className={`p-4 rounded-xl border-2 transition text-left ${aiMode === 'random' ? 'bg-amber-900/40 border-amber-500/60' : 'bg-stone-950/30 border-amber-900/20 hover:border-amber-500/30'}`}>
             <div className="text-2xl mb-2">🎲</div>
             <div className="text-amber-100 font-serif font-bold text-sm">Из банка</div>
@@ -657,6 +685,11 @@ function AIGeneratorContent() {
             <div className="text-2xl mb-2">🌐</div>
             <div className="text-amber-100 font-serif font-bold text-sm">Поиск в сети</div>
             <div className="text-xs text-amber-200/50 font-serif italic mt-1">Найти готовые</div>
+          </button>
+          <button onClick={() => { setAiMode('pdf'); setAiPreview([]); }} className={`p-4 rounded-xl border-2 transition text-left ${aiMode === 'pdf' ? 'bg-amber-900/40 border-amber-500/60' : 'bg-stone-950/30 border-amber-900/20 hover:border-amber-500/30'}`}>
+            <div className="text-2xl mb-2">📄</div>
+            <div className="text-amber-100 font-serif font-bold text-sm">Из PDF</div>
+            <div className="text-xs text-amber-200/50 font-serif italic mt-1">Загрузить вариант</div>
           </button>
         </div>
 
@@ -918,6 +951,39 @@ function AIGeneratorContent() {
           </div>
         )}
 
+        {aiMode === 'pdf' && aiPreview.length === 0 && (
+          <div className="bg-gradient-to-br from-stone-900 via-stone-800 to-stone-900 rounded-2xl p-6 border border-amber-900/30 shadow-2xl space-y-4">
+            <div>
+              <label className="text-amber-200/80 text-sm font-serif italic block mb-2">📄 Загрузите PDF варианта</label>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+                className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif"
+              />
+              <p className="text-xs text-amber-200/40 font-serif italic mt-2">
+                Официальная демоверсия ФИПИ, прошлогодний вариант или свой скан — ИИ распознает текст и формулы, разложит на отдельные задания. Ответы и объяснения не генерируются — впишешь сам.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-amber-200/80 text-sm font-serif italic block mb-2">📚 Предмет</label>
+              <select value={aiGenConfig.subject} onChange={(e) => setAiGenConfig({...aiGenConfig, subject: e.target.value})} className="w-full bg-stone-950/50 border border-amber-900/30 rounded-lg p-3 text-amber-100 text-sm font-serif focus:border-amber-500/50 focus:outline-none transition">
+                <option value="chemistry">Химия</option>
+                <option value="biology">Биология</option>
+              </select>
+            </div>
+
+            <button
+              onClick={handlePdfUpload}
+              disabled={isParsingPdf || !pdfFile}
+              className="w-full bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-stone-900 py-4 rounded-xl font-serif italic text-lg font-bold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isParsingPdf ? <span className="animate-spin">⏳</span> : '📄'} {isParsingPdf ? 'Распознаю...' : 'Извлечь задания'}
+            </button>
+          </div>
+        )}
+
         {aiPreview.length > 0 && (
           <div className="bg-gradient-to-br from-stone-900 via-stone-800 to-stone-900 rounded-2xl p-6 border border-amber-900/30 shadow-2xl space-y-4">
             <div className="flex items-center justify-between mb-4">
@@ -1001,50 +1067,57 @@ function AIGeneratorContent() {
                           {isImproving === idx ? '' : '🔄'} Перегенерировать
                         </button>
 
-                        <div className="relative group/improve">
+                        <div className="relative">
                           <button
+                            onClick={() => setOpenImproveMenu(openImproveMenu === idx ? null : idx)}
                             className="px-3 py-1 bg-pink-900/50 hover:bg-pink-800/50 text-pink-200 rounded-lg text-xs font-serif italic transition flex items-center gap-1"
                             title="Улучшить с помощью ИИ"
                           >
                              Улучшить
                           </button>
-                          <div className="absolute left-0 top-full mt-1 w-48 bg-stone-900 border border-amber-900/30 rounded-lg shadow-xl opacity-0 invisible group-hover/improve:opacity-100 group-hover/improve:visible transition-all z-50">
-                            <button
-                              onClick={() => improveTask(idx, 'harder')}
-                              disabled={isImproving === idx}
-                              className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition first:rounded-t-lg disabled:opacity-50"
-                            >
-                              ⚡ Сделать сложнее
-                            </button>
-                            <button
-                              onClick={() => improveTask(idx, 'easier')}
-                              disabled={isImproving === idx}
-                              className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
-                            >
-                              🌸 Сделать проще
-                            </button>
-                            <button
-                              onClick={() => improveTask(idx, 'hint')}
-                              disabled={isImproving === idx}
-                              className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
-                            >
-                              💡 Добавить подсказку
-                            </button>
-                            <button
-                              onClick={() => improveTask(idx, 'explain')}
-                              disabled={isImproving === idx}
-                              className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
-                            >
-                              📚 Подробное объяснение
-                            </button>
-                            <button
-                              onClick={() => improveTask(idx, 'variants')}
-                              disabled={isImproving === idx}
-                              className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition last:rounded-b-lg disabled:opacity-50"
-                            >
-                               Больше вариантов
-                            </button>
-                          </div>
+                          {openImproveMenu === idx && (
+                            <>
+                              {/* Невидимый оверлей — клик за пределами меню его закрывает */}
+                              <div className="fixed inset-0 z-40" onClick={() => setOpenImproveMenu(null)} />
+                              <div className="absolute left-0 top-full mt-1 w-48 bg-stone-900 border border-amber-900/30 rounded-lg shadow-xl z-50">
+                                <button
+                                  onClick={() => { setOpenImproveMenu(null); improveTask(idx, 'harder'); }}
+                                  disabled={isImproving === idx}
+                                  className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition first:rounded-t-lg disabled:opacity-50"
+                                >
+                                  ⚡ Сделать сложнее
+                                </button>
+                                <button
+                                  onClick={() => { setOpenImproveMenu(null); improveTask(idx, 'easier'); }}
+                                  disabled={isImproving === idx}
+                                  className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
+                                >
+                                  🌸 Сделать проще
+                                </button>
+                                <button
+                                  onClick={() => { setOpenImproveMenu(null); improveTask(idx, 'hint'); }}
+                                  disabled={isImproving === idx}
+                                  className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
+                                >
+                                  💡 Добавить подсказку
+                                </button>
+                                <button
+                                  onClick={() => { setOpenImproveMenu(null); improveTask(idx, 'explain'); }}
+                                  disabled={isImproving === idx}
+                                  className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition disabled:opacity-50"
+                                >
+                                  📚 Подробное объяснение
+                                </button>
+                                <button
+                                  onClick={() => { setOpenImproveMenu(null); improveTask(idx, 'variants'); }}
+                                  disabled={isImproving === idx}
+                                  className="w-full text-left px-3 py-2 text-xs text-amber-100 hover:bg-amber-900/30 transition last:rounded-b-lg disabled:opacity-50"
+                                >
+                                   Больше вариантов
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1079,6 +1152,7 @@ function AIGeneratorContent() {
                 else if (aiMode === 'example') generateFromExample();
                 else if (aiMode === 'ai') handleAIGenerate();
                 else if (aiMode === 'internet') handleInternetSearch();
+                else if (aiMode === 'pdf') handlePdfUpload();
               }} className="flex-1 bg-stone-950/50 hover:bg-stone-900/50 text-amber-200/80 py-3 rounded-xl font-serif italic transition border border-amber-900/30">
                 🔄 Перегенерировать всё
               </button>
