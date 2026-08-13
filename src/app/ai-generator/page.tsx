@@ -518,7 +518,7 @@ function AIGeneratorContent() {
   // сам PDF-файл на сервер не отправляется и там никак не парсится.
   async function extractPdfContent(file: File): Promise<{ mode: 'text'; text: string } | { mode: 'images'; images: string[] }> {
     const pdfjsLib = await import('pdfjs-dist');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
     const arrayBuffer = await file.arrayBuffer();
     const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
