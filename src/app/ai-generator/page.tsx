@@ -512,24 +512,63 @@ function AIGeneratorContent() {
     }
   };
 
+  // PDF читается прямо в браузере через pdfjs-dist — там реально есть DOMMatrix
+  // и остальные браузерные API, в отличие от serverless Node на Vercel.
+  // Сервер получает уже готовый текст или уже готовые картинки страниц,
+  // сам PDF-файл на сервер не отправляется и там никак не парсится.
+  async function extractPdfContent(file: File): Promise<{ mode: 'text'; text: string } | { mode: 'images'; images: string[] }> {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    let fullText = '';
+    const textPages = Math.min(pdfDoc.numPages, 20);
+    for (let i = 1; i <= textPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map((item: any) => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+
+    if (fullText.trim().length > 300) {
+      return { mode: 'text', text: fullText };
+    }
+
+    // Мало текста — вероятно, скан или формулы-картинки. Рендерим страницы
+    // в PNG прямо в браузере (canvas здесь настоящий, работает без проблем).
+    const images: string[] = [];
+    const renderPages = Math.min(pdfDoc.numPages, 8);
+    for (let i = 1; i <= renderPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d')!;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      images.push(canvas.toDataURL('image/png'));
+    }
+    return { mode: 'images', images };
+  }
+
   const handlePdfUpload = async () => {
     if (!pdfFile) { toast.error("Выберите PDF файл"); return; }
     setIsParsingPdf(true);
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(pdfFile);
-      });
+      const extracted = await extractPdfContent(pdfFile);
 
-      const res = await authedFetch('/api/parse-pdf-tasks', { fileBase64: base64, subject: aiGenConfig.subject });
+      const res = extracted.mode === 'text'
+        ? await authedFetch('/api/parse-pdf-text', { text: extracted.text, subject: aiGenConfig.subject })
+        : await authedFetch('/api/parse-pdf-images', { images: extracted.images, subject: aiGenConfig.subject });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
       const tasksWithIds = data.tasks.map((t: any) => ({ ...sanitizeTask(t), id: `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
       setAiPreview(tasksWithIds);
-      toast.success(`📄 Извлечено ${tasksWithIds.length} заданий из PDF`);
+      toast.success(`📄 Извлечено ${tasksWithIds.length} заданий из PDF (${extracted.mode === 'text' ? 'текст' : 'скан'})`);
     } catch (e: any) {
       toast.error(e.message || "Ошибка разбора PDF");
     } finally {
