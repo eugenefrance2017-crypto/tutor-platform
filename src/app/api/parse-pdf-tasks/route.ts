@@ -1,22 +1,31 @@
 import { NextResponse } from 'next/server';
-import pdfParse from 'pdf-parse';
-import { pdf } from 'pdf-to-img';
 import { verifyTutorRequest } from '@/lib/verify-request';
 
 const apiKey = process.env.OPENAI_API_KEY;
 
+// ВАЖНО: pdf-parse и pdf-to-img импортируются динамически (не на верхнем уровне
+// файла), внутри try/catch. Раньше эти пакеты крашили весь роут ещё до того,
+// как срабатывал try/catch внутри функций (тот же класс проблем, что был
+// с firebase-admin/auth) — из-за этого браузер видел пустую страницу 500
+// вместо понятного текста ошибки. Теперь любая ошибка импорта (ESM-конфликт,
+// известный баг pdf-parse с тестовым файлом и т.п.) ловится и возвращается
+// как обычный JSON { error: "..." }, видимый во вкладке Network → Response.
+
 // Шаг 1: пробуем вытащить текстовый слой
 async function tryExtractText(buffer: Buffer): Promise<string> {
   try {
+    const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js');
     const data = await pdfParse(buffer);
     return data.text || '';
-  } catch {
+  } catch (e: any) {
+    console.error('tryExtractText failed:', e);
     return '';
   }
 }
 
 // Шаг 2: если текста мало (скан или формулы картинками) — рендерим страницы в PNG
 async function renderPagesToImages(buffer: Buffer, maxPages = 8): Promise<string[]> {
+  const { pdf } = await import('pdf-to-img');
   const document = await pdf(buffer, { scale: 2 });
   const images: string[] = [];
   let i = 0;

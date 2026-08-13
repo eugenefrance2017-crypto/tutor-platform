@@ -24,8 +24,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Неизвестный предмет' }, { status: 400 });
     }
 
-    // Поиск заданий по ключевым словам в открытом каталоге sdamgia.net
-    const searchUrl = `https://${subjSlug}-ege.sdamgia.net/search?search=${encodeURIComponent(query)}`;
+    // Поиск заданий по ключевым словам в открытом каталоге sdamgia.ru
+    // (важно: домен .ru, не .net — сайт называется chem-ege.sdamgia.ru)
+    const searchUrl = `https://${subjSlug}-ege.sdamgia.ru/search?search=${encodeURIComponent(query)}`;
 
     const res = await fetch(searchUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EGEBot/1.0)' },
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
         max_score: 1,
         tags: [query],
         source: 'sdamgia',
-        source_url: `https://${subjSlug}-ege.sdamgia.net/problem?id=${taskId}`,
+        source_url: `https://${subjSlug}-ege.sdamgia.ru/problem?id=${taskId}`,
       });
     });
 
